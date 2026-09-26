@@ -17,6 +17,7 @@ import {
   type Texture,
   Uint16BufferAttribute,
   Vector2,
+  Vector3,
 } from "three";
 
 import { LOCAL_FLOATS, type Pose } from "../../animation/evaluation/pose";
@@ -26,12 +27,14 @@ import type { SkeletonModel } from "../../assets/parsing/skeletonBuffer";
 import { EngineEnvironment } from "../../hexshade/engineEnvironment";
 import type { SubmeshProgram } from "../../hexshade/programMaterial";
 import { type HeldValue, ProgramMaterials } from "../../hexshade/programMaterials";
+import { useCharacterLight } from "../../scene/state/characterLightContext";
 import { useViewMode } from "../../scene/state/viewModeContext";
 import { drawsSolids, type Surface, surfaceOf } from "../../scene/utils/viewMode";
 import { AXIS_SIGN } from "../../scene/utils/world";
 import { useEdgeTwin } from "../hooks/useEdgeTwin";
 import { type CharacterSkin, CharacterSkinContext } from "../state/characterSkin";
 import { tintFloats, vertexTints } from "../utils/jointTint";
+import { gridLitMaterial, lightFrom, lightGridUniforms } from "../utils/lightGridShading";
 import {
   type FallbackColors,
   applyBinding,
@@ -61,6 +64,8 @@ export interface CharacterProps {
   readonly hidden: readonly string[];
   /** `skinScale`, which the whole character is drawn at. */
   readonly scale: number;
+  /** `selfIllumination`, added to the character's ambient light. */
+  readonly selfIllumination?: number;
   /** The submesh drawn at full strength while every other one dims, and null to dim none. */
   readonly highlighted?: string | null;
   /** A mask's weight per joint slot, which dims every vertex it does not weigh, and null to dim none. */
@@ -110,6 +115,7 @@ export function Character({
   colors,
   hidden,
   scale,
+  selfIllumination = 0,
   highlighted = null,
   jointWeights = null,
   onSubmeshPick,
@@ -122,15 +128,24 @@ export function Character({
     () => ({ geometry: drawn.geometry, skeleton: rig.skeleton, ranges: drawn.ranges, hidden }),
     [drawn, rig, hidden],
   );
+  const ambient = useMemo(() => lightGridUniforms(), []);
   const shaded = useMemo<readonly ShadingModels[]>(
     () =>
       drawn.ranges.map(() => ({
-        lit: new MeshLambertMaterial({ side: DoubleSide, vertexColors: true }),
+        lit: gridLitMaterial(ambient),
         unlit: new MeshBasicMaterial({ side: DoubleSide, vertexColors: true }),
       })),
-    [drawn],
+    [drawn, ambient],
   );
-  const environment = useMemo(() => new EngineEnvironment(), []);
+  /* A map scene draws dozens of characters. */
+  const environment = useMemo(() => new EngineEnvironment("uniform"), []);
+  const { grid: lightGrid, sun } = useCharacterLight();
+  useLayoutEffect(() => {
+    environment.grid = lightGrid;
+    environment.light = sun;
+    environment.selfIllumination = selfIllumination;
+    ambient.selfIllumination.value = selfIllumination;
+  }, [environment, ambient, lightGrid, sun, selfIllumination]);
   const view = useViewMode();
   const surface = surfaceOf(view.mode);
   const skinned = useMemo(() => {
@@ -227,7 +242,11 @@ export function Character({
   );
 
   const locals = useMemo(() => new Float32Array(rig.bones.length * LOCAL_FLOATS), [rig]);
+  const centre = useMemo(() => new Vector3(), []);
   useFrame(() => {
+    /* The game lights a character by the cell under the centre of its bounds. */
+    centre.copy(drawn.centre).applyMatrix4(skinned.matrixWorld);
+    lightFrom(lightGrid, centre.x, centre.z, ambient);
     pose.localsInto(clock.time, locals);
     rig.bones.forEach((bone, slot) => {
       const at = slot * LOCAL_FLOATS;
@@ -426,6 +445,8 @@ function useSubmeshPick(
 interface Drawn {
   readonly geometry: BufferGeometry;
   readonly ranges: readonly MeshRange[];
+  /** The middle of the bind pose's bounds, in the mesh's own space. */
+  readonly centre: Vector3;
 }
 
 function buildGeometry(mesh: MeshGeometry, rig: Rig): Drawn {
@@ -453,7 +474,10 @@ function buildGeometry(mesh: MeshGeometry, rig: Rig): Drawn {
   const ranges = drawnRanges(mesh, []);
   ranges.forEach((range, at) => geometry.addGroup(range.startIndex, range.indexCount, at));
 
-  return { geometry, ranges };
+  geometry.computeBoundingBox();
+  const centre = geometry.boundingBox?.getCenter(new Vector3()) ?? new Vector3();
+
+  return { geometry, ranges, centre };
 }
 
 /**

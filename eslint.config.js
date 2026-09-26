@@ -136,7 +136,8 @@ export default tseslint.config(
           mode: "all",
           "jsx-attributes": {
             exclude: [
-              "className",
+              // Every class-list prop, such as `className` and `triggerClassName`.
+              ".*[cC]lassName",
               "data-ui",
               "to",
               "href",
@@ -233,6 +234,7 @@ export default tseslint.config(
       "src/modules/workshop/bin/spells/components/MissileViewport.tsx",
       "src/modules/workshop/bin/spells/components/AbilityPreview.tsx",
       "src/modules/workshop/bin/spells/components/AbilityScene.tsx",
+      "src/modules/workshop/objectsBrowser/components/ObjectPreviewScene.tsx",
     ],
     rules: { "react/no-unknown-property": "off" },
   },

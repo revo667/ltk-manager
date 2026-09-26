@@ -14,7 +14,6 @@ import {
 import { useFrame } from "@react-three/fiber";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NoColorSpace } from "three";
 
 import { ButtonGroup, HexshadeIcon, IconButton, Menu, Tooltip } from "@/components";
 import { m } from "@/i18n";
@@ -29,7 +28,6 @@ import {
   Placement,
   type PlacementMode,
   type Pose,
-  programTextureAssets,
   type SceneClock,
   sequencePose,
   snappedPose,
@@ -42,21 +40,22 @@ import {
 } from "@/modules/viewport";
 import {
   type PreviewDisplay,
+  usePreviewAmbientOcclusion,
+  usePreviewAntiAliasing,
   usePreviewArmature,
-  usePreviewCamera,
   usePreviewBackdrop,
   usePreviewBackdropParticles,
   usePreviewBackdropSky,
   usePreviewBackdropStructures,
-  usePreviewGround,
+  usePreviewCamera,
   usePreviewFacing,
+  usePreviewGround,
   usePreviewJointNames,
   usePreviewMidlane,
   usePreviewMove,
   usePreviewMoveMode,
   usePreviewPlacedOn,
   usePreviewPlacement,
-  usePreviewAmbientOcclusion,
   usePreviewPostEffects,
   usePreviewShaders,
   usePreviewSun,
@@ -65,7 +64,8 @@ import {
   useSetPreviewDisplay,
 } from "@/stores";
 
-import { assetKey } from "../../../preview/utils/assetRef";
+import { assetKey, assetProject } from "../../../preview/utils/assetRef";
+import { useOptionalProjectContext } from "../../../projects/state/ProjectContext";
 import { BackdropLayerMenu } from "../../map/components/BackdropLayerMenu";
 import { MapCharacters } from "../../map/components/MapCharacters";
 import { MapParticles } from "../../map/components/MapParticles";
@@ -79,11 +79,11 @@ import { Notice } from "../../vfx/preview/components/Notice";
 import { ViewModeMenu } from "../../vfx/preview/components/ViewModeMenu";
 import { ViewToggle } from "../../vfx/preview/components/ViewToggle";
 import { Passes } from "../../vfx/rendering/components/Passes";
-import { distorts } from "../../vfx/rendering/utils/drawKind";
-import { fades } from "../../vfx/rendering/utils/softParticle";
+import { passesOf } from "../../vfx/rendering/utils/passes";
 import { skinQueries } from "../api/skinQueries";
 import { DocumentOpener, type GraphSource, useSkinGraphSource } from "../hooks/useGraphSource";
 import { useSkinKeys } from "../hooks/useSkinKeys";
+import { useSkinPrograms } from "../hooks/useSkinPrograms";
 import { overriddenHidden, SkinChoiceContext, useSkinChoice } from "../state/skinChoice";
 import {
   clipFrameSeconds,
@@ -99,13 +99,11 @@ import {
   BIND_POSE,
   bindingOf,
   jointSlot,
-  materialHashes,
   nearestValue,
   openingClip,
   parameterValues,
   playableClips,
   playlistOf,
-  programOf,
   systemModel,
   textureAssets,
 } from "../utils/skinScene";
@@ -188,7 +186,8 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
      install for a map the creator has replaced. */
   const shaders = usePreviewShaders();
   /* A document answers from its own file's project, as `LayerChunks::of` reads it. */
-  const project = asset.kind === "layer" ? asset.project : null;
+  const openIn = useOptionalProjectContext()?.path ?? null;
+  const project = assetProject(asset, openIn);
   const backdropSource = useMemo(
     () => (backdrop === null ? null : { map: backdrop, document, project, shaders }),
     [backdrop, document, project, shaders],
@@ -203,6 +202,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
   } = useBackdropFlags(backdropSource);
   const midlane = usePreviewMidlane();
   const camera = usePreviewCamera();
+  const antiAliasing = usePreviewAntiAliasing();
   const viewMode = usePreviewViewMode();
   const wireOverlay = usePreviewWireOverlay();
   const armature = usePreviewArmature();
@@ -348,15 +348,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
     (submesh: string) => bindingOf(skin, textures, submesh),
     [skin, textures],
   );
-  const materials = useMemo(() => materialHashes(skin), [skin]);
-  const programs = useQuery(skinQueries.programs(document, shaders ? materials : NO_MATERIALS));
-  const programAssets = useMemo(() => programTextureAssets(programs.data ?? []), [programs.data]);
-  const programTextures = useAssetTextures(programAssets, RAW_TEXTURES);
-  const programFor = useCallback(
-    (submesh: string) =>
-      shaders ? programOf(skin, programs.data ?? [], programTextures, submesh) : null,
-    [shaders, skin, programs.data, programTextures],
-  );
+  const programFor = useSkinPrograms(document, skin, shaders);
   const heldValue = useHeldValue();
   const colors = useSceneColors();
   const scale = skin.scale ?? 1;
@@ -399,8 +391,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
   /* The map's systems play whatever the skin's own switch says, and stay out of `loaded`,
      whose change is a seek of every effect the skin wears. */
   const played = [...(effects ? worn : []), ...mapParticles.map((group) => group.system)];
-  const warps = played.some((model) => model?.emitters.some(distorts) ?? false);
-  const softens = played.some((model) => model?.emitters.some(fades) ?? false);
+  const { warps, softens } = passesOf(played);
 
   /* A clip changing starts the pose and every idle effect over together, so an effect
      rides the clip from its first frame. The pose a preview mounts on keeps the time the
@@ -448,6 +439,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
         className="relative min-h-0 flex-1 outline-none"
       >
         <Viewport
+          antiAliasing={antiAliasing}
           renderer="shared"
           gizmo={!controlsHidden}
           stage={ground}
@@ -500,6 +492,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
               colors={colors}
               hidden={hidden}
               scale={scale}
+              selfIllumination={skin.selfIllumination ?? 0}
               highlighted={submesh}
               jointWeights={maskWeights}
               onSubmeshPick={pickSubmesh}
@@ -914,12 +907,6 @@ function MapSkinSubmenu({ group, chosen, onPick }: MapSkinSubmenuProps) {
     </Menu.SubmenuRoot>
   );
 }
-
-/** A program's textures are sampled raw, since the game's shader decodes them itself. */
-const RAW_TEXTURES = { colorSpace: NoColorSpace } as const;
-
-/** What the program read is asked for while the shaders are off, which asks nothing. */
-const NO_MATERIALS: readonly string[] = [];
 
 /** The armature switch and its drawing options as one split control. */
 function ArmatureMenu() {

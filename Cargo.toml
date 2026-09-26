@@ -6,6 +6,7 @@ members = [
     "crates/ltk-declarations",
     "crates/ltk-manager-core",
     "crates/ltk-manager-game",
+    "crates/ltk-meta-docs",
     "crates/ltk-patcher-macos",
     "crates/ltk-telemetry",
 ]
@@ -40,6 +41,7 @@ ltk_mimir_cache = { git = "https://github.com/LeagueToolkit/mimir", rev = "67019
 hexshade = { path = "crates/hexshade" }
 ltk-declarations = { path = "crates/ltk-declarations" }
 ltk-manager-core = { path = "crates/ltk-manager-core" }
+ltk-meta-docs = { path = "crates/ltk-meta-docs" }
 ltk-telemetry = { path = "crates/ltk-telemetry" }
 
 ltk_file = { version = "0.2.11", features = ["serde"] }
@@ -55,7 +57,7 @@ ltk_overlay = "0.14.0"
 ltk_wad = "0.5.7"
 
 ltk_anim = "0.3.9"
-ltk_mapgeo = "0.2.1"
+ltk_mapgeo = "0.3.0"
 ltk_mesh = { version = "0.5.2", features = ["tangent-baking"] }
 ltk_rst = "0.2.1"
 ltk_texture = { version = "0.6.4", features = ["intel-tex"] }

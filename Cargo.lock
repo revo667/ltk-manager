@@ -3037,7 +3037,7 @@ dependencies = [
 
 [[package]]
 name = "ltk-manager"
-version = "1.22.0"
+version = "1.22.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3119,6 +3119,7 @@ dependencies = [
  "libc",
  "lru",
  "ltk-declarations",
+ "ltk-meta-docs",
  "ltk-telemetry",
  "ltk_anim",
  "ltk_fantome",
@@ -3183,6 +3184,22 @@ dependencies = [
  "tracing",
  "ts-rs",
  "xxhash-rust",
+]
+
+[[package]]
+name = "ltk-meta-docs"
+version = "0.1.0"
+dependencies = [
+ "fs-err",
+ "ltk_hash",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "specta",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "ts-rs",
 ]
 
 [[package]]
@@ -3348,9 +3365,9 @@ dependencies = [
 
 [[package]]
 name = "ltk_mapgeo"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "908e642674892ab1abce055d4e10c73ff5adfe94fe3436a05ee0122d2b2da287"
+checksum = "e47a32b3f3e52f0a19d00230f230da74808a0907db75df6f2b2f3826abd393d5"
 dependencies = [
  "bitflags 2.13.1",
  "byteorder",

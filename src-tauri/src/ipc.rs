@@ -45,6 +45,8 @@ migrated![
     bin_dependencies,
     bin_choices,
     class_schema,
+    class_docs,
+    sync_meta_docs,
     // Bin editor: edits
     bin_edit,
     bin_undo,
@@ -57,6 +59,7 @@ migrated![
     declarations_module_action,
     // Object index
     locate_game_files,
+    search_game_paths,
     warm_object_index,
     drop_object_index,
     search_object_index,
@@ -72,6 +75,7 @@ migrated![
     // Skin preview
     read_skin,
     read_material_programs,
+    read_default_skinned_program,
     bake_skin_tangents,
     read_map,
     read_map_particles,

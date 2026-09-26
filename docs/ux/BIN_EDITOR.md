@@ -4,6 +4,7 @@
 
 | Date       | Change                                                          |
 | ---------- | --------------------------------------------------------------- |
+| 2026-09-24 | Pick an emitter's primitive, and sketch what it draws           |
 | 2026-09-24 | Edit a bin's dependencies as rows pinned over its objects       |
 | 2026-09-21 | Copy a whole object or struct as a declaration                  |
 | 2026-09-21 | Copy a row as a declaration, and declare a game-copy reference  |
@@ -13,7 +14,6 @@
 | 2026-09-20 | Open a map's files on the map, and sort a file's objects        |
 | 2026-09-17 | Draw a patch bin's records under the objects they target        |
 | 2026-09-14 | Address a map entry whose key repeats as `{k}#n`                |
-| 2026-09-14 | Search an open bin from the bar's `@` scope                     |
 
 Each edit of this document adds a row at the top. The table keeps the last ten rows.
 
@@ -71,8 +71,10 @@ This table holds every major feature of the bin editor. A status word has one me
 | Pane maximize         | Available   | A tab fills its split tree, and Esc restores it                  |
 | Inspector rows        | Available   | Every group, named values, units, a curve per animated row       |
 | Inspector bands       | Planned     | A rich value on its own band, the roll rail, and no group tabs   |
+| Primitive picker      | Available   | The primitive's class, its fields, and a sketch of what it draws |
 | In-document search    | Available   | The bar's `@` scope over the open rows                           |
 | Leaf editing          | In progress | The primitive widgets, and the patch that carries an edit        |
+| Path field            | In progress | Project and game files suggested in a `file` or path string edit |
 | Property editing      | In progress | Add and remove a property inline, at the schema's default        |
 | Container editing     | In progress | List items, map entries, options and pointers, inline            |
 | Autosave              | In progress | The strings editor's debounce, saved as a delta. ADR-0040        |
@@ -895,6 +897,7 @@ The shared tables are a crawl of the retail game, so a path a mod author invents
 them. A project's own content names those, and a bin opened out of a layer reads both: every
 file of every layer at its path inside its archive, and every table the project's manifest
 declares. The project answers first, and only a hash it does not name reaches the shared tables.
+A game bin opened in a project for declarations (ADR-0042) reads that project's names too.
 
 The scan runs once with the parse and is held with the open document, so a file added while a
 document is open is named the next time it opens.
@@ -907,7 +910,9 @@ answers it. A hash no table names keeps its hex and no mark, because an unnamed 
 nothing about whether it is there.
 
 A layer's copy is found at the file's path inside its archive, which is the layer entry's own
-path without its leading archive directory. The document's own layer answers first.
+path without its leading archive directory. The document's own layer answers first. A game bin
+opened in a project is in no layer, so the highest-priority layer that has the file is used.
+That is the copy the game loads when the mod is enabled.
 
 A miss never builds the object index. A `link` a reader clicks says they want the target, and
 a string that happens to hash to nothing says nothing at all, so an absent index leaves every
@@ -955,12 +960,13 @@ and the card. It reads and does nothing else, per `DS-MENU-SCOPE`: it carries no
 name under it takes no click of its own, so a click there expands the row like a click anywhere
 else on it. The pointer reaches into the card to scroll the field list and to select a hash.
 
-| Shows      | From                                                       |
-| ---------- | ---------------------------------------------------------- |
-| Name, hash | The tables, and the hex where no table names it            |
-| Declares   | How many objects of the install declare it, from the index |
-| Patch      | The patch the schema answered at, or that it has no line   |
-| Meta wiki  | A link to the class's page, where its fields are written   |
+| Shows      | From                                                                             |
+| ---------- | -------------------------------------------------------------------------------- |
+| Name, hash | The tables, and the hex where no table names it                                  |
+| Prose      | The wiki's documentation for the class, per [the wiki's prose](#the-wikis-prose) |
+| Declares   | How many objects of the install declare it, from the index                       |
+| Patch      | The patch the schema answered at, or that it has no line                         |
+| Meta wiki  | A link to the class's page, where its fields are written                         |
 
 The class name's actions are on [the row menu](#the-row-menu) where a row carries it, and on the
 object tab's kebab where no row does.
@@ -984,15 +990,42 @@ A field name is the same control as a class name: a card on hover after the tool
 closed by leaving it. The name draws under a dotted underline while the pointer is on it, which
 marks the card without making the name a second click target inside the row.
 
-| Shows      | From                                                                 |
-| ---------- | -------------------------------------------------------------------- |
-| Name, hash | The tables, and the hex where no table names it                      |
-| Declared   | The schema's kind for the field at this build                        |
-| Revisions  | The field's kinds across builds, as the schema's revisions hold them |
+| Shows      | From                                                                             |
+| ---------- | -------------------------------------------------------------------------------- |
+| Name, hash | The tables, and the hex where no table names it                                  |
+| Declared   | The schema's kind for the field at this build                                    |
+| Prose      | The wiki's documentation for the field, per [the wiki's prose](#the-wikis-prose) |
+| Revisions  | The field's kinds across builds, as the schema's revisions hold them             |
+| Meta wiki  | A link to the field's section on the wiki page that documents it, if any         |
+
+Every field name that opens this card - a tree row, a class view row, the VFX inspector's rows,
+the emitter table's column headers and the force rows - shows the same documentation.
 
 Copy name and Copy field hash are on [the row menu](#the-row-menu).
 
 The kind shown on the row stays the file's kind, per [The property row](#the-property-row).
+
+### The wiki's prose
+
+The LoL Meta Wiki documents some classes and their properties with a description, notes and
+examples, each in markdown. A card shows this text below the schema lines, and long text scrolls
+inside the card. A relative link in the text opens on the wiki. A class or field without
+documentation shows no documentation section.
+
+A field is documented on the class that declares it, which is often a base of the class the row
+is read on - `mMesh` of a `VfxPrimitiveMesh` is documented on `VfxPrimitiveMeshBase`. The card
+checks the row's class and then its bases in the schema, uses the first documentation it finds,
+and links to that class's page.
+
+The app fetches all documentation in one request to `/v1/docs/all` and caches it in the meta
+schema database's directory. The first card opened in a session starts a background refresh. The
+refresh sends at most one request every six hours across sessions, with the cached copy's tag, so
+the wiki returns `304` with no body when nothing changed. A card reads the cached copy immediately
+and reads again when a newer copy is installed. Offline, cards read the cached copy, and a machine
+that never reached the wiki shows no documentation.
+
+The documentation is CC BY-SA 4.0 under the wiki's developer tooling exception, which requires
+attribution. The About section credits the wiki.
 
 ### Find all references
 
@@ -1487,7 +1520,8 @@ strip left rather than matching the names a second time, so the two cannot drift
 
 The groups are Birth, Position, Render, Scale and Texture, the components both of Riot's editors
 draw, and Emission, Colour, Material and Effects for what the class carries and those five do not
-hold. Which fields each holds is a table written by hand, so a field the schema adds falls to
+hold. Primitive holds `primitive` alone, out of Render, because the class it names decides what
+every other group draws onto, per [the primitive](#the-primitive). Which fields each holds is a table written by hand, so a field the schema adds falls to
 Other and is on screen the day it appears rather than landing in a group by accident. Birth is
 the value a particle starts with and every other group is what it does over its life, which is
 the line that puts `birthScale0` under Birth and `scale0` under Scale.
@@ -1613,6 +1647,13 @@ parameter's name and value, a switch's name and whether it is on, a macro's defi
 Every cell is the leaf editor its row would draw, and a field the element leaves unwritten reads
 `default`.
 
+**A row is one line.** The four tables share one name column, as wide as the longest name the
+shader declares and never more than a third of the pane, so every value starts at one x. A
+parameter's components keep one column each down the table, and a colour's swatch follows its
+last channel. A pane too narrow for four components puts two on a line, the swatch on the first.
+A sampler that writes none of its address modes reads `default` once across the three columns. A
+pane too narrow for the table scrolls it sideways rather than cutting the texture's file name.
+
 **The shader declares the rows.** Samplers, Params and Switches list every texture, logical
 parameter and static switch the pass shader declares, in its order, and not only the entries the
 material writes. A row the material leaves to the shader draws the shader's default in the same
@@ -1630,7 +1671,8 @@ texture's row. A switch the shader compiles in carries a mark that changing it r
 shader. The preview draws the old shader until the new one answers, so a toggle never blanks it.
 
 **Live values.** A parameter the material sets draws one field per component its mask writes,
-labelled X to W, or R to A for a colour. Dragging a label sideways scrubs the value, and every
+labelled x to w, or r to a for a colour, each letter in its channel's colour as a vector's
+components are in the tree. Dragging a label sideways scrubs the value, and every
 preview drawing the material, the shape and the character, draws each step before anything
 reaches the bin. Releasing the drag, leaving the field or pressing Enter writes the value once,
 which is one undo step. The preview keeps the held value until the reads the write invalidated
@@ -1963,6 +2005,63 @@ The row is `FieldRow` and `ValueCell`, and every layout that draws field rows dr
 skin's inspector and the stacked layouts included. The plate is theirs too. The roll rail, the
 sticky header and the group menu are the particle system's own, because a birth roll and a group
 are things only an emitter has.
+
+### The primitive
+
+An emitter's `primitive` is the shape each of its particles draws as, and it is a group of its
+own. Its row is a picker over the classes deriving from `VfxLegacyPrimitiveBase`, grouped by what
+they draw, each with a line saying what that is. The trigger reads the class in the meta wiki's
+words, and the class name beside it is the class card, which carries the wiki's page for it.
+
+```
+v PRIMITIVE
+    Render Primitive       [Mesh v]  VfxPrimitiveMesh
+                           +----------------------+
+                           |  sketch, turning     |
+                           +----------------------+
+      Align Pitch To Camera  [ ]
+      Align Yaw To Camera    [x]
+      Mesh                   VfxMeshDefinitionData
+        Mesh Name            [ASSETS/Effects/orb.scb   ]
+        Submeshes To Draw    0 items
+```
+
+| Family         | Classes                                       |
+| -------------- | --------------------------------------------- |
+| Quads          | Camera quad, Camera unit quad, Arbitrary quad |
+| Rays and beams | Ray, Beam, Camera segment beam                |
+| Trails         | Camera trail, Arbitrary trail                 |
+| Meshes         | Mesh, Attached mesh                           |
+| Other          | Planar projection, Non-renderable             |
+
+**An emitter naming no primitive reads as a camera quad.** The engine draws one, so the trigger
+reads Camera quad, dashed as every default is, and Not set at the top of the list clears a held
+class back to it. A class the list does not carry reads as its own name and stays listed while the
+emitter holds it.
+
+**A swap keeps what both classes declare.** Picking a class writes it and keeps each field that the
+held class and the new one declare with one type, so Mesh to Attached mesh keeps `mMesh` and the
+two trail classes keep `mTrail`. Every other field is dropped. The swap is one edit, and an undo
+brings the dropped fields back.
+
+**Every field the class declares draws under it.** A field the file leaves out draws dimmed at its
+default, and its first edit writes it. An embed of the class - `mMesh`, `mTrail`, `mBeam`,
+`mProjection` - draws its name and class with its own fields indented under it, open rather than
+folded, and the first edit of one of those fields creates the embed on the way. The embeds draw
+after the class's own fields.
+
+**The sketch shows what the class draws.** A plate under the picker draws three particles and the
+geometry the class builds from them, with a camera turning about them once in twenty seconds. A
+camera quad stays square to the view, an arbitrary quad foreshortens as the camera passes, a ray
+and a beam turn about their own axis, a trail runs through its particles, a projection lays a
+decal on the ground, and a non-renderable draws the particles alone. The shapes follow the class
+pages on the meta wiki. A drag turns the sketch by hand, and reduced motion holds it still.
+
+**A mesh class draws its own mesh.** Mesh and Attached mesh draw the mesh the emitter names,
+through the viewer's loader and with its submesh choice, fitted to the plate and lit from above.
+An edit of `mMeshName` redraws it. A stand-in solid holds the place while the mesh loads and where
+no file resolves, which is where an attached mesh draws the unit it is attached to. The sketch
+paints a 2D canvas, so the inspector opens no second WebGL context beside the viewer.
 
 ## The curve panel
 
@@ -2416,6 +2515,51 @@ A value drawn as a chip - a string naming a file, a `hash`, a `link`, a `file` -
 and the row's edit action opens a field over it holding the string, the name, or the hex. A
 name typed into a `hash` or a `link` is hashed in Rust. An integer an enum table reads edits
 through a select of the engine's words, and a flags value through its number.
+
+### A path field
+
+A `file` value and a string that names a file are edited in a path field. It is the edit field
+from "What an edit is", with a list of files below it, so a modder picks a file instead of pasting
+its path. The tree, the class views and the inspector use the same field.
+
+| Row                                | Edited in                                                          |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| A `file`                           | A path field                                                       |
+| A string that contains a path      | A path field. A path is read as "A string that names a thing" says |
+| A string with a path property name | A path field                                                       |
+| Any other string                   | A plain field                                                      |
+
+A path property name ends in `texture`, `TextureName`, `TexturePath`, `MeshName`, `MapName`,
+`skeleton`, `SkeletonName`, `simpleSkin`, `AnimationFilePath`, `FilePath`, `FileName` or `Path`,
+or starts with `icon`. The exact names `mapName` and `path` are not path property names.
+
+| Draft                 | The list shows                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| Unchanged, or cleared | Project files of the expected kind, then **Same folder**: the files in the current path's folder |
+| Typed                 | Project files that match the terms, then **Game**: matching game files, ranked in Rust           |
+
+Terms match the same way as in the palette. The text is split on whitespace, and each term must
+appear as a contiguous substring. The frontend matches project files, because it already has the
+content tree. Rust matches game files over the game index. A path field search has a separate
+cancel ticket, so it does not cancel a palette search, and a palette search does not cancel it.
+
+Files of the kind the field expects rank first: a texture for `texture`, a mesh for `MeshName`.
+The kind comes from the extension of the current path, or from the property name when the field
+contains no path. In the game group, files from the document's archive rank next. Files of
+other kinds are still listed lower down, so a wrong kind guess does not hide a file.
+
+A path that the project also has appears once, in the project group, because the project's copy
+replaces the game's when the mod is enabled. Files excluded by the ignore rules are not listed.
+Chunks that no hashtable names are not listed, because they have no path.
+
+`Enter` picks the highlighted suggestion. While the draft is search terms, the top suggestion is
+highlighted. While the draft contains `/`, nothing is highlighted, so `Enter` writes the typed
+path. A string field that contains text other than a path highlights nothing, so `Enter` keeps its
+text. A click picks a suggestion. `Escape` discards the draft, as in any field.
+
+A picked path is written with its source's spelling: the author's casing for a project file, and
+lowercase for a game file. The game lowercases a path before it hashes it, so both spellings
+reference the same chunk.
 
 ### Adding a property
 

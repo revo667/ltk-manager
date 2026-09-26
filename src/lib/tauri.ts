@@ -11,6 +11,8 @@ import type {
   ChecksumMismatchInfo,
   ContentTree,
   CreateProjectArgs,
+  ForcibleMapSkin,
+  MapDecoration,
   CslolModInfo,
   EditModMetadataArgs,
   ExportScope,
@@ -84,6 +86,7 @@ import type {
   ProjectTextFile,
   ReferenceQuery,
   Revision,
+  SearchPreference,
   UiError,
 } from "@/lib/bindings.gen";
 import {
@@ -124,6 +127,7 @@ export type {
   ChoiceQuery,
   Choices,
   ClassChoice,
+  ClassDocs,
   ClassSchema,
   DeclaredDiagnostic,
   DeclaredDiagnosticKind,
@@ -138,6 +142,7 @@ export type {
   Declaring,
   Dependency,
   DependencyEdit,
+  Doc,
   EditOutcome,
   EditRejection,
   FieldRevision,
@@ -153,6 +158,7 @@ export type {
   ObjectEdit,
   ObjectName,
   ObjectSkip,
+  PropertyDocs,
   PropertyKind,
   ReadOnly,
   RowDeclaration,
@@ -167,6 +173,8 @@ export type {
   DeclaredObject,
   DeclaredObjects,
   GameFileEntry,
+  GameSearchHit,
+  GameSearchResult,
   ObjectClassHit,
   ObjectDeclaration,
   ObjectDir,
@@ -186,6 +194,7 @@ export type {
   ReferenceProperty,
   ReferenceQuery,
   ReferenceResult,
+  SearchPreference,
   SpellCatalog,
 } from "@/lib/bindings.gen";
 // The ignore rules' type, per ADR-0029.
@@ -327,6 +336,7 @@ export type {
   ScanStatus,
   SessionFailure,
   Severity,
+  ShaderFailure,
   SkippedArchive,
   Suspect,
   UiError,
@@ -407,6 +417,8 @@ export const api = {
   checkSetupRequired: () => invokeResult<boolean>("check_setup_required"),
   detectLeagueRunAsAdmin: () => invokeResult<boolean>("detect_league_run_as_admin"),
   listAvailableWads: () => invokeResult<string[]>("list_available_wads"),
+  listForcibleMapSkins: () => invokeResult<ForcibleMapSkin[]>("list_forcible_map_skins"),
+  listMapDecorations: () => invokeResult<MapDecoration[]>("list_map_decorations"),
 
   // Mods
   getInstalledMods: () => invokeResult<InstalledMod[]>("get_installed_mods"),
@@ -614,6 +626,8 @@ export const api = {
     dependencies: (document: BinDocumentId) => commands.binDependencies(document).then(toResult),
     close: (document: BinDocumentId) => commands.binClose(document).then(toResult),
     classSchema: (classHash: string) => commands.classSchema(classHash).then(toResult),
+    classDocs: (classHash: string) => commands.classDocs(classHash).then(toResult),
+    syncMetaDocs: () => commands.syncMetaDocs().then(toResult),
     readVfxSystem: (document: BinDocumentId, entry: string) =>
       commands.readVfxSystem(document, entry).then(toResult),
     readSkin: (document: BinDocumentId, entry: string) =>
@@ -623,6 +637,8 @@ export const api = {
       entries: readonly string[],
       options: ProgramOptions,
     ) => commands.readMaterialPrograms(source, [...entries], options).then(toResult),
+    readDefaultSkinnedProgram: (document: BinDocumentId, options: ProgramOptions) =>
+      commands.readDefaultSkinnedProgram(document, options).then(toResult),
     bakeSkinTangents: (document: BinDocumentId, entry: string) =>
       commands.bakeSkinTangents(document, entry).then(toResult),
     readMap: (document: BinDocumentId | null, map: string, materials: string[]) =>
@@ -661,6 +677,8 @@ export const api = {
     cancelWalk: () => commands.cancelReferenceWalk().then(toResult),
     locateGameFiles: (paths: readonly string[]) =>
       commands.locateGameFiles([...paths]).then(toResult),
+    searchGamePaths: (query: string, preference: SearchPreference) =>
+      commands.searchGamePaths(query, preference).then(toResult),
   },
 
   // flat, so the module boundary lives here.

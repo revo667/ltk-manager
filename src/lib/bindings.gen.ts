@@ -74,6 +74,20 @@ export const commands = {
 	 */
 	classSchema: (classHash: string) => __TAURI_INVOKE<({ ok: true; value: ClassSchema | null }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("class_schema", { classHash }),
 	/**
+	 *  The wiki's documentation for one class and every property declared on it or its bases.
+	 * 
+	 *  Reads the cache only, never the network. `None` where nothing is documented.
+	 *  `class_hash` is `0x` and eight hex digits.
+	 */
+	classDocs: (classHash: string) => __TAURI_INVOKE<({ ok: true; value: ClassDocs | null }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("class_docs", { classHash }),
+	/**
+	 *  Refresh the cached documentation once per session, and return the session's revision.
+	 * 
+	 *  The revision increases when a newer copy is installed. When the publisher cannot be reached,
+	 *  the cached copy and the revision stay unchanged.
+	 */
+	syncMetaDocs: () => __TAURI_INVOKE<({ ok: true; value: number }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("sync_meta_docs"),
+	/**
 	 *  Apply one edit to an open document, answering what the edit reports beside the change.
 	 * 
 	 *  Every id over the asset reads the edit, and nothing reaches the disk before [`bin_save`].
@@ -127,6 +141,13 @@ export const commands = {
 	 *  whether the install holds a file.
 	 */
 	locateGameFiles: (paths: string[]) => __TAURI_INVOKE<({ ok: true; value: { [key in string]: GameFileEntry } }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("locate_game_files", { paths }),
+	/**
+	 *  Rank every file of the install for a path field, the files `preference` names first.
+	 * 
+	 *  Uses a separate ticket counter, so a path field search and a palette search do not cancel
+	 *  each other.
+	 */
+	searchGamePaths: (query: string, preference: SearchPreference) => __TAURI_INVOKE<({ ok: true; value: GameSearchResult }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("search_game_paths", { query, preference }),
 	/**
 	 *  Build the object index, unless one is built or building.
 	 * 
@@ -229,6 +250,18 @@ export const commands = {
 	 *  Fails when the source bin cannot be read or parsed.
 	 */
 	readMaterialPrograms: (source: MaterialSource, entries: string[], options: ProgramOptions) => __TAURI_INVOKE<({ ok: true; value: (MaterialProgram | null)[] }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("read_material_programs", { source, entries, options }),
+	/**
+	 *  The pass the engine draws a skinned submesh with where its skin names no material,
+	 *  with `LIT_UBER` translated.
+	 * 
+	 *  The shader cache is the one `document` resolves against. Translations are cached as
+	 *  [`read_material_programs`] caches them.
+	 * 
+	 *  # Errors
+	 * 
+	 *  Fails when no document is open under `document`.
+	 */
+	readDefaultSkinnedProgram: (document: BinDocumentId, options: ProgramOptions) => __TAURI_INVOKE<({ ok: true; value: PassProgram }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("read_default_skinned_program", { document, options }),
 	/**
 	 *  Tangents saved into the viewed skin's project-layer mesh.
 	 * 
@@ -1014,6 +1047,14 @@ export type ClassChoice = {
 	derivesFrom: string | null,
 };
 
+/**  The wiki's documentation for one class and the properties declared on it and its bases. */
+export type ClassDocs = {
+	/**  The documentation of the class itself. Absent when the wiki documents only properties. */
+	class: Doc | null,
+	/**  Keyed by the property's hash, `0x` and eight hex digits. */
+	properties: { [key in string]: PropertyDocs },
+};
+
 /**  One class as the class card draws it: its name, and its fields typed at one build. */
 export type ClassSchema = {
 	/**  The class as the database names it. */
@@ -1466,6 +1507,16 @@ export type DiagnosticReport_Serialize = {
 	checks: Check_Serialize[],
 };
 
+/**  The wiki's documentation for one class or one property. Each part is markdown. */
+export type Doc = {
+	/**  The main text. Absent when the entry has only notes or examples. */
+	description: string | null,
+	/**  Short caveats, one paragraph each. */
+	notes: string[],
+	/**  Worked examples, one block each. */
+	examples: string[],
+};
+
 /**  What a landed [`BinEdit`] answers beside the change itself. */
 export type EditOutcome = 
 /**  Nothing beyond the change. */
@@ -1767,6 +1818,51 @@ export type GamePhase =
 /**  The game ended the way it should. */
 "torn-down";
 
+/**
+ *  One row a search matched, with the runs its two lines mark.
+ * 
+ *  Marked runs are byte offsets into `name` and `path`, which the palette
+ *  slices to lift the matched characters out of the rest.
+ */
+export type GameSearchHit = {
+	/**  Chunk path hash as 16 lowercase hex digits. */
+	pathHash: string,
+	/**  The path's basename, or the hash when no hash table names the chunk. */
+	name: string,
+	/**  The directory holding it, empty at the root and for an unnamed chunk. */
+	path: string,
+	/**  The `DATA/FINAL`-relative archive the chunk was read from. */
+	wad: string,
+	/**  0 is a name the query opens, 1 a name holding it, 2 a match reaching the directory. */
+	band: number,
+	score: number | null,
+	nameRanges: ([number, number])[],
+	pathRanges: ([number, number])[],
+};
+
+/**  What one search of the folded index found. */
+export type GameSearchResult = {
+	/**  The best rows, best first, capped at [`SEARCH_LIMIT`]. */
+	hits: GameSearchHit[],
+	/**  How many files matched in all, which the cap trimmed. */
+	total: number,
+	/**
+	 *  A newer search started before this one finished, so it gave up early.
+	 * 
+	 *  Its rows are whatever it had found, which is not the whole answer. The
+	 *  caller is expected to be showing the newer query by now.
+	 */
+	superseded: boolean,
+	/**
+	 *  No hash table named a single chunk, so only a hash can match.
+	 * 
+	 *  An install whose names never resolved answers every path query with
+	 *  nothing, which reads exactly like an install that holds no match. The
+	 *  caller says which of the two it is.
+	 */
+	unnamed: boolean,
+};
+
 /**  Which way a read of GitHub failed, as the remedy it has. */
 export type GitHubErrorKind = 
 /**  GitHub was never reached. Waiting for a connection is the remedy. */
@@ -1838,7 +1934,12 @@ export type Hint = "system-checks" | "update-manager" | "rebuild-overlay" | "che
  */
 "large-textures" | 
 /**  An overlay file was held open, usually by a game still running. */
-"close-game";
+"close-game" | 
+/**
+ *  A shader failed with no programs named, which a shader definition
+ *  outside the game's shaders bin reads as.
+ */
+"shader-definition";
 
 /**  One effect a skin wears for as long as the character stands. */
 export type IdleEffect = {
@@ -1902,6 +2003,8 @@ export type Incident_Deserialize = {
 	 *  the rest is what a reader still has to be told about.
 	 */
 	scanRejected?: number,
+	/**  What the log says about the shaders, on a shader verdict. */
+	shader?: ShaderFailure | null,
 	phase?: GamePhase,
 	game: GameInfo | null,
 	ending: Ending,
@@ -1945,6 +2048,8 @@ export type Incident_Serialize = {
 	 *  the rest is what a reader still has to be told about.
 	 */
 	scanRejected: number,
+	/**  What the log says about the shaders, on a shader verdict. */
+	shader: ShaderFailure | null,
 	phase: GamePhase,
 	game: GameInfo | null,
 	ending: Ending,
@@ -2314,6 +2419,11 @@ export type MapModel = {
 	postEffects: MapPostEffects | null,
 	/**  Null where the map's container states no ambient occlusion, as all but one shipped map. */
 	ssao: MapSsao | null,
+	/**
+	 *  The `LightGrid.dat` the map lights its characters with, and null where it bakes
+	 *  none or nothing holds it.
+	 */
+	lightGrid: AssetRef | null,
 };
 
 /**  One particle system a map stands in its scene. */
@@ -3096,6 +3206,15 @@ export type ProjectTextFile =
 /**  The terms the mod is shared under, which both pack formats ship. */
 "license";
 
+/**  The wiki's documentation for one property, and the class whose page documents it. */
+export type PropertyDocs = {
+	/**  The declaring class as the wiki names it, or its hash where no name is known. */
+	owner: string,
+	/**  The property as the wiki names it, or its hash where no name is known. */
+	name: string,
+	doc: Doc,
+};
+
 /**
  *  The 27 kinds `ltk_meta` reads, as they cross IPC.
  * 
@@ -3370,6 +3489,19 @@ export type SchemaTexture = {
 	sharedSampler: string | null,
 };
 
+/**
+ *  The files a path field wants ranked first in a search.
+ * 
+ *  Files with an expected extension rank first, then files from the field's archive,
+ *  then the bands decide. A preference changes the order of the matches and adds no match.
+ */
+export type SearchPreference = {
+	/**  The extensions the field expects, without the dot. Empty means no preferred kind. */
+	extensions: string[],
+	/**  The file name of the field's archive, such as `Ahri.wad.client`. */
+	archive: string | null,
+};
+
 /**  A session that failed before any game ran. */
 export type SessionFailure = 
 /**
@@ -3420,6 +3552,16 @@ export type Severity =
 /**  Known to break the patcher, should be fixed. */
 "bad";
 
+/**  The shaders a game log reports as failed, as facts the frontend puts into words. */
+export type ShaderFailure = {
+	/**  Shader variants that did not compile, each counted once. */
+	variants: number,
+	/**  Every failed variant named no vertex shader. */
+	unnamedPrograms: boolean,
+	/**  The pipeline a material was drawn without, as League wrote it. */
+	missingPipeline: string | null,
+};
+
 /**
  *  The parameters, textures and switches a `CustomShaderDef` declares, with its defaults.
  * 
@@ -3457,6 +3599,8 @@ export type SkinModel = {
 	skeleton: NamedAsset | null,
 	/**  The texture a submesh draws with where no override names its own. */
 	texture: NamedAsset | null,
+	/**  `emissiveTexture`, the emissive mask of a submesh with no material. */
+	emissiveTexture: NamedAsset | null,
 	/**  The `Material` a submesh draws with where no override names its own. */
 	material: MaterialPreview | null,
 	/**  The submeshes a `materialOverride` gives a texture or a material of their own. */
@@ -3465,6 +3609,8 @@ export type SkinModel = {
 	hidden: string[],
 	/**  `skinScale`, which the character is drawn at. */
 	scale: number | null,
+	/**  `selfIllumination`, added to the character's ambient light. Zero by default. */
+	selfIllumination: number | null,
 	/**  `skinAnimationProperties.animationGraphData`, `0x` and eight hex digits. */
 	animationGraph: string | null,
 	/**  `idleParticlesEffects`, in the order the skin lists them. */
@@ -3721,6 +3867,11 @@ export type ValueEdit =
 { type: "ensureProperty"; path: string; field: string } | 
 /**  Give a null pointer its class. A non-null pointer retains its fields. */
 { type: "ensurePointer"; path: string; class: string } | 
+/**
+ *  Swap a pointer's class, keeping the fields both classes declare with one type. A
+ *  null class clears the pointer.
+ */
+{ type: "replacePointer"; path: string; class: string | null } | 
 /**  Insert an item into a list, map or option. */
 { type: "insertItem"; path: string; item: NewItem } | 
 /**  Remove an item from a list, map or option. */
@@ -3745,7 +3896,9 @@ export type VerdictKind =
  */
 "skinhack-detected" | "overlay-disabled" | "unmodded" | "missing-data" | "corrupt-archive" | "texture-failed" | "out-of-memory" | "graphics-fault" | "stuck-loading" | "archive-skipped" | "ended-without-reason" | 
 /**  The game ran from another install than the overlay was built for. */
-"wrong-install";
+"wrong-install" | 
+/**  A shader did not compile, or a material had no pipeline to draw with. */
+"shader-failed";
 
 /**  What the manager concluded from one game. */
 export type Verdict_Deserialize = StoredVerdict_Deserialize;

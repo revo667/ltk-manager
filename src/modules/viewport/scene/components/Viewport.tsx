@@ -20,12 +20,14 @@ import { CAMERA, type CameraPreset } from "../../camera/utils/cameraPresets";
 import { AXIS_SIGN } from "../../shared/utils/space";
 import { useSceneColors } from "../hooks/sceneColors";
 import { type BackdropSource, useMapBackdrop } from "../hooks/useMapBackdrop";
+import { type CharacterLight, CharacterLightContext } from "../state/characterLightContext";
 import { ViewModeContext } from "../state/viewModeContext";
 import {
   type AmbientOcclusion,
   drawsAmbientOcclusion,
   NO_AMBIENT_OCCLUSION,
 } from "../utils/ambientOcclusion";
+import { type AntiAliasing, DEFAULT_ANTI_ALIASING } from "../utils/antiAliasing";
 import { drawsPostEffects, NO_POST_EFFECTS, type PostEffects } from "../utils/postEffects";
 import {
   createOpaqueRenderer,
@@ -39,6 +41,7 @@ import {
 import { DEFAULT_SUN, type SunOverride, withSunOverride } from "../utils/sunLight";
 import { edgesOf, type ViewMode } from "../utils/viewMode";
 import { OUTPUT_COLOR_SPACE, TONE_MAPPING } from "../utils/world";
+import { AntiAliasingPass } from "./AntiAliasingPass";
 import { Backdrop } from "./Backdrop";
 import { PostEffectsPass } from "./PostEffectsPass";
 import { Sky } from "./Sky";
@@ -80,8 +83,12 @@ export interface ViewportProps {
   readonly postEffects?: PostEffects | null;
   /** The scene's ambient occlusion, and the backdrop's own or none when absent. */
   readonly ambientOcclusion?: AmbientOcclusion | null;
+  /** How the finished frame's edges are smoothed. */
+  readonly antiAliasing?: AntiAliasing;
   /** Which camera the scene draws through, "The viewer" in docs/ux/BIN_EDITOR.md. */
   readonly camera: CameraPreset;
+  /** The scene colour the canvas clears to: the pane's ground, or the raised card ground. */
+  readonly clearColor?: "backdrop" | "ground";
   /** How the backdrop and every character draw their meshes. */
   readonly viewMode?: ViewMode;
   /** The triangle edges draw over a lit or untextured scene. */
@@ -136,7 +143,9 @@ export function Viewport({
   sun = null,
   postEffects = null,
   ambientOcclusion = null,
+  antiAliasing = DEFAULT_ANTI_ALIASING,
   camera,
+  clearColor = "backdrop",
   viewMode = "lit",
   wireOverlay = false,
   onCameraStand,
@@ -146,6 +155,8 @@ export function Viewport({
   const colors = useSceneColors();
   const map = useMapBackdrop(backdrop);
   const light = useMemo(() => withSunOverride(map.sun ?? DEFAULT_SUN, sun), [map.sun, sun]);
+  const grid = map.geometry === null ? null : map.lightGrid;
+  const characterLight = useMemo<CharacterLight>(() => ({ grid, sun: light }), [grid, light]);
   const edges = edgesOf(viewMode, wireOverlay);
   const view = useMemo(
     () => ({ mode: viewMode, edges, edgeColour: colors.wire }),
@@ -235,7 +246,7 @@ export function Viewport({
             gl.toneMapping = TONE_MAPPING;
           }}
         >
-          <color attach="background" args={[colors.backdrop]} />
+          <color attach="background" args={[colors[clearColor]]} />
           {shares && (
             <SharedRendererClaim
               lease={lease}
@@ -267,12 +278,15 @@ export function Viewport({
               />
             </>
           )}
-          <CameraPresetContext value={camera}>
-            <ViewModeContext value={view}>{children}</ViewModeContext>
-          </CameraPresetContext>
+          <CharacterLightContext value={characterLight}>
+            <CameraPresetContext value={camera}>
+              <ViewModeContext value={view}>{children}</ViewModeContext>
+            </CameraPresetContext>
+          </CharacterLightContext>
           {(drawsPostEffects(effects) || drawsAmbientOcclusion(occlusion)) && (
             <PostEffectsPass effects={effects} occlusion={occlusion} />
           )}
+          {antiAliasing !== "off" && <AntiAliasingPass mode={antiAliasing} />}
         </Canvas>
       )}
     </div>

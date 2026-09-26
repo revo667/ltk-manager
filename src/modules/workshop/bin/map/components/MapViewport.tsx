@@ -18,11 +18,12 @@ import {
   Viewport,
 } from "@/modules/viewport";
 import {
+  usePreviewAmbientOcclusion,
+  usePreviewAntiAliasing,
   usePreviewBackdropParticles,
   usePreviewBackdropSky,
   usePreviewBackdropStructures,
   usePreviewCamera,
-  usePreviewAmbientOcclusion,
   usePreviewPostEffects,
   usePreviewShaders,
   usePreviewSun,
@@ -36,8 +37,7 @@ import { Notice } from "../../vfx/preview/components/Notice";
 import { ViewModeMenu } from "../../vfx/preview/components/ViewModeMenu";
 import { ViewToggle } from "../../vfx/preview/components/ViewToggle";
 import { Passes } from "../../vfx/rendering/components/Passes";
-import { distorts } from "../../vfx/rendering/utils/drawKind";
-import { fades } from "../../vfx/rendering/utils/softParticle";
+import { passesOf } from "../../vfx/rendering/utils/passes";
 import { useMapParticles } from "../hooks/useMapParticles";
 import { useMapScene } from "../state/mapScene";
 import { variantLabel } from "../utils/mapVariants";
@@ -104,6 +104,7 @@ function MapScene({ document, geometry, variants, chosen }: MapSceneProps) {
   );
 
   const camera = usePreviewCamera();
+  const antiAliasing = usePreviewAntiAliasing();
   const viewMode = usePreviewViewMode();
   const wireOverlay = usePreviewWireOverlay();
   const particles = usePreviewBackdropParticles();
@@ -117,8 +118,7 @@ function MapScene({ document, geometry, variants, chosen }: MapSceneProps) {
 
   const [origin, setOrigin] = useState<readonly [number, number, number] | null>(null);
   const played = useMapParticles(particles ? materials : null, flags, hidden);
-  const warps = played.some((group) => group.system.emitters.some(distorts));
-  const softens = played.some((group) => group.system.emitters.some(fades));
+  const { warps, softens } = useMemo(() => passesOf(played.map((group) => group.system)), [played]);
 
   const [fitToken, setFitToken] = useState(0);
   const refit = useCallback(() => setFitToken((token) => token + 1), []);
@@ -127,6 +127,7 @@ function MapScene({ document, geometry, variants, chosen }: MapSceneProps) {
     <>
       <div data-ui="MapViewport" className="relative min-h-0 flex-1">
         <Viewport
+          antiAliasing={antiAliasing}
           renderer="shared"
           stage={false}
           textured={false}

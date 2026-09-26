@@ -77,6 +77,7 @@ export {
   previewSkeleton,
 } from "./hexshade/previewMeshes";
 export {
+  blackTexel,
   createProgramMaterial,
   type ReadyProgram,
   type SubmeshProgram,
@@ -105,6 +106,11 @@ export {
   NO_AMBIENT_OCCLUSION,
   occlusionSamples,
 } from "./scene/utils/ambientOcclusion";
+export {
+  ANTI_ALIASING_MODES,
+  type AntiAliasing,
+  DEFAULT_ANTI_ALIASING,
+} from "./scene/utils/antiAliasing";
 export {
   type DepthOfField,
   type Fog,
