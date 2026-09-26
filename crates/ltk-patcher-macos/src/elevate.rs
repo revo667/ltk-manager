@@ -64,7 +64,13 @@ pub fn relay(self_path: &Path) -> io::Result<()> {
     // bail out early (with a visible failure) if `osascript` returns before the
     // worker ever connects — that means the prompt was declined or it failed.
     listener.set_nonblocking(true)?;
-    let stream = match accept_until(&listener, Duration::from_secs(180), &auth) {
+    let stream = match accept_until(&listener, Duration::from_secs(180), &auth).and_then(|s| {
+        // macOS (BSD) accept(), dinleyicinin O_NONBLOCK bayrağını kabul edilen sokete de geçirir (Linux
+        // geçirmez). Bloklamayan kalırsa aşağıdaki okuma, worker henüz bir şey yazmadan WouldBlock alır ve
+        // stdout pompası hemen biter: host'un yanıtları manager'a hiç ulaşmaz, worker da okunmayan soket
+        // tamponu dolunca kilitlenir. Worker parola istemi yüzünden geç bağlandığında bu hep oluyordu.
+        s.set_nonblocking(false).map(|()| s).map_err(|e| e.to_string())
+    }) {
         Ok(stream) => stream,
         Err(e) => {
             // Surface the failure to the manager as a protocol line, so the UI
@@ -203,6 +209,36 @@ pub fn worker(sock_path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bloklamayan dinleyiciden kabul edilen bağlantı, relay'in beklediği gibi geç gelen veriyi
+    /// bekleyip okuyabilmeli (macOS'ta O_NONBLOCK miras kalır; accept_until'den sonra kapatılır).
+    #[test]
+    fn accepted_worker_stream_blocks_until_the_worker_writes() {
+        let dir = std::env::temp_dir().join(format!("ltk-elevate-test-{}", now_nanos()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("t.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
+        listener.set_nonblocking(true).unwrap();
+
+        let path = sock.clone();
+        let writer = std::thread::spawn(move || {
+            let mut s = UnixStream::connect(&path).unwrap();
+            std::thread::sleep(Duration::from_millis(200)); // worker geç yazar
+            s.write_all(b"ok loglevel set\n").unwrap();
+        });
+        let auth = std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_secs(5));
+            String::new()
+        });
+        let mut stream = accept_until(&listener, Duration::from_secs(5), &auth).unwrap();
+        stream.set_nonblocking(false).unwrap();
+
+        let mut buf = [0u8; 64];
+        let n = stream.read(&mut buf).expect("okuma veriyi beklemeli, WouldBlock değil");
+        assert_eq!(&buf[..n], b"ok loglevel set\n");
+        writer.join().unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn shell_quoting_wraps_and_escapes() {
