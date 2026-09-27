@@ -34,8 +34,14 @@ export {
   type SkeletonModel,
 } from "./assets/parsing/skeletonBuffer";
 export { BufferError } from "./assets/utils/bufferReader";
-export { FitCamera, type FitCameraProps, useFitCamera } from "./camera/components/FitCamera";
+export {
+  FitCamera,
+  type FitCameraProps,
+  useFitCamera,
+  useSeesBounds,
+} from "./camera/components/FitCamera";
 export { SceneCamera, type SceneCameraProps } from "./camera/components/SceneCamera";
+export { type CameraPose, lastCameraPose } from "./camera/state/cameraMemory";
 export { CameraPresetContext, useCameraPreset } from "./camera/state/presetContext";
 export {
   CAMERA,
@@ -68,7 +74,9 @@ export {
 } from "./character/state/characterSkin";
 export { type FallbackColors, type SubmeshBinding } from "./character/utils/submeshBinding";
 export { MaterialSubject, type MaterialSubjectProps } from "./hexshade/components/MaterialSubject";
-export { EngineEnvironment } from "./hexshade/engineEnvironment";
+export { EngineEnvironment, type ParticleEmitter } from "./hexshade/engineEnvironment";
+export { blackCube, blackTexel, whiteTexel } from "./hexshade/neutralTextures";
+export { passTwin } from "./hexshade/passTwin";
 export {
   PREVIEW_BOUNDS,
   PREVIEW_SHAPES,
@@ -77,13 +85,20 @@ export {
   previewSkeleton,
 } from "./hexshade/previewMeshes";
 export {
-  blackTexel,
   createProgramMaterial,
   type ReadyProgram,
+  SCREEN_COPY,
   type SubmeshProgram,
+  writeProgramMember,
 } from "./hexshade/programMaterial";
 export { type HeldValue, scatter } from "./hexshade/programMaterials";
-export { programTextureAssets, programTextureKey, programWith } from "./hexshade/programTextures";
+export {
+  programPasses,
+  programTextureAssets,
+  programTextureKey,
+  programWith,
+} from "./hexshade/programTextures";
+export { spliceVertexProgram, type VertexPrelude } from "./hexshade/vertexPrelude";
 export { Backdrop } from "./scene/components/Backdrop";
 export { type Placed, Placement, type PlacementMode } from "./scene/components/Placement";
 export { Stage } from "./scene/components/Stage";

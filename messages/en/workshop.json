@@ -306,6 +306,7 @@
   "workshop_bin_doc_notes_label": "Notes",
   "workshop_bin_duplicate_object_action": "Duplicate as new object",
   "workshop_bin_edit_key_action": "Edit key",
+  "workshop_bin_edit_refused_title": "Couldn't make the edit",
   "workshop_bin_edit_value_action": "Edit value",
   "workshop_bin_enable_curve_action": "Animate value",
   "workshop_bin_emitter_colorblind_only_label": "Colourblind palette only",
@@ -624,6 +625,7 @@
   "workshop_bin_preview_gizmo_label": "Gizmo",
   "workshop_bin_preview_joint_names_label": "Names",
   "workshop_bin_preview_loading_label": "Reading the system",
+  "workshop_bin_preview_loop_hint": "Loop (L)",
   "workshop_bin_preview_loop_label": "Loop",
   "workshop_bin_preview_backdrop_empty_label": "No maps in this install",
   "workshop_bin_preview_backdrop_label": "Map backdrop",
@@ -658,8 +660,10 @@
   "workshop_bin_preview_pane_empty": "Open a particle system to preview it",
   "workshop_bin_preview_pane_label": "Particle preview",
   "workshop_bin_preview_pause_action": "Pause",
+  "workshop_bin_preview_pause_hint": "Pause (Space)",
   "workshop_bin_preview_play_action": "Play",
-  "workshop_bin_preview_playhead_label": "{time} / {span} s",
+  "workshop_bin_preview_play_hint": "Play (Space)",
+  "workshop_bin_preview_playhead_label": "*{time}* / {span} s",
   "workshop_bin_preview_post_effects_ambient_occlusion_label": "Ambient occlusion",
   "workshop_bin_preview_post_effects_coc_label": "Blur size",
   "workshop_bin_preview_post_effects_depth_fog_label": "Depth fog",
@@ -681,6 +685,7 @@
   "workshop_bin_preview_post_effects_occlusion_resolution_label": "Resolution",
   "workshop_bin_preview_post_effects_occlusion_samples_label": "Samples",
   "workshop_bin_preview_post_effects_reset_action": "Reset to the map's post effects",
+  "workshop_bin_preview_readout_label": "Playhead time",
   "workshop_bin_preview_restart_action": "Restart",
   "workshop_bin_preview_rig_burst_label": "Burst",
   "workshop_bin_preview_rig_description": "Options for how the preview carries this system",
@@ -777,6 +782,7 @@
   "workshop_bin_random_uniform_label": "uniform",
   "workshop_bin_random_unpin_action": "Unpin the chance",
   "workshop_bin_read_only_label": "Read-only",
+  "workshop_bin_redo_failed_title": "Couldn't redo the edit",
   "workshop_bin_reference_failed_title": "The reference was not declared",
   "workshop_bin_reference_label": "Reference",
   "workshop_bin_refused_hint": "Fix the marked value to save",
@@ -851,6 +857,7 @@
   "workshop_bin_timeline_live_label": "{count} live particles",
   "workshop_bin_timeline_loop_clear_action": "Clear the loop range",
   "workshop_bin_timeline_loop_label": "Loops {from} to {to} s",
+  "workshop_bin_timeline_ruler_hint": "Drag to scrub, Shift+drag to loop a range, double-click to refit",
   "workshop_bin_timeline_ruler_label": "Timeline ruler",
   "workshop_bin_timeline_solo_clear_action": "Clear solos",
   "workshop_bin_timeline_visibility_hint": "Drag to paint, Alt+click to show alone, Shift+click for a range",
@@ -860,6 +867,7 @@
   "workshop_bin_transform_move_action": "Move emitter",
   "workshop_bin_transform_rotate_action": "Rotate emitter",
   "workshop_bin_undeclarable_remove_property_hint": "No declaration removes a property from a game bin",
+  "workshop_bin_undo_failed_title": "Couldn't undo the edit",
   "workshop_bin_undrawn_label": "Not drawn by this viewer",
   "workshop_bin_unmapped_kind_label": "unmapped type",
   "workshop_bin_unreadable_title": "This bin could not be read",
@@ -1088,6 +1096,8 @@
   "workshop_command_new_project_action": "New project",
   "workshop_command_settings_group_label": "Settings",
   "workshop_command_settings_open_action": "Open settings",
+  "workshop_content_read_failed_description": "Couldn’t read the content directory: {reason}",
+  "workshop_content_scanning_label": "Scanning project…",
   "workshop_controls_from_fantome_action": "From Fantome…",
   "workshop_controls_from_git_action": "From a Git repository…",
   "workshop_controls_from_modpkg_action": "From Modpkg…",
@@ -1096,28 +1106,108 @@
   "workshop_controls_list_view_label": "List view",
   "workshop_controls_more_label": "More ways to start a project",
   "workshop_controls_new_project_label": "New project",
-  "workshop_declarations_clone_label": "clone of {source}",
-  "workshop_declarations_construct_label": "new {class}",
+  "workshop_declarations_clone_tag": "copy of",
+  "workshop_declarations_construct_tag": "new",
+  "workshop_declarations_copy_action": "Copy {what}",
   "workshop_declarations_empty_description": "This layer has no game_data manifest.",
+  "workshop_declarations_empty_module_hint": "Empty. Drag entries here, or write new edits here",
   "workshop_declarations_empty_title": "No manifest",
   "workshop_declarations_entries_label": "entries",
   "workshop_declarations_go_to_action": "Go to row",
+  "workshop_declarations_go_to_created_hint": "The game holds no copy of an object this module creates",
   "workshop_declarations_go_to_missing_description": "No game bin declares {entry}, or the object index is not built.",
   "workshop_declarations_go_to_missing_title": "Object not found",
+  "workshop_declarations_keys_label": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} key",
+        "countPlural=other": "{count} keys"
+      }
+    }
+  ],
+  "workshop_declarations_link_tag": "dependency",
+  "workshop_declarations_links_label": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} link",
+        "countPlural=other": "{count} links"
+      }
+    }
+  ],
   "workshop_declarations_load_error_label": "Does not load",
   "workshop_declarations_module_title": "Module {number}",
-  "workshop_declarations_no_modules_description": "The manifest lists no modules.",
-  "workshop_declarations_no_modules_title": "Nothing declared",
+  "workshop_declarations_modules_label": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} module",
+        "countPlural=other": "{count} modules"
+      }
+    }
+  ],
+  "workshop_declarations_more_action": "More actions",
+  "workshop_declarations_move_down_action": "Move down",
+  "workshop_declarations_move_up_action": "Move up",
+  "workshop_declarations_new_module_action": "New module",
+  "workshop_declarations_new_module_ellipsis_action": "New module…",
+  "workshop_declarations_objects_label": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} object",
+        "countPlural=other": "{count} objects"
+      }
+    }
+  ],
+  "workshop_declarations_open_action": "Open",
   "workshop_declarations_outline_action": "Outline",
   "workshop_declarations_outline_label": "Declarations outline",
+  "workshop_declarations_override_tag": "override",
+  "workshop_declarations_overrides_label": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} override",
+        "countPlural=other": "{count} overrides"
+      }
+    }
+  ],
   "workshop_declarations_raw_action": "Raw",
   "workshop_declarations_raw_label": "Manifest text",
   "workshop_declarations_remove_label": "removed",
+  "workshop_declarations_remove_module_action": "Remove module",
+  "workshop_declarations_remove_module_description": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Its {count} key and the comment lines above it leave the manifest. There is no undo.",
+        "countPlural=other": "Its {count} keys and the comment lines above it leave the manifest. There is no undo."
+      }
+    }
+  ],
+  "workshop_declarations_remove_module_heading": "Remove {module}?",
+  "workshop_declarations_remove_module_title": "Remove module",
+  "workshop_declarations_rename_action": "Rename",
+  "workshop_declarations_show_in_text_action": "Show in text",
   "workshop_declarations_source_label": "from {file}",
+  "workshop_declarations_stop_writing_here_action": "Stop writing new edits here",
+  "workshop_declarations_times_label": "{count} ×",
   "workshop_declarations_title": "Game data",
+  "workshop_declarations_value_label": "value",
   "workshop_declarations_view_empty_description": "Edits to game bins, from each layer's game_data manifest",
   "workshop_declarations_view_empty_title": "No declarations",
   "workshop_declarations_view_label": "View",
+  "workshop_declarations_write_here_action": "Write new edits here",
+  "workshop_declarations_writes_here_hint": "Edits made in a game bin of this layer join this module",
+  "workshop_declarations_writes_here_label": "New edits",
   "workshop_delete_action": "Delete Project",
   "workshop_delete_description": "This will permanently delete the project folder and all its contents. This action cannot be undone.",
   "workshop_delete_heading": "Are you sure you want to delete “{name}”?",
@@ -1143,6 +1233,8 @@
   "workshop_explorer_clear_box_action": "Clear the box",
   "workshop_explorer_clear_filters_action": "Clear",
   "workshop_explorer_collapse_action": "Collapse this folder",
+  "workshop_explorer_collapse_all_action": "Collapse all folders",
+  "workshop_explorer_collapse_all_label": "Collapse all",
   "workshop_explorer_column_resize_action": "Resize this column",
   "workshop_explorer_completions_label": "Directories under this path",
   "workshop_explorer_empty_description": "This folder holds no rows.",
@@ -1216,6 +1308,17 @@
   "workshop_explorer_view_label": "How the rows draw",
   "workshop_explorer_view_options_label": "Sort and view",
   "workshop_explorer_view_tree_label": "Tree",
+  "workshop_files_add_wad_action": "Add WAD",
+  "workshop_files_add_wad_file_action": "Add WAD file…",
+  "workshop_files_add_wad_folder_action": "Add WAD folder…",
+  "workshop_files_empty_description": "Extract game files from an existing mod or the game client, then drop them into this folder.",
+  "workshop_files_empty_title": "No files yet",
+  "workshop_files_gone_description": "Its folder is no longer in the project",
+  "workshop_files_gone_title": "Layer is gone",
+  "workshop_files_open_folder_action": "Open folder for layer {layer}",
+  "workshop_files_open_folder_label": "Open folder",
+  "workshop_files_refresh_action": "Refresh content listing",
+  "workshop_files_refresh_label": "Refresh",
   "workshop_files_reveal_action": "Reveal in Files",
   "workshop_filter_champion_empty": "No champions found",
   "workshop_filter_champion_search_placeholder": "Search champions",
@@ -1557,7 +1660,10 @@
   "workshop_objects_open_action": "Open",
   "workshop_objects_open_beside_action": "Open beside",
   "workshop_objects_overrides_label": "overrides",
+  "workshop_objects_preview_close_action": "Close large preview",
   "workshop_objects_preview_empty_label": "Nothing to preview",
+  "workshop_objects_preview_expand_action": "Large preview",
+  "workshop_objects_preview_expand_hint": "Large preview (Space)",
   "workshop_objects_preview_failed_label": "Preview unavailable",
   "workshop_objects_preview_retry_action": [
     {

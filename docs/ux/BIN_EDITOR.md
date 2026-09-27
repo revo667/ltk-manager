@@ -4,6 +4,7 @@
 
 | Date       | Change                                                          |
 | ---------- | --------------------------------------------------------------- |
+| 2026-09-26 | Walk the rows by key, and keep a refused edit's text            |
 | 2026-09-24 | Pick an emitter's primitive, and sketch what it draws           |
 | 2026-09-24 | Edit a bin's dependencies as rows pinned over its objects       |
 | 2026-09-21 | Copy a whole object or struct as a declaration                  |
@@ -13,7 +14,6 @@
 | 2026-09-21 | Declare a game bin's leaf edit into a project layer             |
 | 2026-09-20 | Open a map's files on the map, and sort a file's objects        |
 | 2026-09-17 | Draw a patch bin's records under the objects they target        |
-| 2026-09-14 | Address a map entry whose key repeats as `{k}#n`                |
 
 Each edit of this document adds a row at the top. The table keeps the last ten rows.
 
@@ -73,12 +73,13 @@ This table holds every major feature of the bin editor. A status word has one me
 | Inspector bands       | Planned     | A rich value on its own band, the roll rail, and no group tabs   |
 | Primitive picker      | Available   | The primitive's class, its fields, and a sketch of what it draws |
 | In-document search    | Available   | The bar's `@` scope over the open rows                           |
-| Leaf editing          | In progress | The primitive widgets, and the patch that carries an edit        |
-| Path field            | In progress | Project and game files suggested in a `file` or path string edit |
-| Property editing      | In progress | Add and remove a property inline, at the schema's default        |
-| Container editing     | In progress | List items, map entries, options and pointers, inline            |
-| Autosave              | In progress | The strings editor's debounce, saved as a delta. ADR-0040        |
-| Undo                  | In progress | An inverse-patch stack per held tree                             |
+| Leaf editing          | Available   | The primitive widgets, and the patch that carries an edit        |
+| Path field            | Available   | Project and game files suggested in a `file` or path string edit |
+| Property editing      | Available   | Add and remove a property inline, at the schema's default        |
+| Container editing     | Available   | List items, map entries, options and pointers, inline            |
+| Row keys              | Available   | Arrows walk the rows, and `Enter` or `F2` opens a value          |
+| Autosave              | Available   | The strings editor's debounce, saved as a delta. ADR-0040        |
+| Undo                  | Available   | An inverse-patch stack per open tree, from anywhere in the group |
 | Schema-aware editing  | Proposed    | The meta dump, for a field's declared type and its subclasses    |
 | Copy into a layer     | Proposed    | The route from a read-only game chunk to an editable copy        |
 | Ritobin text view     | Proposed    | A read-only text pane, once `ltk_ritobin` publishes              |
@@ -877,12 +878,14 @@ other kind carries its kind badge.
 A `string` is text to the format and a name to the game, which resolves a path held in one by
 name while it runs. Two shapes of string resolve here, and a miss on both draws text.
 
-| The string                                       | Resolves through                       | Draws                              |
-| ------------------------------------------------ | -------------------------------------- | ---------------------------------- |
-| `ASSETS/` or `DATA/`, any case, and an extension | The WAD path resolver, the layer first | The chip and swatch a `file` draws |
-| Any, hashed as an object path                    | The index, in the row group's check    | The chip an `ObjectLink` draws     |
+| The string                                 | Resolves through                       | Draws                              |
+| ------------------------------------------ | -------------------------------------- | ---------------------------------- |
+| A folder and a file name with an extension | The WAD path resolver, the layer first | The chip and swatch a `file` draws |
+| Any, hashed as an object path              | The index, in the row group's check    | The chip an `ObjectLink` draws     |
 
-A string that answers on both sides takes the chunk. So an emitter's `texture`, a skin's
+A path counts under any root, because a mod's own chunks sit under roots of its choosing, such as
+`mod/83f7e874bb9f/`. Outside `ASSETS/` and `DATA/` a path holds no whitespace, so that prose with a
+slash in it stays text. A string that answers on both sides takes the chunk. So an emitter's `texture`, a skin's
 `simpleSkin` and `skeleton`, a clip's `mAnimationFilePath` and a system's `particlePath` are
 chips in every bin, in the tree and in every layout.
 
@@ -1220,7 +1223,7 @@ itself, because its rows are the tree's.
 
 A cell's context menu is [the row menu](#the-row-menu), plus Show in properties, which switches
 the mode and reveals the row in the tree, expanding the ancestors of a nested key. A layout has
-no keyboard model of its own until editing gives it one, and its read-only fields take no focus,
+no keyboard model beyond its fields, and its read-only fields take no focus,
 per [The value kinds](#the-value-kinds).
 
 ### A value family in a layout
@@ -1586,9 +1589,9 @@ draws the run per [the viewer](#the-viewer), and the timeline draws its emitters
 [the timeline](#the-timeline).
 
 Below the width the panes need, the same layout draws as the stack, and nothing is out of reach on
-a narrow window or with both sidebars open. The stack keeps the preview above the sections, the
-skin's character and the particle system's run alike, and a particle system's preview carries the
-mini transport there.
+a narrow window or with both sidebars open. The stack keeps the preview above the sections and out
+of their scroll, the skin's character and the particle system's run alike, so the preview stays in
+view while the sections scroll. A particle system's preview carries the mini transport there.
 
 The strip and the lanes mark the squares' colours, and the inspector marks the rows it draws. No
 other value family is marked. An emitter carries far more of them than any surface draws at once.
@@ -1604,7 +1607,7 @@ judged against, and the stack showed only the rows.
 | StaticMaterialDef  Characters/Ahri/Skins/Skin0/Materials/Body   [Material|...]   |
 +------------------------------------------------------+---------------------------+
 | PREVIEW   [Sphere v][Turntable][Ground] [Cam v][Fit] | INSPECTOR                 |
-| Only the first pass draws                            | v IDENTITY                |
+| The shader defs were not opened                      | v IDENTITY                |
 |                                                      | v SAMPLERS                |
 |                    (the shape)                       | v PARAMS                  |
 |                                                      | v SWITCHES                |
@@ -1620,11 +1623,11 @@ the preview's corner, Draw on a shape, swaps in the shape. The toggle is a displ
 material no skin of its file links draws on the shape, with no toggle.
 
 **The Objects grid draws a material as a thumbnail of its shape.** A sphere under the material's
-first translated pass, captured once its textures land, and drawing live while the pointer holds
+translated passes, captured once their textures land, and drawing live while the pointer holds
 the tile, as a particle system's does. A material with no pass that translated keeps the class
 glyph and the failure mark.
 
-**A shape draws the first pass that translated.** A sphere by default, or a cube, a plane or a
+**A shape draws every pass that translated, in order.** A sphere by default, or a cube, a plane or a
 cylinder. The shape, the turntable and the ground are display preferences, so every material
 opens on the ones a reader last picked. A skinned material draws
 on a shape bound to one bone, since its shader takes the world transform from the bones. A
@@ -1634,8 +1637,7 @@ it failed.
 
 **The preview's corner says why it draws what it does.** A pass whose shader did not build, with
 the reason, and the warnings about the material as a whole: no shader defs, no pass, a pass shader
-that resolves to nothing, a second pass that does not draw, and an animated material whose preview
-holds its static values. A material that draws as written shows nothing there. The shader ids and
+that resolves to nothing, and an animated material whose preview holds its static values. A material that draws as written shows nothing there. The shader ids and
 the define list stay out of the view, since no reader edits them.
 
 The preview reads the open document, so an edit reaches it once it lands, before the file is
@@ -1745,10 +1747,9 @@ The timeline is the particle shell's fifth pane, per ADR-0037. It reads the run 
 above the panes, and it draws one lane per emitter under one playhead.
 
 ```
-TIMELINE  [Filter  ]  < > >  0.42 / 1.60 s  [--|--] 1x [Loop]  Chance [==|--] 0.55
-
-                             0     .25   .5    .75   1.0   1.25
-                             |-----|-----[=====]-----|-----|
+TIMELINE  EMITTERS | |< (>) >| @  0.42 / 1.60 s | (L) 1.000x      (H) | Chance [==|--] 0.55
+ (o) [Filter    ] S | 0     .25   .5    .75   1.0   1.25
+                    | |-----|-----[=====]-----|-----|
   [#] Orb         [0] (o) S  [#####]~~~~////              312
   [/] Sparkles    [1] (o) S     [##]~~~~~~////             48
   [@] Smoke       [2] (-) S  [############################>  844
@@ -1757,15 +1758,26 @@ v [*] Burst       [3] (o) S        [###]~~~               120
   [ ] Glow SIMPLE [0] (o) S     [#]~~                      12
 
 [###] emitting   ~~~ particle life   //// linger   [===] loop range   > endless
+(>) play, filled   @ restart   (L) loop   (H) histogram   | a hairline between groups
 ```
 
-**The transport row.** Step back, play and step forward, the playhead over the run's span as
-`0.42 / 1.60 s`, the speed, the loop switch, the Histogram switch and the chance pin of
-[the random spread](#the-random-spread). The speed is a number typed to three places, `1.000`
-by default, between 0.05 and 2, with a pair of arrows on its right that nudge it by 0.1, by 0.01
-under Alt and by 0.5 under Shift. The bracket keys walk it through 0.05, 0.1, 0.25, 0.5, 1, 1.5
-and 2. The name filter at the row's left narrows the lanes, as the strip's filter
-narrows the cards. The seed and the rig are the viewport's, per [the viewer](#the-viewer).
+**The transport row.** The transport sits in the timeline pane's strip, after its tabs, so the
+lanes keep the row a separate transport row would take. Step back, play, step forward and restart
+come first, with play the one filled control. The time follows as `0.42 / 1.60 s`, the current time bright and the span muted. A
+hairline then sets off how the run plays: the Loop toggle and the speed. The view switches
+sit at the far end behind a second hairline: the Histogram toggle and the chance pin of
+[the random spread](#the-random-spread). Loop and Histogram are icon toggles lit while on, and
+their tooltips name them, with Loop's naming its key. Restart plays the run from zero.
+
+**Loop is on by default.** The Loop switch is the rig's loop, the same switch the rig's popover
+shows, and a system opens with it on. With Loop off, the run pauses at the end of its span, and
+Play starts it again from zero. Turning Loop on at the end plays the run from zero, and turning it
+off during a later pass keeps the time the playhead reads.
+
+The speed is a number typed to three places, `1.000` by default, between 0.05 and 2, with a pair
+of arrows on its right that nudge it by 0.1, by 0.01 under Alt and by 0.5 under Shift. The bracket keys walk it through 0.05, 0.1, 0.25, 0.5, 1, 1.5
+and 2. The name filter sits in the ruler row's head cell, between the eye and the S, over the
+names it narrows, as the strip's filter narrows the cards. The seed and the rig are the viewport's, per [the viewer](#the-viewer).
 
 **A lane is an emitter.** Its head carries its eye, a 20 px square of what the emitter draws, its
 name, its index in its own list, a SIMPLE tag for the second list, the struck eye of a `disabled`
@@ -1789,7 +1801,8 @@ the emitter whose particles carry them, collapsed, with their bars at the times 
 them.
 
 **A click does the one thing its target names.** The name selects the emitter, and the crumb, the
-inspector and the Emitters pane follow. The ruler and a lane's track seek. A child lane selects its
+inspector and the Emitters pane follow. The ruler and a lane's track seek, and a drag along either
+scrubs. A child lane selects its
 emitter into the inspector, under a banner naming the child system and an Open system link to its
 own tab, and opens the card of the emitter carrying it. Dragging a bar's edge to write
 `timeBeforeFirstEmission` and `lifetime` belongs to [leaf editing](#editing).
@@ -1813,12 +1826,15 @@ solo.
 
 **The ruler zooms and loops.** The timeline opens fitted to the run's span. Ctrl and the wheel zoom
 about the pointer, Shift and the wheel pan, and a double click on the ruler refits. A drag along
-the ruler sets an in and an out, and the run loops between them. A drag on an edge of the band
-moves that edge, and a drag on the band moves the whole range. A double click inside the band,
-or its x, clears it. A run with no range loops as its rig says.
+the ruler scrubs, and the playhead follows the pointer from the press. Shift and a drag along the
+ruler sets an in and an out, and the run loops between them. A drag on an edge of the band moves
+that edge, and a drag on the band moves the whole range. A double click inside the band, or its
+x, clears it. A run with no range loops as the Loop switch says. While Shift is down the ruler's
+cursor is a crosshair, and resting the pointer on the ruler names its gestures.
+
 **The playhead is a flag.** Its chip on the ruler reads the time, and its line runs down every
 lane with a faint glow, so it reads over the bars and the histogram. A drag on the chip scrubs,
-which gives the ruler a scrub handle while a drag on the open ruler sets a loop. A dashed line
+as a drag on the open ruler does. A dashed line
 follows the pointer through the ruler and the lanes, its own chip reading the time a press would
 seek to, so no track needs a crosshair cursor.
 
@@ -1831,21 +1847,32 @@ when it emits, how long its particles live on, and where its linger ends.
 within a budget of bytes, and a seek replays from the nearest one, per decision 2.46. A drag moves the run with the pointer,
 a step back costs one frame, and a loop's wrap costs no replay from zero.
 
-**The keys** act anywhere in the shell outside an editable field.
+The clock pauses while a drag scrubs, on the ruler, the flag, a lane's track or the mini
+transport's scrub, and a playing run plays on from where the drag lets go. Play and pause do not
+change during a scrub.
 
-| Key                     | Does                              |
-| ----------------------- | --------------------------------- |
-| Space                   | Play or pause                     |
-| Left, Right             | One frame back or forward, 1/60 s |
-| Shift+Left, Shift+Right | 0.1 s back or forward             |
-| Home                    | Restart                           |
-| F                       | Fit the camera                    |
-| S, M                    | Solo or mute the selected emitter |
-| `[`, `]`                | The next speed detent down or up  |
-| Esc                     | Restore a maximized pane          |
+**The keys** act anywhere in the shell outside an editable field. The shell takes focus when its
+tab opens or comes to the front, unless a control other than the tab itself has focus, such as the
+Objects grid or the content tree. A focused slider keeps its arrows, Home and End, and every other key reaches the run,
+so Space plays or pauses after a drag on the scrub or the chance pin. A focused tab, menu item or
+option keeps Space.
 
-**The preview carries a mini transport while no timeline shows**: play, a scrub, the time and the
-chance pin, with the timeline closed or the preview maximized. A stack holds no timeline pane. Its preview carries
+| Key                     | Does                                               |
+| ----------------------- | -------------------------------------------------- |
+| Space                   | Play or pause                                      |
+| Left, Right             | One frame back or forward, 1/60 s                  |
+| Shift+Left, Shift+Right | 0.1 s back or forward                              |
+| Home                    | Restart and play                                   |
+| End                     | Pause at the end of the span                       |
+| L                       | Loop on or off                                     |
+| Alt+Up, Alt+Down        | The previous or next particle system of the folder |
+| F                       | Fit the camera                                     |
+| S, M                    | Solo or mute the selected emitter                  |
+| `[`, `]`                | The next speed detent down or up                   |
+| Esc                     | Restore a maximized pane                           |
+
+**The preview carries a mini transport while no timeline shows**: play, a scrub, the time, the
+Loop toggle and the chance pin, with the timeline closed or the preview maximized. A stack holds no timeline pane. Its preview carries
 the mini transport, and its Emitters section keeps the strip.
 
 ### The viewer
@@ -1886,6 +1913,17 @@ The box is read off the definition rather than the run, so the same system frame
 open, on F and at any moment of its play. A child set's emitters ride their parent's particles and
 add nothing to it. The skin's preview frames its mesh.
 
+**The next system opens in the last view.** A particle preview opens with the camera the last one
+left, under the same preset, so stepping through systems compares them at one angle and one
+distance. It frames the system instead where no preview was open before this session, and where
+the middle of the system's box is out of view. That opening frame is instant. Fit and F animate.
+The ground, the renderer and the particle textures carry over too, so the new system draws on a
+scene that is already up rather than on a blank pane.
+
+**A read that fails says why.** The notice over the scene names the error and offers Retry, which
+reads the system again. The run waits at its start while the system's first textures and meshes
+load, for at most four seconds, so a short effect plays from its first frame on screen.
+
 **The orbit.** The left button orbits, the right pans, the middle and the wheel dolly toward the
 pointer. A flat preset's wheel zooms in place of the dolly.
 
@@ -1896,7 +1934,8 @@ face stands the camera on its axis, picking Side, Top or Front. Picked again whi
 already stands there, it turns the camera to the axis's other end, on Orbit.
 
 **The rig pill** names its preset beside an icon of the motion. Its popover holds the motion, the
-loop, the stop, and the seed with its reroll.
+loop, the stop, and the seed with its reroll. A system opens on Burst, which moves nothing and
+loops, and the popover's loop is the timeline's Loop switch.
 
 **The gizmo** draws the selected emitter's origin, its offset and its spawn shape as a wireframe.
 **Stats** draws the live particles, the live child systems and the frame's milliseconds in the
@@ -1906,8 +1945,9 @@ a muted emitter's included.
 **What persists.** Ground, Midlane, Gizmo, Stats, the view mode and its overlay, the camera preset, the
 timeline's Histogram switch and the inspector's Defaults switch are display preferences, app-wide
 and persisted. The rig, the seed, the speed, mute and
-solo, the loop range and the playhead belong to the run, kept per system for the session, per
-ADR-0037.
+solo, the loop range, the pinned chance and the playhead belong to the run, kept per system for
+the session, per ADR-0037, so a file reopened finds them again. A run left at its end reopens at
+zero.
 
 **The skin's preview** takes the keys, the camera menu with Fit, the axis gizmo and the speed detents. Its clip
 plays on its own clock under its own transport, and it has no timeline.
@@ -2512,9 +2552,34 @@ A text or number field is controlled locally and commits on blur or on `Enter`, 
 tree nor the disk wants one.
 
 A value drawn as a chip - a string naming a file, a `hash`, a `link`, a `file` - keeps its chip,
-and the row's edit action opens a field over it holding the string, the name, or the hex. A
-name typed into a `hash` or a `link` is hashed in Rust. An integer an enum table reads edits
-through a select of the engine's words, and a flags value through its number.
+and the row's edit action opens a field over it with the string, the name, or the hex. The
+action shows on the hover of a tree row and of a layout cell, and the row menu offers it as
+**Edit value**. A name typed into a `hash` or a `link` is hashed in Rust, and the document keeps
+the name, so the row draws it again where no table names the hash. A typed field name, class
+name, map key, object name and chunk path draw the same way. A cleared `hash`, `link` or
+`file` writes the zero hash, which the game reads as no link. An integer an enum table reads
+edits through a select of the engine's words, and a flags value through its number.
+
+A field whose value is refused stays open with what was typed, marked with the reason, so
+the reader corrects the text rather than typing it again. `Escape` drops the text and the mark.
+
+### The row keys
+
+A tree row takes focus, and one row is the tree's tab stop.
+
+| Key                  | Does                                                             |
+| -------------------- | ---------------------------------------------------------------- |
+| `Up`, `Down`         | The row above or below                                           |
+| `Home`, `End`        | The first or the last row                                        |
+| `Right`              | Opens a shut row, or steps to its first child                    |
+| `Left`               | Shuts an open row, or steps to its parent                        |
+| `Enter`, `F2`        | Opens the row's value for an edit. `Enter` opens a row with none |
+| `Alt+Up`, `Alt+Down` | Moves a list item, per the section below                         |
+| `Ctrl+Enter`         | Inserts an item after the focused one                            |
+| `Shift+F10`          | The row menu                                                     |
+
+`Enter` and `Escape` in a field return focus to its row when nothing else takes it, so a run of
+edits is keyboard-complete.
 
 ### A path field
 
@@ -2553,7 +2618,8 @@ replaces the game's when the mod is enabled. Files excluded by the ignore rules 
 Chunks that no hashtable names are not listed, because they have no path.
 
 `Enter` picks the highlighted suggestion. While the draft is search terms, the top suggestion is
-highlighted. While the draft contains `/`, nothing is highlighted, so `Enter` writes the typed
+highlighted, and an `Enter` pressed before any suggestion answered picks the top one when the
+list answers, or writes the terms where it answers none. While the draft contains `/`, nothing is highlighted, so `Enter` writes the typed
 path. A string field that contains text other than a path highlights nothing, so `Enter` keeps its
 text. A click picks a suggestion. `Escape` discards the draft, as in any field.
 
@@ -2669,7 +2735,13 @@ clamps the same ranges so the common case never round-trips, and the backend is 
 because a guard that lives only in the frontend is a guard an IPC caller walks past.
 
 A rejected patch leaves the tree untouched and marks the field, and the save state goes to
-`blocked` for as long as a field is invalid, exactly as the strings editor does.
+`blocked` for as long as a field is invalid, exactly as the strings editor does. An edit that
+lands elsewhere meanwhile does not clear it. The mark goes when the field sends a value that
+lands, when `Escape` drops its text, or when its tab closes. An integer is checked against its
+kind's range before it is sent.
+
+A refused structural edit - an insert, a remove, a move, a pointer's class - has no field to
+mark, so a toast names the reason.
 
 ### Save
 
@@ -2683,7 +2755,12 @@ blocked                              while any field is invalid
 ```
 
 The tab's unsaved dot follows `blocked` and `failed` only. A document that autosaves is clean
-between keystrokes, and a dot that blinks on every edit means nothing.
+between keystrokes, and a dot that blinks on every edit means nothing. The dot is what makes a
+close or a quit ask before it drops edits that did not reach the file. `Ctrl+S` and a quit write
+a save still waiting on the debounce at once, and `Ctrl+S` on a failed save tries it again.
+
+A failed save names its reason on the hover of **Couldn't save**, and **Retry** writes through
+the tab's open document, whichever tab queued the save.
 
 **The write is a delta over the bytes the document opened.** ADR-0040. The document holds its
 file's bytes beside the tree, and the path hash of every object a patch touched. A save mounts
@@ -2709,13 +2786,16 @@ the document's unsaved edits.
 
 ### Undo
 
-An inverse-patch stack in Rust, bounded, one per held tree. `Ctrl+Z` and `Ctrl+Shift+Z` while a
-document over the tree is active. A file tab and the object tabs over one asset share a tree
+An inverse-patch stack in Rust, bounded, one per open tree. `Ctrl+Z`, and `Ctrl+Shift+Z` or
+`Ctrl+Y`, while a document over the tree is the active tab of the focused group, wherever focus
+is inside it, including nowhere after a field closes. A file tab and the object tabs over one asset share a tree
 (ADR-0028), and they share its stack. An undo never crosses into another asset's tree. An undo
 that crosses tabs undoes work a user is not looking at.
 
 An undo is a patch, and it saves like one. A text field holding an uncommitted change takes the
-keystroke as the field's own undo.
+keystroke as the field's text undo, and so does a text field that contains no document value, such as
+a filter. An undo answers how it moved the rows, so the rows a reader expanded follow it as they
+follow the edit, in every tree over the asset. An undo that fails names its reason in a toast.
 
 ### Dependencies
 

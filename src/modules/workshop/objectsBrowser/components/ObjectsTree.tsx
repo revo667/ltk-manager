@@ -9,6 +9,7 @@ import { useReadOnlyTreeNav, useStickyTreeRows } from "../../hooks";
 import type { OpenIntent } from "../../palette/utils/types";
 import { TreeStickyBand } from "../../shared/components/TreeStickyBand";
 import { keepScrollTop, keptScrollTop, type ObjectsReveal, useSelectObjectNode } from "../../state";
+import { useRestPreview } from "../hooks/useRestPreview";
 import {
   activation,
   expandable,
@@ -29,7 +30,10 @@ interface ObjectsTreeProps {
   nodes: readonly ObjectTreeNode[];
   ariaLabel: string;
   isExpanded: (node: ObjectTreeNode) => boolean;
-  onToggle: (node: ObjectTreeNode) => void;
+  /** A folder toggle. `subtree` asks for every level below as well. */
+  onToggle: (node: ObjectTreeNode, subtree?: boolean) => void;
+  /** Collapse every folder, for `Ctrl+Left`. */
+  onCollapseAll?: () => void;
   /** A click on an object row, or its Open menu item. */
   onOpen: (node: ObjectTreeNode, intent: OpenIntent) => void;
   /** Names this tree's scroll to the browser store. Absent starts at the top. */
@@ -40,12 +44,17 @@ interface ObjectsTreeProps {
   onRevealed?: (token: number) => void;
 }
 
-/** A read-only virtualized tree over the object nodes, browse and find alike. */
+/**
+ * A read-only virtualized tree over the object nodes, browse and find alike.
+ *
+ * A keyboard move that rests on a particle system opens its preview tab.
+ */
 export function ObjectsTree({
   nodes,
   ariaLabel,
   isExpanded,
   onToggle,
+  onCollapseAll,
   onOpen,
   scrollKey,
   reveal = null,
@@ -98,6 +107,7 @@ export function ObjectsTree({
     virtualizer.measure();
   }, [virtualizer, zoomed]);
 
+  const restPreview = useRestPreview(scrollRef);
   const { focusedIndex, setFocusedIndex, moveFocus, handleKeyDown } = useReadOnlyTreeNav({
     rows,
     isExpanded,
@@ -107,6 +117,8 @@ export function ObjectsTree({
     activation: (node) => activation(node, "row"),
     virtualizer,
     scrollElementRef: scrollRef,
+    onKeyMove: restPreview,
+    onCollapseAll,
   });
   const select = (index: number) => {
     setFocusedIndex(index);

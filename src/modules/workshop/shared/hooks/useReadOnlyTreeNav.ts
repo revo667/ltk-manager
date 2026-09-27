@@ -2,6 +2,7 @@ import type { Virtualizer } from "@tanstack/react-virtual";
 import { type KeyboardEvent, type RefObject, useCallback, useEffect, useState } from "react";
 
 import type { OpenIntent } from "../../palette/utils/types";
+import { isCollapseAllKey } from "../utils/treeGestures";
 
 /** What a row's node answers a key with: the tab it opens, or the branch it folds. */
 export type NodeActivation = "open" | "toggle" | "none";
@@ -24,6 +25,10 @@ interface UseReadOnlyTreeNavParams<Node, Row extends DepthRow<Node>> {
   activation: (node: Node) => NodeActivation;
   virtualizer: Virtualizer<HTMLDivElement, Element>;
   scrollElementRef: RefObject<HTMLDivElement | null>;
+  /** Called with the row a key moved focus to. A tree without it only moves focus. */
+  onKeyMove?: (node: Node) => void;
+  /** Shut every folder, for `Ctrl+Left`. */
+  onCollapseAll?: () => void;
 }
 
 interface UseReadOnlyTreeNavReturn {
@@ -50,6 +55,8 @@ export function useReadOnlyTreeNav<Node, Row extends DepthRow<Node>>({
   activation,
   virtualizer,
   scrollElementRef,
+  onKeyMove,
+  onCollapseAll,
 }: UseReadOnlyTreeNavParams<Node, Row>): UseReadOnlyTreeNavReturn {
   const [focusedIndex, setFocusedIndex] = useState(0);
 
@@ -76,9 +83,22 @@ export function useReadOnlyTreeNav<Node, Row extends DepthRow<Node>>({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
+      if (onCollapseAll && isCollapseAllKey(e)) {
+        e.preventDefault();
+        onCollapseAll();
+        moveFocus(0);
+        return;
+      }
+
       const row = rows[focusedIndex];
       if (!row) return;
       const node = row.node;
+
+      const keyMove = (index: number) => {
+        moveFocus(index);
+        const target = rows[Math.max(0, Math.min(index, rows.length - 1))];
+        if (target) onKeyMove?.(target.node);
+      };
 
       switch (e.key) {
         case "Enter": {
@@ -94,25 +114,25 @@ export function useReadOnlyTreeNav<Node, Row extends DepthRow<Node>>({
         }
         case "ArrowDown":
           e.preventDefault();
-          moveFocus(focusedIndex + 1);
+          keyMove(focusedIndex + 1);
           return;
         case "ArrowUp":
           e.preventDefault();
-          moveFocus(focusedIndex - 1);
+          keyMove(focusedIndex - 1);
           return;
         case "Home":
           e.preventDefault();
-          moveFocus(0);
+          keyMove(0);
           return;
         case "End":
           e.preventDefault();
-          moveFocus(rows.length - 1);
+          keyMove(rows.length - 1);
           return;
         case "ArrowRight":
           if (expandable(node)) {
             e.preventDefault();
             if (!isExpanded(node)) onToggle(node);
-            else moveFocus(focusedIndex + 1);
+            else keyMove(focusedIndex + 1);
           }
           return;
         case "ArrowLeft":
@@ -123,7 +143,7 @@ export function useReadOnlyTreeNav<Node, Row extends DepthRow<Node>>({
             e.preventDefault();
             for (let at = focusedIndex - 1; at >= 0; at -= 1) {
               if (rows[at]!.depth < row.depth) {
-                moveFocus(at);
+                keyMove(at);
                 break;
               }
             }
@@ -131,7 +151,18 @@ export function useReadOnlyTreeNav<Node, Row extends DepthRow<Node>>({
           return;
       }
     },
-    [rows, focusedIndex, isExpanded, onToggle, onOpen, expandable, activation, moveFocus],
+    [
+      rows,
+      focusedIndex,
+      isExpanded,
+      onToggle,
+      onOpen,
+      expandable,
+      activation,
+      moveFocus,
+      onKeyMove,
+      onCollapseAll,
+    ],
   );
 
   return { focusedIndex, setFocusedIndex, moveFocus, handleKeyDown };

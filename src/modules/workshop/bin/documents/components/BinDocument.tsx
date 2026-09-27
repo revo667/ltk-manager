@@ -16,6 +16,7 @@ import { objectDocument } from "../../../documents/utils/contentDocument";
 import type { OpenIntent } from "../../../palette/utils/types";
 /* The leaf rather than the preview barrel, which pulls the document that routes here. */
 import { BinPreview } from "../../../preview/components/BinPreview";
+import { CollapseAllButton } from "../../../shared/components/CollapseAllButton";
 import {
   useAimCurve,
   useLendOpenBin,
@@ -36,8 +37,8 @@ import { BinTree, type TreeReveal } from "../../tree/components/BinTree";
 import { NewObjectContext, useNewObjectDraft } from "../../tree/state/newObject";
 import { objectKey, rowKey, sortedRoots, targetKey } from "../../tree/utils/binRows";
 import { useBinDocument, useFileDependencies, useFileRoots } from "../hooks/useBinDocument";
+import { useBinTab } from "../hooks/useBinTab";
 import { useDeclaredState } from "../hooks/useDeclared";
-import { useUndoKeys } from "../hooks/useUndoKeys";
 import { BinEditState } from "./BinEditState";
 import { DeclarationsOffNotice } from "./DeclarationsOffNotice";
 
@@ -120,11 +121,12 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
   const dependencies = useFileDependencies(handle);
   const prop = handle.header.kind === "prop";
   const [dependenciesReveal, setDependenciesReveal] = useState(0);
+  const [collapseAllSignal, setCollapseAllSignal] = useState(0);
   const declaredState = useDeclaredState(handle.document);
   const removedLinks = declaredState?.links.filter((link) => link.change === "removed").length ?? 0;
 
   const narrow = useNarrowToolbar();
-  const undoKeys = useUndoKeys(handle.document, asset, handle.readOnly === null);
+  useBinTab(documentId, handle.document, asset, handle.readOnly === null);
   /* Only a declared document that takes edits creates an object. ADR-0049. */
   const newObject = useNewObjectDraft();
   const declares = declaredState !== null && handle.readOnly === null;
@@ -182,13 +184,7 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
   );
 
   return (
-    <div
-      data-ui="BinDocument"
-      /* Focusable, so a click anywhere in the tab is where its undo keys land. */
-      tabIndex={-1}
-      className="flex min-h-0 flex-1 flex-col bg-surface-950 outline-none"
-      onKeyDown={undoKeys}
-    >
+    <div data-ui="BinDocument" className="flex min-h-0 flex-1 flex-col bg-surface-950">
       <NewObjectContext value={declares ? newObject : null}>
         <DocumentToolbar active={active}>
           <BinFacts
@@ -198,6 +194,7 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
             narrow={narrow}
             onDependencies={() => setDependenciesReveal((count) => count + 1)}
           />
+          <CollapseAllButton onCollapse={() => setCollapseAllSignal((count) => count + 1)} />
           <BinEditState
             document={handle.document}
             asset={asset}
@@ -226,6 +223,7 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
             editable={handle.readOnly === null}
             dependencies={prop ? dependencies : null}
             dependenciesReveal={dependenciesReveal}
+            collapseAllSignal={collapseAllSignal}
           />
         </CurveDockContext>
       </NewObjectContext>

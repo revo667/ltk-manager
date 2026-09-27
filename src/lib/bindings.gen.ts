@@ -95,16 +95,17 @@ export const commands = {
 	 */
 	binEdit: (document: BinDocumentId, edit: BinEdit) => __TAURI_INVOKE<({ ok: true; value: EditOutcome }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("bin_edit", { document, edit }),
 	/**
-	 *  Revert the latest edit of an open document's tree, answering whether one was held.
+	 *  Revert the latest edit of an open document's tree, answering how its rows moved, or null
+	 *  where the undo stack is empty.
 	 * 
 	 *  The file tab and the object tabs over one asset share the tree and its stack.
 	 */
-	binUndo: (document: BinDocumentId) => __TAURI_INVOKE<({ ok: true; value: boolean }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("bin_undo", { document }),
+	binUndo: (document: BinDocumentId) => __TAURI_INVOKE<({ ok: true; value: Reshape | null }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("bin_undo", { document }),
 	/**
-	 *  Apply the latest undone edit of an open document's tree again, answering whether one
-	 *  was held.
+	 *  Apply the latest undone edit of an open document's tree again, answering how its rows
+	 *  moved, or null where the redo stack is empty.
 	 */
-	binRedo: (document: BinDocumentId) => __TAURI_INVOKE<({ ok: true; value: boolean }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("bin_redo", { document }),
+	binRedo: (document: BinDocumentId) => __TAURI_INVOKE<({ ok: true; value: Reshape | null }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("bin_redo", { document }),
 	/**
 	 *  What the document says beside its rows: the layer it declares into, the project's
 	 *  layers, and the rows a declaration of that layer touches. `None` for a document that
@@ -262,6 +263,17 @@ export const commands = {
 	 *  Fails when no document is open under `document`.
 	 */
 	readDefaultSkinnedProgram: (document: BinDocumentId, options: ProgramOptions) => __TAURI_INVOKE<({ ok: true; value: PassProgram }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("read_default_skinned_program", { document, options }),
+	/**
+	 *  An engine particle shader's pass for the defines an emitter sets, translated.
+	 * 
+	 *  The shader cache is the one `document` resolves against, and the install's alone where
+	 *  it is none. Translations are cached as [`read_material_programs`] caches them.
+	 * 
+	 *  # Errors
+	 * 
+	 *  Fails when the names or the project chunks the resolution reads are unavailable.
+	 */
+	readParticleProgram: (document: number | null, shader: ParticleShader, defines: ParticleDefine[], options: ProgramOptions) => __TAURI_INVOKE<({ ok: true; value: PassProgram }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("read_particle_program", { document, shader, defines, options }),
 	/**
 	 *  Tangents saved into the viewed skin's project-layer mesh.
 	 * 
@@ -1192,6 +1204,8 @@ export type DeclaredDiagnosticKind = "overrideUnreadable" | "overrideInvalid" | 
 export type DeclaredEntry = {
 	/**  The entry name as spelled. */
 	name: string,
+	/**  The path the hashtables give a name spelled as a hash, `None` for any other name. */
+	knownName: string | null,
 	/**  The object's path hash, `0x` and eight hex digits. */
 	hash: string,
 	/**  The edit of a `target` module the entry sits in, zero-based. */
@@ -1201,6 +1215,8 @@ export type DeclaredEntry = {
 	/**  The line naming the entry. */
 	span: LineSpan | null,
 	keys: DeclaredKey[],
+	/**  The dependencies an `entries` module adds to and removes from each declaring chunk. */
+	links: DeclaredLinks,
 };
 
 /**  One signed property key of an entry body. */
@@ -1238,6 +1254,14 @@ export type DeclaredLinkMark = {
 	change: LinkChange,
 };
 
+/**  The dependencies a body adds to and removes from a chunk's link list. ADR-0050. */
+export type DeclaredLinks = {
+	/**  The `links` items, in order. */
+	add: string[],
+	/**  The `-links` items, in order. */
+	remove: string[],
+};
+
 /**  One row a declaration of the chosen layer touches. */
 export type DeclaredMark = {
 	/**  The object's path hash, `0x` and eight hex digits. */
@@ -1267,6 +1291,8 @@ export type DeclaredModule = {
 	index: number,
 	/**  The module's own name, where the manifest spells one. */
 	name: string | null,
+	/**  The comment lines directly above the module, without their `#`. */
+	note: string | null,
 	selector: ModuleSelector,
 	/**  The chunk a `target` module edits, as spelled. */
 	target: string | null,
@@ -1279,6 +1305,8 @@ export type DeclaredModule = {
 	source: string | null,
 	/**  The override files the module names, layer-relative. */
 	overrides: string[],
+	/**  The dependencies a `target` module adds to and removes from its chunk, over every edit. */
+	links: DeclaredLinks,
 	/**  The module's first line. */
 	span: LineSpan | null,
 	entries: DeclaredEntry[],
@@ -1312,10 +1340,10 @@ export type DeclaredObject = {
 
 /**  What an `objects` binding does to one object. */
 export type DeclaredObjectEdit = 
-/**  A copy of the entry `source`. */
-{ kind: "clone"; source: string } | 
-/**  A new object of `class`. */
-{ kind: "construct"; class: string } | 
+/**  A copy of the entry `source`, with the path the hashtables give a hash-spelled one. */
+{ kind: "clone"; source: string; knownSource: string | null } | 
+/**  A new object of `class`, with the name the hashtables give a hash-spelled one. */
+{ kind: "construct"; class: string; knownClass: string | null } | 
 /**  The object's removal. */
 { kind: "remove" };
 
@@ -1436,7 +1464,7 @@ export type DecodedIncident = {
 export type Define = {
 	name: string,
 	value: string,
-	/**  The last of the four stages that set it. */
+	/**  The last stage that set it. */
 	source: DefineSource,
 };
 
@@ -1452,7 +1480,9 @@ export type DefineSource =
 /**  A compile-time static switch, `1` on and `0` off. */
 "switch" | 
 /**  `StaticMaterialPassDef.shaderMacros`. */
-"pass";
+"pass" | 
+/**  Set by the engine for the emitter that draws an engine particle shader. */
+"emitter";
 
 /**  One dependency a `PROP` names, as its path and its brex spelling. */
 export type Dependency = {
@@ -2622,10 +2652,15 @@ export type MaterialSource =
 /**  An open document, such as a skin's bin. */
 { kind: "document"; document: BinDocumentId } | 
 /**
- *  A bin read for the call, such as a map's `.materials.bin`, resolved against the
+ *  A bin read for the call, such as a file a skin links, resolved against the
  *  project of `document` where one is open and against the install alone otherwise.
  */
-{ kind: "file"; asset: AssetRef; document: BinDocumentId | null };
+{ kind: "file"; asset: AssetRef; document: BinDocumentId | null } | 
+/**
+ *  A map's `.materials.bin`, located as `read_map` locates it: in the project of
+ *  `document` first, where one is open, and in the install second.
+ */
+{ kind: "map"; map: MapPath; document: BinDocumentId | null };
 
 /**  Something the engine does silently that a preview says out loud. */
 export type MaterialWarning = 
@@ -2703,9 +2738,11 @@ export type MissileSpec = {
 
 /**
  *  One module action on a layer's manifest, each module named by its index in `modules`.
- *  ADR-0048.
+ *  ADR-0048, ADR-0054.
  */
 export type ModuleAction = 
+/**  Add a module holding `name`, or none, and no entry at the end of `modules`. */
+{ kind: "create"; name: string | null } | 
 /**  Give the module a name, or take its name away with `None`. */
 { kind: "rename"; module: number; name: string | null } | 
 /**  Remove the module and every key it declares. */
@@ -3058,6 +3095,66 @@ export type ParamSource =
 /**  `StaticMaterialPassDef.paramValues`. */
 "pass";
 
+/**
+ *  A define the engine sets on a particle shader from the emitter's fields, as `NAME=1`.
+ * 
+ *  `DISABLE_FOW` is the studio's, and `MASKED` and `COLORPALETTE_COLORBLIND` are never set
+ *  in a preview, so none of the three is here.
+ */
+export type ParticleDefine = 
+/**  `alphaRef` is not zero. */
+"ALPHA_TEST" | 
+/**  An erosion definition is present. */
+"ALPHA_EROSION" | 
+/**  The mult layer is present. */
+"MULT_PASS" | 
+/**  A mesh under `uvMode` 2, `LOCK_ALPHA`. */
+"SEPARATE_ALPHA_UV" | 
+/**  A mesh under `uvMode` 1, `SCREEN_SPACE`. */
+"SCREEN_SPACE_UV" | 
+/**  A mesh under `uvMode` 3, 4 or 5, the local-space modes. */
+"LOCAL_SPACE_UV" | 
+/**  A palette definition is present. */
+"PALETTIZE_TEXTURES" | 
+/**  A soft particle definition is present. */
+"SOFT_PARTICLES" | 
+/**  A reflection definition is present. */
+"REFLECTIVE" | 
+/**  A mesh reads its vertex colours. */
+"USE_VERTEX_COLORS";
+
+/**
+ *  An engine particle shader pair, which the mesh an emitter resolves and its uv mode pick.
+ * 
+ *  The `particle_shaders` example finds each file in an installed shader cache.
+ */
+export type ParticleShader = 
+/**  `quad_vs` and `quad_ps`, for every emitter without a mesh. */
+"quad" | 
+/**  A quad under `uvMode` 2, `LOCK_ALPHA`. */
+"quadFixedAlphaUv" | 
+/**  A quad under `uvMode` 1, `SCREEN_SPACE`. */
+"quadScreenSpaceUv" | 
+/**  A quad with a `SLICE_RANGE`, `quad_vs` with `quad_ps_slice`. */
+"quadSlice" | 
+/**  `mesh_vs` and `mesh_ps`, for a mesh emitter and a `REFLECTIVE` quad. */
+"mesh" | 
+/**  A mesh with a `SLICE_RANGE`, `mesh_vs` with `mesh_ps_slice`. */
+"meshSlice" | 
+/**  `skinnedmesh/particle_vs` and `particle_ps`, for a mesh attached to a character. */
+"attachedMesh" | 
+/**  An attached mesh with a `SLICE_RANGE`, `particle_vs` with `particle_ps_slice`. */
+"attachedMeshSlice" | 
+/**  `distortion_vs` and `distortion_ps`, for a distorting emitter without a mesh. */
+"distortion" | 
+/**  `distortion_mesh_vs` and `distortion_mesh_ps`, for a distorting mesh emitter. */
+"distortionMesh" | 
+/**
+ *  `skinnedmesh/particle_distortion_vs` and `particle_distortion_ps`, for a distorting
+ *  attached mesh.
+ */
+"distortionAttachedMesh";
+
 /**  One `ShaderPhysicalParameter` after the material's and the pass's values wrote into it. */
 export type PassParam = {
 	/**  The physical name, which the `$Globals` member carries. */
@@ -3323,6 +3420,25 @@ export type RenderState = {
 	depthWrite: boolean,
 	depthTest: boolean,
 };
+
+/**
+ *  How an undo or a redo moved the rows of a tree, so a reader's expanded rows follow them.
+ * 
+ *  Paths are relative to the object `entry` names, `0x` and eight hex digits, as a row's are.
+ */
+export type Reshape = 
+/**  Values or properties changed and no row moved. */
+{ kind: "inPlace" } | 
+/**  An item went into the list, map or option at `holder`, at `index`. */
+{ kind: "inserted"; entry: string; holder: string; index: number } | 
+/**  The property or item at `path` went out. */
+{ kind: "removed"; entry: string; path: string } | 
+/**  The item at `path` moved to `to` in its list. */
+{ kind: "moved"; entry: string; path: string; to: number } | 
+/**  The map entry at `from` is now at `to`. */
+{ kind: "rekeyed"; entry: string; from: string; to: string } | 
+/**  The pointer at `path` is null, and every row under it is gone. */
+{ kind: "nulled"; entry: string; path: string };
 
 /**  One `StaticMaterialPassDef` with its shader's inputs filled in. */
 export type ResolvedPass = {

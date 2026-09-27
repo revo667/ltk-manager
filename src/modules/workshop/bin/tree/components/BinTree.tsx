@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   use,
   useCallback,
@@ -16,13 +17,17 @@ import { twMerge } from "@/utils";
 
 import type { OpenIntent } from "../../../palette/utils/types";
 import { stirImages } from "../../../preview/hooks/useImageSlot";
+import { assetKey } from "../../../preview/utils/assetRef";
+import { isCollapseAllKey } from "../../../shared/utils/treeGestures";
 import { rowTag } from "../../values/utils/kindTag";
 import type { TreeFocus } from "../hooks/useBinEdit";
 import { type TreeReveal, useReveal } from "../hooks/useReveal";
 import { useRowWindow } from "../hooks/useRowWindow";
+import { useTreeNavigation } from "../hooks/useTreeNavigation";
 import { useNextPages, useTreeRows } from "../hooks/useTreeRows";
 import { type DependencyEditing, DependencyEditingContext } from "../state/dependencyEditing";
 import { NewObjectContext } from "../state/newObject";
+import { useReshapes } from "../state/reshapes";
 import { createGuideStore, GuideStoreContext } from "../state/treeGuides";
 import {
   addLineKey,
@@ -81,12 +86,20 @@ interface BinTreeProps {
   dependencies?: readonly Dependency[] | null;
   /** A count the header's dependencies button raises, which opens and scrolls to that row. */
   dependenciesReveal?: number;
+  /** A count the header's collapse-all button raises, which collapses every open row. */
+  collapseAllSignal?: number;
 }
 
 const NO_KEYS: readonly string[] = [];
 
 /** The room a bounded tree leaves around its rows, which is the scroller's own padding. */
 const SCROLLER_PADDING = 8;
+
+/** Whether `target` takes typed text, where `Ctrl+←` moves the caret by a word. */
+function isTextEntry(target: EventTarget): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || target.closest("input, textarea, select") !== null;
+}
 
 /**
  * The rows of one bin document as a tree, a window at a time.
@@ -111,6 +124,7 @@ export function BinTree({
   rootEntry = null,
   dependencies = null,
   dependenciesReveal = 0,
+  collapseAllSignal = 0,
 }: BinTreeProps) {
   /* The one insert line open inside a list or a map. */
   const [insertAt, setInsertAt] = useState<InsertAt | null>(null);
@@ -120,6 +134,7 @@ export function BinTree({
     loaded,
     groups,
     toggle: toggleRow,
+    collapseAll: collapseRows,
     expand,
     requestMore,
     reach,
@@ -136,6 +151,8 @@ export function BinTree({
     newObject,
     dependencies,
   });
+
+  useReshapes(assetKey(asset), remap);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const { items, lines, totalSize, rowHeight, measureElement, scrollToKey } = useRowWindow(
@@ -159,8 +176,40 @@ export function BinTree({
     [clearFocus, toggleRow],
   );
 
+  const collapseAll = useCallback(() => {
+    clearFocus();
+    collapseRows();
+  }, [clearFocus, collapseRows]);
+
+  const collapsedFor = useRef(collapseAllSignal);
+  useEffect(() => {
+    if (collapseAllSignal === collapsedFor.current) return;
+    collapsedFor.current = collapseAllSignal;
+    collapseAll();
+  }, [collapseAllSignal, collapseAll]);
+
   /* The row value or the add line an edit sends focus to, once it draws. */
   const [focusKey, setFocusKey] = useState<string | null>(null);
+
+  const navigation = useTreeNavigation({
+    visible,
+    scrollRef,
+    scrollToKey,
+    drawn: items,
+    toggle,
+    editValue: editable ? setFocusKey : null,
+  });
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (navigation.keyDown(event)) {
+      event.preventDefault();
+      return;
+    }
+    if (!isCollapseAllKey(event) || isTextEntry(event.target)) return;
+
+    event.preventDefault();
+    collapseAll();
+  }
   const focus = useMemo<TreeFocus>(
     () => ({
       key: focusKey,
@@ -239,7 +288,7 @@ export function BinTree({
 
   /* Outside React state, so a pointer crossing the rows redraws the guides and nothing else. */
   const [guides] = useState(createGuideStore);
-  function standOn(target: EventTarget) {
+  function showGuidesAt(target: EventTarget) {
     const line = lineAt(target);
     if (line !== null) guides.set({ active: lineParent(line) });
   }
@@ -277,8 +326,12 @@ export function BinTree({
                 } as CSSProperties
               }
               onContextMenu={handleContextMenu}
-              onPointerDown={(event) => standOn(event.target)}
-              onFocus={(event) => standOn(event.target)}
+              onKeyDown={handleKeyDown}
+              onPointerDown={(event) => showGuidesAt(event.target)}
+              onFocus={(event) => {
+                showGuidesAt(event.target);
+                navigation.focused(event.target);
+              }}
               onMouseOver={(event) => {
                 const line = lineAt(event.target);
                 guides.set({ hover: line === null ? null : lineParent(line) });
@@ -303,6 +356,7 @@ export function BinTree({
                         <BinRowLine
                           line={line}
                           focused={line.key === focused}
+                          tabStop={line.key === navigation.tabStop}
                           error={loaded.get(line.key)?.error}
                           onToggle={toggle}
                           onOpenObject={onOpenObject}

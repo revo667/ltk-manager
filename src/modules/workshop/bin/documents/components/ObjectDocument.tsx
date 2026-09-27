@@ -28,6 +28,8 @@ import {
 } from "@/modules/editor";
 
 import type { ContentDocumentOf } from "../../../documents/utils/contentDocument";
+/* The leaf rather than the objects browser barrel, which pulls the document that routes here. */
+import { useSystemSteps } from "../../../objectsBrowser/hooks/useSystemSteps";
 /* The leaf rather than the preview barrel, which pulls the document that routes here. */
 import { BinPreview } from "../../../preview/components/BinPreview";
 /* The leaf rather than the references barrel, which pulls the document that routes here. */
@@ -36,6 +38,7 @@ import {
   objectReferences,
   useFindReferences,
 } from "../../../references/api/useFindReferences";
+import { CollapseAllButton } from "../../../shared/components/CollapseAllButton";
 import {
   clickIntent,
   useCurveAimRequest,
@@ -59,8 +62,8 @@ import {
 import type { ShellKind } from "../../shell/utils/shellPanes";
 import { BinTree, type TreeReveal } from "../../tree/components/BinTree";
 import { useBinDocument, useObjectRoots } from "../hooks/useBinDocument";
+import { useBinTab } from "../hooks/useBinTab";
 import { useCopyDeclaration, useRowDeclaration } from "../hooks/useDeclared";
-import { useUndoKeys } from "../hooks/useUndoKeys";
 import { BinEditState } from "./BinEditState";
 import { DeclarationsOffNotice } from "./DeclarationsOffNotice";
 
@@ -78,7 +81,7 @@ export function ObjectDocument({
   active,
 }: EditorDocumentProps<ContentDocumentOf<"object">>) {
   const { id, asset, objectHash, objectPath, file } = document;
-  const { state, reopen } = useBinDocument(asset, objectHash);
+  const { state, reopen } = useBinDocument(asset, objectHash, "lingering");
 
   if (state.status === "failed") {
     return (
@@ -141,11 +144,19 @@ function OpenObject({
   const objectName = useCallback(() => object.name, [object.name]);
   const layout = classLayout(object.classHash);
   const roots = useObjectRoots(handle);
-  const undoKeys = useUndoKeys(handle.document, asset, handle.readOnly === null);
+  useBinTab(documentId, handle.document, asset, handle.readOnly === null);
+  const steps = useSystemSteps({
+    enabled: layout?.shell === "vfx",
+    documentId,
+    objectHash: object.entry,
+    objectPath,
+    active,
+  });
   useLendOpenBin(documentId, handle.document, object.entry);
 
   const [mode, setMode] = useState<Mode>(layout ? "layout" : "properties");
   const [reveal, setReveal] = useState<TreeReveal | null>(null);
+  const [collapseAllSignal, setCollapseAllSignal] = useState(0);
   const [frame, setFrame] = useState<LayoutFrame>("stack");
   const [target, setTarget] = useState<CurveTarget | null>(null);
   /* Apart from the target, so a follow that lets go of it leaves the dock open. */
@@ -200,11 +211,12 @@ function OpenObject({
 
   return (
     <div
+      ref={steps.root}
       data-ui="ObjectDocument"
-      /* Focusable, so a click anywhere in the tab is where its undo keys land. */
+      /* Focusable, so a click anywhere in the tab is where the timeline's step keys land. */
       tabIndex={-1}
       className="flex min-h-0 flex-1 flex-col bg-surface-950 outline-none"
-      onKeyDown={undoKeys}
+      onKeyDown={steps.onKeyDown}
     >
       <DocumentToolbar active={active}>
         <span className="flex min-w-0 shrink-0 items-center gap-2 text-meta text-surface-400 select-none">
@@ -241,6 +253,10 @@ function OpenObject({
             {m.workshop_bin_show_in_file_action()}
           </Button>
         )}
+        <CollapseAllButton
+          onCollapse={() => setCollapseAllSignal((count) => count + 1)}
+          disabled={mode !== "properties"}
+        />
         <BinEditState
           document={handle.document}
           asset={asset}
@@ -301,6 +317,7 @@ function OpenObject({
                   onNotOpen={reopen}
                   editable={handle.readOnly === null}
                   rootEntry={object.entry}
+                  collapseAllSignal={collapseAllSignal}
                 />
               </RetainedContent>
             </Panel>
