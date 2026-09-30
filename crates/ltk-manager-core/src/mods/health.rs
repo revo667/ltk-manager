@@ -327,8 +327,9 @@ impl ModLibrary {
         }
     }
 
-    /// What a check running now would be a claim about.
-    pub(in crate::mods) fn health_check_basis(&self, config: &Config) -> HealthCheckBasis {
+    /// What a check running now would be a claim about. Public so an embedder can tell
+    /// a stored verdict that still holds from one that is due, without running the sweep.
+    pub fn health_check_basis(&self, config: &Config) -> HealthCheckBasis {
         HealthCheckBasis {
             build: GameBuild::installed(config),
             manager: self.app_version().to_owned(),
