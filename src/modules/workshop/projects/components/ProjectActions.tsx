@@ -26,7 +26,7 @@ interface ProjectActionsProps {
   project: WorkshopProject;
 }
 
-/** Test and pack, each with its caret, and the overflow menu, joined into one control in the project header. */
+/** Test and pack, each with its caret, and the overflow menu, joined into one control in the status row. */
 export function ProjectActions({ project }: ProjectActionsProps) {
   const testState = useWorkshopTestState(project);
   const actions = useProjectActions(project);
@@ -39,7 +39,7 @@ export function ProjectActions({ project }: ProjectActionsProps) {
         <Button
           variant="ghost"
           size="sm"
-          left={<PlayIcon weight="bold" className="size-4" />}
+          left={<PlayIcon weight="bold" className="size-3.5" />}
           onClick={actions.handleTestProject}
           className={testTint}
         >
@@ -57,7 +57,7 @@ export function ProjectActions({ project }: ProjectActionsProps) {
           variant="ghost"
           size="sm"
           disabled
-          left={<PlayIcon weight="bold" className="size-4" />}
+          left={<PlayIcon weight="bold" className="size-3.5" />}
           className={testTint}
         >
           {m.workshop_header_test_action()}
@@ -70,7 +70,7 @@ export function ProjectActions({ project }: ProjectActionsProps) {
           variant="ghost"
           size="sm"
           disabled
-          left={<PlayIcon weight="bold" className="size-4" />}
+          left={<PlayIcon weight="bold" className="size-3.5" />}
           className={testTint}
         >
           {m.workshop_header_test_action()}
@@ -88,7 +88,7 @@ export function ProjectActions({ project }: ProjectActionsProps) {
         <Button
           variant="ghost"
           size="sm"
-          left={<PackageIcon weight="bold" className="size-4" />}
+          left={<PackageIcon weight="bold" className="size-3.5" />}
           loading={actions.isPacking}
           onClick={actions.handlePack}
           className={packTint}
@@ -102,7 +102,6 @@ export function ProjectActions({ project }: ProjectActionsProps) {
         <Menu.Trigger
           render={
             <IconButton
-              compact={false}
               icon={<DotsThreeVerticalIcon />}
               size="sm"
               aria-label={m.workshop_header_actions_label()}
@@ -159,9 +158,8 @@ function FailedTestTip({ incident }: { incident: Incident }) {
         <p className="truncate font-mono text-xs text-surface-200">{incident.verdict.subject}</p>
       )}
       <Button
-        variant="light"
+        variant="tonal"
         size="xs"
-        compact
         className="self-start"
         onClick={() =>
           navigate({ to: "/diagnostics", search: { tab: "games", incident: incident.id } })

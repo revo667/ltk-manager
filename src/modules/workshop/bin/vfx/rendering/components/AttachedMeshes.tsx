@@ -1,9 +1,7 @@
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Fragment, useEffect, useLayoutEffect, useMemo } from "react";
 import {
   DetachedBindMode,
-  DoubleSide,
-  FrontSide,
   type Material,
   Matrix4,
   type Mesh,
@@ -26,14 +24,16 @@ import {
 import { type SlotProgram, useAttachedPrograms } from "../hooks/useParticlePrograms";
 import type { EmitterSamplers } from "../hooks/useVfxTextures";
 import { usePickTargets } from "../state/pick";
+import { useStencil } from "../state/stencil";
 import { useWireTwin, WIRE_ORDER } from "../state/wire";
+import { scaleAboutParent } from "../utils/attachedPlace";
 import { fragmentTests, premultiplyInto } from "../utils/blend";
 import { colorLookupInto } from "../utils/colorLookup";
-import { distorts } from "../utils/drawKind";
 import { bucketRange, bucketsOf, renderStamp } from "../utils/emitterBuckets";
-import { DISTORTION_LAYER, PARTICLE_LAYER } from "../utils/frame";
+import { drawLayersOf, leaveLayers, PARTICLE_LAYER, placeOnLayers } from "../utils/frame";
 import { attachedMaterial } from "../utils/materials";
 import { sourcesScrollInto } from "../utils/palette";
+import { meshSide } from "../utils/particleDraws";
 import { writePaletteScroll, writeSlotMembers } from "../utils/particleProgram";
 import { rangesDrawn } from "../utils/submeshes";
 import { type LayerDraws, layersOf } from "../utils/uniforms";
@@ -82,7 +82,8 @@ interface Slot {
  * One attached emitter's particles, each the skin of the character the system rides.
  *
  * Each particle draws the character's skin where the character stands, scaled by the
- * particle's own scale about the scene's origin, in its own colour, layers and erosion.
+ * particle's own scale about the origin of the group the character is in, in its own colour,
+ * layers and erosion.
  * A scene with no character draws none. Decisions 2.18 and 2.35 of
  * docs/plans/vfx-particle-renderer.md.
  *
@@ -116,7 +117,7 @@ export function AttachedMeshes({
         emitter.depthBias,
         layersOf(emitter, samplers, DRAWS),
         fragmentTests(emitter),
-        emitter.backfaceCull ? FrontSide : DoubleSide,
+        meshSide(emitter),
       );
       return { mesh: skinOf(skin, material, drawn), material, drawn };
     });
@@ -163,6 +164,11 @@ export function AttachedMeshes({
     slots.length,
     document,
   );
+  const stencilled = useMemo(
+    () => [...slots.map((slot) => slot.material), ...programs.flatMap((slot) => slot.materials)],
+    [slots, programs],
+  );
+  useStencil(emitter, !hidden && !emitter.disabled, stencilled);
   useEffect(() => {
     if (programs.length !== slots.length) return;
     const bound = slots.map((slot, at) => bindSlot(slot, programs[at]));
@@ -176,17 +182,23 @@ export function AttachedMeshes({
     };
   }, [slots, programs, rank]);
 
+  const scene = useThree((state) => state.scene);
   useLayoutEffect(() => {
+    const layers = drawLayersOf(emitter);
     for (const slot of slots) {
       slot.mesh.renderOrder = rank;
-      slot.mesh.layers.set(distorts(emitter) ? DISTORTION_LAYER : PARTICLE_LAYER);
+      placeOnLayers(scene, slot.mesh, layers);
     }
     for (const twin of twins) {
       if (twin === null) continue;
       twin.renderOrder = rank + WIRE_ORDER;
       twin.layers.set(PARTICLE_LAYER);
     }
-  }, [slots, twins, rank, emitter]);
+
+    return () => {
+      for (const slot of slots) leaveLayers(scene, slot.mesh);
+    };
+  }, [slots, twins, rank, emitter, scene]);
 
   useFrame((state) => {
     const stamp = renderStamp(state.gl);
@@ -243,10 +255,10 @@ export function AttachedMeshes({
             }
           }
 
-          mesh.scale.set(DRAWN.scale[0], DRAWN.scale[1], DRAWN.scale[2]);
+          scaleAboutParent(mesh, DRAWN.scale);
           mesh.visible = shaded;
           if (twin !== null) {
-            twin.scale.copy(mesh.scale);
+            scaleAboutParent(twin, DRAWN.scale);
             twin.visible = true;
           }
           used += 1;
@@ -276,7 +288,7 @@ export function AttachedMeshes({
  * The character's skin under `material`, bound to its skeleton, drawn where `drawn` holds.
  *
  * The bind is detached, so a vertex skinned by the character's bones lands where the
- * character stands and the mesh's own transform is the particle's scale on top of it.
+ * character stands, and the mesh's own matrix adds the particle's scale alone.
  */
 function skinOf(skin: CharacterSkin, material: Material, drawn: readonly boolean[]): SkinnedMesh {
   const mesh = new SkinnedMesh(
@@ -285,6 +297,8 @@ function skinOf(skin: CharacterSkin, material: Material, drawn: readonly boolean
   );
   mesh.bindMode = DetachedBindMode;
   mesh.bind(skin.skeleton, IDENTITY);
+  /* The frame writes the matrix itself, through `scaleAboutParent`. */
+  mesh.matrixAutoUpdate = false;
   mesh.frustumCulled = false;
   mesh.visible = false;
   return mesh;

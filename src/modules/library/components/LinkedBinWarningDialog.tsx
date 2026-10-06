@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import {
   AlertBox,
+  Badge,
   Button,
   Checkbox,
   Dialog,
@@ -123,7 +124,7 @@ function LinkedBinWarningContent({ onClose }: { onClose: () => void }) {
           </p>
         </Dialog.Body>
         <Dialog.Footer>
-          <Button variant="filled" onClick={onClose}>
+          <Button size="lg" variant="filled" onClick={onClose}>
             Close
           </Button>
         </Dialog.Footer>
@@ -158,7 +159,7 @@ function LinkedBinWarningContent({ onClose }: { onClose: () => void }) {
 
         {isLoading && (
           <div className="flex items-center gap-2 text-sm text-surface-400">
-            <Spinner size="sm" />
+            <Spinner size={16} />
             Loading flagged mods…
           </div>
         )}
@@ -169,9 +170,8 @@ function LinkedBinWarningContent({ onClose }: { onClose: () => void }) {
               <span className={OVERLINE}>{sectionLabel}</span>
               {isMulti && (
                 <Button
-                  variant="transparent"
+                  variant="ghost"
                   size="xs"
-                  compact
                   className="text-accent-400 hover:text-accent-300"
                   onClick={toggleAll}
                 >
@@ -199,9 +199,9 @@ function LinkedBinWarningContent({ onClose }: { onClose: () => void }) {
                             {displayNameFor(offender)}
                           </span>
                         </label>
-                        <span className="shrink-0 rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning-text tabular-nums">
+                        <Badge size="md" tone="warning" className="shrink-0 tabular-nums">
                           {count} missing
-                        </span>
+                        </Badge>
                         {count > 0 && (
                           <button
                             type="button"
@@ -248,17 +248,24 @@ function LinkedBinWarningContent({ onClose }: { onClose: () => void }) {
         )}
 
         <AlertBox
-          variant="warning"
+          tone="warning"
           icon={<ShieldAlert className="size-5" />}
           title="Leaving these enabled may glitch or crash the game when they load."
         />
       </Dialog.Body>
 
       <Dialog.Footer className="justify-end">
-        <Button variant="ghost" className="text-surface-400" disabled={busy} onClick={onClose}>
+        <Button
+          size="lg"
+          variant="ghost"
+          className="text-surface-400"
+          disabled={busy}
+          onClick={onClose}
+        >
           Dismiss
         </Button>
         <Button
+          size="lg"
           variant="filled"
           loading={busy}
           disabled={selectedCount === 0}

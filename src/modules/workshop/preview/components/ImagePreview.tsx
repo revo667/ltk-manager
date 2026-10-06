@@ -295,7 +295,7 @@ function Canvas({
 
       {!natural && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <Spinner size="md" />
+          <Spinner size={24} />
         </div>
       )}
     </div>
@@ -387,13 +387,7 @@ function StatusStrip({ info, natural, fit, zoom, controls, onZoom }: StatusStrip
       />
 
       <Tooltip content={m.workshop_preview_zoom_actual_label()}>
-        <Button
-          variant="ghost"
-          size="xs"
-          compact
-          className="min-w-12 tabular-nums"
-          onClick={() => goTo(1)}
-        >
+        <Button variant="ghost" size="xs" className="min-w-12 tabular-nums" onClick={() => goTo(1)}>
           {m.workshop_preview_zoom_percent_label({ percent: Math.round(scale * 100) })}
         </Button>
       </Tooltip>
@@ -409,7 +403,6 @@ function StatusStrip({ info, natural, fit, zoom, controls, onZoom }: StatusStrip
         <Button
           variant="ghost"
           size="xs"
-          compact
           aria-pressed={zoom === "fit"}
           className={zoom === "fit" ? "text-accent-300" : undefined}
           onClick={() => goTo("fit")}

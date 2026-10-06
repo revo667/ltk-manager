@@ -7,6 +7,7 @@ import { errorSummary, m } from "@/i18n";
 import type { AssetRef } from "@/lib/tauri";
 
 import { useWarmOnAbsent } from "../../../objectsBrowser/api/useObjectIndex";
+import { readyValue } from "../../../shared/api/indexQueries";
 import { Notice } from "../../shared/preview/Notice";
 import { spellQueries } from "../api/spellQueries";
 import type { AbilityRecipe } from "../utils/abilityRecipe";
@@ -58,7 +59,7 @@ function CharacterSpells({
   const [selected, setSelected] = useState<{ asset: AssetRef; entry: string; name: string } | null>(
     null,
   );
-  const spells = read.data?.status === "ready" ? read.data.spells : undefined;
+  const spells = readyValue(read.data)?.spells;
   const available = useQuery(spellQueries.availability(spells ?? [], onSelect !== undefined));
   const groups = useMemo(() => spellGroups(spells ?? [], filter), [spells, filter]);
 
@@ -66,7 +67,7 @@ function CharacterSpells({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center gap-3 border-b border-surface-700/40 px-3 py-2">
-          <Button size="xs" variant="ghost" onClick={() => setSelected(null)}>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>
             <ArrowLeftIcon className="size-3.5" />
             {m.workshop_missile_back_action()}
           </Button>
@@ -85,7 +86,7 @@ function CharacterSpells({
         <p className="text-danger-text">{m.workshop_objects_index_failed_title()}</p>
         {error !== null && <p className="text-surface-300 select-text">{errorSummary(error)}</p>}
         <Button
-          size="xs"
+          size="sm"
           variant="outline"
           onClick={() => {
             if (read.data?.status === "failed") warm();
@@ -109,7 +110,7 @@ function CharacterSpells({
           placeholder={m.workshop_spells_filter_placeholder()}
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
-          className="h-7 px-2 text-meta"
+          size="sm"
         />
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2 scrollbar-md">
@@ -134,7 +135,7 @@ function CharacterSpells({
                 <Button
                   key={spell.objectHash}
                   variant="ghost"
-                  size="xs"
+                  size="sm"
                   disabled={!supported}
                   className="h-8 w-full justify-between gap-3 rounded-none px-2 text-left disabled:opacity-60"
                   onClick={() => {

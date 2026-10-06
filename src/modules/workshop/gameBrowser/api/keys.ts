@@ -4,9 +4,6 @@ import type { SearchPreference, WadSource } from "@/lib/tauri";
    a long stretch of a session. */
 export const GAME_STALE_MS = 15 * 60_000;
 
-/** How often an answer the object index build has not given asks again. */
-export const BUILDING_POLL_MS = 1000;
-
 /* Each source under keys of its own, so a rebuild of one never refetches the other. The
    game's are the bare `game-*` keys other modules already file under. */
 export const gameKeys = {
@@ -16,7 +13,9 @@ export const gameKeys = {
   dirs: ["game-dir"] as const,
   sourceDirs: (source: WadSource) => [`${source}-dir`] as const,
   dir: (source: WadSource, path: string) => [`${source}-dir`, path] as const,
+  searches: ["game-search"] as const,
   search: (query: string) => ["game-search", query] as const,
+  pathSearches: ["game-paths"] as const,
   paths: (query: string, preference: SearchPreference) =>
     ["game-paths", query, preference.extensions, preference.archive] as const,
   objectSearches: ["object-search"] as const,
@@ -25,6 +24,7 @@ export const gameKeys = {
      refetches this answer with them. */
   declaredObjects: (objectHashes: readonly string[]) =>
     ["object-search", "declared", objectHashes] as const,
+  finds: (source: WadSource) => [`${source}-find`] as const,
   find: (source: WadSource, pattern: string, regex: boolean) =>
     [`${source}-find`, pattern, regex] as const,
 };

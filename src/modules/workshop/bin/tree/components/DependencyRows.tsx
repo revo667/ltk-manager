@@ -80,7 +80,7 @@ export function DependenciesRow({ line, onToggle }: DependenciesRowProps) {
       aria-expanded={line.expanded}
       tabIndex={0}
       /* DS-VEIL, DS-RADIUS */
-      className="group/row flex min-h-6 cursor-pointer items-center gap-2 rounded-sm pr-2 text-mono-row outline-none hover:bg-surface-veil-soft focus-visible:bg-surface-veil"
+      className="group/row group/reveal flex min-h-6 cursor-pointer items-center gap-2 rounded-sm pr-2 text-mono-row outline-none hover:bg-surface-veil-soft focus-visible:bg-surface-veil"
       onClick={() => onToggle(line.key)}
       onKeyDown={keys}
     >
@@ -182,7 +182,7 @@ export function DependencyRow({ line }: DependencyRowProps) {
       draggable={reorders && !isEditing}
       className={twMerge(
         /* DS-VEIL, DS-RADIUS */
-        "group/row flex min-h-6 items-center gap-2 rounded-sm pr-2 text-mono-row outline-none hover:bg-surface-veil-soft focus-visible:bg-surface-veil",
+        "group/row group/reveal flex min-h-6 items-center gap-2 rounded-sm pr-2 text-mono-row outline-none hover:bg-surface-veil-soft focus-visible:bg-surface-veil",
         dropping && "bg-accent-500/15",
       )}
       onKeyDown={keys}
@@ -198,7 +198,7 @@ export function DependencyRow({ line }: DependencyRowProps) {
         <Guides depth={line.depth} parent={lineParent(line)} />
         <span className="w-3 shrink-0" />
         {isEditing && edit !== null && (
-          <PathField
+          <DependencyPathField
             path={path}
             onCommit={(text) => edit.set(index, text)}
             onClose={() => editing.start(null)}
@@ -239,7 +239,7 @@ export function DependencyRow({ line }: DependencyRowProps) {
   );
 }
 
-interface PathFieldProps {
+interface DependencyPathFieldProps {
   /** The full path, which the field starts on even where the row reads its brex spelling. */
   path: string;
   onCommit: (text: string) => Promise<Result<unknown>>;
@@ -247,7 +247,7 @@ interface PathFieldProps {
 }
 
 /** The path of a dependency edited in place. Enter or leaving sends it, Escape backs out. */
-function PathField({ path, onCommit, onClose }: PathFieldProps) {
+function DependencyPathField({ path, onCommit, onClose }: DependencyPathFieldProps) {
   const ref = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(path);
   const [error, setError] = useState<AppError | null>(null);

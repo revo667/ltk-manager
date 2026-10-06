@@ -60,6 +60,8 @@ interface PreviewDisplay {
   previewAntiAliasing: AntiAliasing;
   /** The selected emitter's origin, offset and spawn shape are drawn as a wireframe. */
   previewGizmo: boolean;
+  /** Each emitter that writes a stencil mask draws the mask as a tint. */
+  previewMasks: boolean;
   /** The live counts and the frame's milliseconds are drawn in the corner. */
   previewStats: boolean;
   /** A character's skeleton is drawn over it, a dot per joint and a line to its parent. */
@@ -68,6 +70,14 @@ interface PreviewDisplay {
   previewShaders: boolean;
   /** Each joint's name is written beside its dot. */
   previewJointNames: boolean;
+  /** A skin's dynamics and sockets are drawn over it, as far as the three below allow. */
+  previewPhysics: boolean;
+  /** The dynamics overlay draws the simulated joints, their radii, links and ground. */
+  previewSimulatedJoints: boolean;
+  /** The dynamics overlay draws the colliders. */
+  previewColliders: boolean;
+  /** The dynamics overlay draws each socket's axes. */
+  previewSockets: boolean;
   /** The camera a viewport opens on, "The viewer" in docs/ux/BIN_EDITOR.md. */
   previewCamera: CameraPreset;
   /** How a viewport draws its meshes, "The view mode menu" in docs/ux/BIN_EDITOR.md. */
@@ -101,6 +111,8 @@ interface PreviewDisplay {
   timelineSnap: boolean;
   /** The inspector lists every field the class declares, the unauthored ones dimmed. */
   inspectorDefaults: boolean;
+  /** The particle graph draws its minimap while a part of the graph is outside the view. */
+  graphMinimap: boolean;
 }
 /** A preview display preference that is a switch. */
 type PreviewFlag = {
@@ -266,10 +278,15 @@ const PREVIEW_DISPLAY_DEFAULTS: PreviewDisplay = {
   /* The game's own default, `DEFAULT_ANTI_ALIASING`, kept a literal so the store loads no renderer. */
   previewAntiAliasing: "fxaa",
   previewGizmo: true,
+  previewMasks: false,
   previewStats: false,
   previewArmature: false,
   previewShaders: false,
   previewJointNames: false,
+  previewPhysics: true,
+  previewSimulatedJoints: true,
+  previewColliders: true,
+  previewSockets: true,
   previewCamera: "game",
   previewViewMode: "lit",
   previewWireOverlay: false,
@@ -284,6 +301,7 @@ const PREVIEW_DISPLAY_DEFAULTS: PreviewDisplay = {
   timelineHistogram: false,
   timelineSnap: true,
   inspectorDefaults: false,
+  graphMinimap: true,
 };
 
 /* What the Project editor card shows. The rest of this store is geometry, which is
@@ -492,10 +510,16 @@ export const usePreviewAntiAliasing = () => useWorkshopLayoutStore((s) => s.prev
 export const usePreviewAmbientOcclusion = () =>
   useWorkshopLayoutStore((s) => s.previewAmbientOcclusion);
 export const usePreviewGizmo = () => useWorkshopLayoutStore((s) => s.previewGizmo);
+export const usePreviewMasks = () => useWorkshopLayoutStore((s) => s.previewMasks);
 export const usePreviewStats = () => useWorkshopLayoutStore((s) => s.previewStats);
 export const usePreviewArmature = () => useWorkshopLayoutStore((s) => s.previewArmature);
 export const usePreviewShaders = () => useWorkshopLayoutStore((s) => s.previewShaders);
 export const usePreviewJointNames = () => useWorkshopLayoutStore((s) => s.previewJointNames);
+export const usePreviewPhysics = () => useWorkshopLayoutStore((s) => s.previewPhysics);
+export const usePreviewSimulatedJoints = () =>
+  useWorkshopLayoutStore((s) => s.previewSimulatedJoints);
+export const usePreviewColliders = () => useWorkshopLayoutStore((s) => s.previewColliders);
+export const usePreviewSockets = () => useWorkshopLayoutStore((s) => s.previewSockets);
 export const usePreviewCamera = () => useWorkshopLayoutStore((s) => s.previewCamera);
 export const usePreviewViewMode = () => useWorkshopLayoutStore((s) => s.previewViewMode);
 export const usePreviewWireOverlay = () => useWorkshopLayoutStore((s) => s.previewWireOverlay);
@@ -511,5 +535,6 @@ export const usePreviewMaterialOnShape = () =>
 export const useTimelineHistogram = () => useWorkshopLayoutStore((s) => s.timelineHistogram);
 export const useTimelineSnap = () => useWorkshopLayoutStore((s) => s.timelineSnap);
 export const useInspectorDefaults = () => useWorkshopLayoutStore((s) => s.inspectorDefaults);
+export const useGraphMinimap = () => useWorkshopLayoutStore((s) => s.graphMinimap);
 export const useSetPreviewDisplay = () => useWorkshopLayoutStore((s) => s.setPreviewDisplay);
 export const usePreviewFlag = (flag: PreviewFlag) => useWorkshopLayoutStore((s) => s[flag]);

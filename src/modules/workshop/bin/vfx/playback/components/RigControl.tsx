@@ -94,15 +94,12 @@ export function RigControl() {
           <Button
             variant="ghost"
             size="xs"
-            compact
             left={<CarrierIcon weight="bold" className="size-4" />}
             right={<CaretDownIcon weight="bold" className="size-3" />}
             aria-label={m.workshop_bin_preview_rig_label()}
           >
             {CARRIER_LABEL[carrier]()}
-            <span className="ml-1.5 max-w-32 truncate text-surface-400">
-              {sourceTag(choice.source)}
-            </span>
+            <span className="max-w-32 truncate text-surface-400">{sourceTag(choice.source)}</span>
           </Button>
         }
       />
@@ -128,7 +125,6 @@ export function RigControl() {
             <Button
               variant="ghost"
               size="xs"
-              compact
               left={<ArrowCounterClockwiseIcon weight="bold" className="size-3.5" />}
               onClick={resetRig}
             >
@@ -139,7 +135,7 @@ export function RigControl() {
 
         <SegmentedControl
           className="mt-3 w-full"
-          size="xs"
+          size="sm"
           aria-label={m.workshop_bin_preview_rig_motion_label()}
           value={carrier}
           onChange={(next: Carrier) => {
@@ -150,7 +146,7 @@ export function RigControl() {
 
         <SegmentedControl
           className="mt-2 w-full"
-          size="xs"
+          size="sm"
           aria-label={m.workshop_bin_preview_rig_playback_label()}
           value={playbackOf(rig.life)}
           onChange={(next: Playback) => change(withPlayback(rig, next))}
@@ -309,7 +305,7 @@ function MotionRows({
             {m.workshop_bin_preview_rig_orientation_label()}
           </span>
           <SegmentedControl
-            size="xs"
+            size="sm"
             aria-label={m.workshop_bin_preview_rig_orientation_label()}
             value={motion.orientation}
             onChange={(orientation: OrbitOrientation) => onMotionChange({ ...motion, orientation })}

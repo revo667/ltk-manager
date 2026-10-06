@@ -1,39 +1,53 @@
 import { Select as BaseSelect } from "@base-ui/react/select";
-import { Check, ChevronDown } from "lucide-react";
+import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react";
 import { forwardRef, type ReactNode } from "react";
 
 import { twMerge } from "@/utils";
+
+import { fieldFrame, type FieldSize, fieldSizeClasses } from "./fieldFrame";
+import { Field } from "./FormField";
+import {
+  popupGroupLabel,
+  popupItem,
+  popupItemLabel,
+  popupItemMark,
+  popupItemTone,
+  popupMotion,
+  popupSeparator,
+  popupSurface,
+} from "./popup";
 
 // Root
 export interface SelectRootProps extends BaseSelect.Root.Props<string> {
   children?: ReactNode;
 }
 
-export const SelectRoot = ({ children, ...props }: SelectRootProps) => {
+const SelectRoot = ({ children, ...props }: SelectRootProps) => {
   return <BaseSelect.Root<string> {...props}>{children}</BaseSelect.Root>;
 };
 SelectRoot.displayName = "Select.Root";
 
 // Trigger
 export interface SelectTriggerProps extends Omit<BaseSelect.Trigger.Props, "className"> {
-  className?: string;
+  /** `md`, 32px, unless told otherwise. */
+  size?: FieldSize;
+  /** Marks a trigger standing outside a `Field.Root` invalid. */
   hasError?: boolean;
+  className?: string;
   children?: ReactNode;
 }
 
-export const SelectTrigger = forwardRef<HTMLButtonElement, SelectTriggerProps>(
-  ({ className, hasError, children, ...props }, ref) => {
+const SelectTrigger = forwardRef<HTMLButtonElement, SelectTriggerProps>(
+  ({ size = "md", className, hasError, children, ...props }, ref) => {
     return (
       <BaseSelect.Trigger
         ref={ref}
+        {...(hasError && { "aria-invalid": true })}
         className={twMerge(
-          "flex h-8 w-full items-center justify-between rounded-md border px-4 py-1 text-sm transition-colors",
-          "bg-surface-700 text-surface-50",
-          "border-surface-500 hover:border-accent-hover",
-          "focus:border-accent-500 focus:ring-1 focus:ring-accent-500 focus:outline-none",
-          "disabled:cursor-not-allowed disabled:opacity-50",
+          "flex items-center justify-between gap-2",
+          fieldFrame,
+          fieldSizeClasses[size],
           "data-[placeholder]:text-surface-400",
-          hasError && "border-danger focus:border-danger focus:ring-danger",
           className,
         )}
         {...props}
@@ -52,7 +66,7 @@ export interface SelectValueProps extends Omit<BaseSelect.Value.Props, "classNam
   children?: BaseSelect.Value.Props["children"];
 }
 
-export const SelectValue = ({ className, prefix, children, ...props }: SelectValueProps) => {
+const SelectValue = ({ className, prefix, children, ...props }: SelectValueProps) => {
   if (prefix) {
     return (
       <span className={className}>
@@ -75,23 +89,21 @@ export interface SelectIconProps extends Omit<BaseSelect.Icon.Props, "className"
   className?: string;
 }
 
-export const SelectIcon = forwardRef<HTMLSpanElement, SelectIconProps>(
-  ({ className, ...props }, ref) => {
-    return (
-      <BaseSelect.Icon
-        ref={ref}
-        className={twMerge(
-          "text-surface-400 transition-transform",
-          "data-[popup-open]:rotate-180",
-          className,
-        )}
-        {...props}
-      >
-        <ChevronDown className="size-4" />
-      </BaseSelect.Icon>
-    );
-  },
-);
+const SelectIcon = forwardRef<HTMLSpanElement, SelectIconProps>(({ className, ...props }, ref) => {
+  return (
+    <BaseSelect.Icon
+      ref={ref}
+      className={twMerge(
+        "text-surface-400 transition-transform",
+        "data-[popup-open]:rotate-180",
+        className,
+      )}
+      {...props}
+    >
+      <CaretDownIcon weight="bold" className="size-3.5" />
+    </BaseSelect.Icon>
+  );
+});
 SelectIcon.displayName = "Select.Icon";
 
 // Portal
@@ -99,7 +111,7 @@ export interface SelectPortalProps extends BaseSelect.Portal.Props {
   children?: ReactNode;
 }
 
-export const SelectPortal = ({ children, ...props }: SelectPortalProps) => {
+const SelectPortal = ({ children, ...props }: SelectPortalProps) => {
   return <BaseSelect.Portal {...props}>{children}</BaseSelect.Portal>;
 };
 SelectPortal.displayName = "Select.Portal";
@@ -110,7 +122,7 @@ export interface SelectPositionerProps extends Omit<BaseSelect.Positioner.Props,
   children?: ReactNode;
 }
 
-export const SelectPositioner = forwardRef<HTMLDivElement, SelectPositionerProps>(
+const SelectPositioner = forwardRef<HTMLDivElement, SelectPositionerProps>(
   (
     {
       className,
@@ -144,19 +156,15 @@ export interface SelectPopupProps extends Omit<BaseSelect.Popup.Props, "classNam
   children?: ReactNode;
 }
 
-export const SelectPopup = forwardRef<HTMLDivElement, SelectPopupProps>(
+const SelectPopup = forwardRef<HTMLDivElement, SelectPopupProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseSelect.Popup
         ref={ref}
         className={twMerge(
-          "max-h-60 overflow-y-auto",
-          "rounded-lg border border-surface-600 py-1 shadow-xl outline-none",
-          /* DS-GLASS */
-          "bg-(--ltk-glass-panel-fill) backdrop-filter-(--ltk-glass-panel-blur)",
-          "transition-[opacity,transform] duration-150 ease-out",
-          "data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0",
-          "data-[ending-style]:-translate-y-1 data-[ending-style]:opacity-0",
+          "max-h-60 min-w-(--anchor-width) overflow-y-auto p-1",
+          popupSurface,
+          popupMotion,
           className,
         )}
         {...props}
@@ -186,7 +194,7 @@ export interface SelectContentProps
 }
 
 /** Portal, Positioner and Popup as one part, taking the positioning props itself. */
-export const SelectContent = forwardRef<HTMLDivElement, SelectContentProps>(
+const SelectContent = forwardRef<HTMLDivElement, SelectContentProps>(
   (
     {
       side,
@@ -229,31 +237,26 @@ export interface SelectItemProps extends Omit<BaseSelect.Item.Props, "className"
   description?: ReactNode;
 }
 
-export const SelectItem = forwardRef<HTMLDivElement, SelectItemProps>(
+const SelectItem = forwardRef<HTMLDivElement, SelectItemProps>(
   ({ className, children, description, ...props }, ref) => {
-    const text = <BaseSelect.ItemText>{children}</BaseSelect.ItemText>;
-
     return (
       <BaseSelect.Item
         ref={ref}
-        className={twMerge(
-          "flex cursor-default items-center gap-2 px-3 py-1.5 text-sm outline-none select-none",
-          "text-surface-200 data-[highlighted]:bg-surface-600",
-          "data-[disabled]:opacity-50",
-          className,
-        )}
+        className={twMerge(popupItem, popupItemTone.default, className)}
         {...props}
       >
-        <BaseSelect.ItemIndicator className="inline-flex size-4 shrink-0 items-center justify-center">
-          <Check className="size-3.5" />
-        </BaseSelect.ItemIndicator>
-        {description === undefined && text}
+        {description === undefined && (
+          <BaseSelect.ItemText className={popupItemLabel(children)}>{children}</BaseSelect.ItemText>
+        )}
         {description !== undefined && (
-          <span className="flex min-w-0 flex-col">
-            {text}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <BaseSelect.ItemText className="truncate">{children}</BaseSelect.ItemText>
             <span className="text-xs text-surface-400">{description}</span>
           </span>
         )}
+        <BaseSelect.ItemIndicator className={popupItemMark}>
+          <CheckIcon weight="bold" className="size-3.5" />
+        </BaseSelect.ItemIndicator>
       </BaseSelect.Item>
     );
   },
@@ -265,14 +268,10 @@ export interface SelectSeparatorProps extends Omit<BaseSelect.Separator.Props, "
   className?: string;
 }
 
-export const SelectSeparator = forwardRef<HTMLDivElement, SelectSeparatorProps>(
+const SelectSeparator = forwardRef<HTMLDivElement, SelectSeparatorProps>(
   ({ className, ...props }, ref) => {
     return (
-      <BaseSelect.Separator
-        ref={ref}
-        className={twMerge("my-1 border-t border-surface-600", className)}
-        {...props}
-      />
+      <BaseSelect.Separator ref={ref} className={twMerge(popupSeparator, className)} {...props} />
     );
   },
 );
@@ -284,7 +283,7 @@ export interface SelectGroupProps extends Omit<BaseSelect.Group.Props, "classNam
   children?: ReactNode;
 }
 
-export const SelectGroup = forwardRef<HTMLDivElement, SelectGroupProps>(
+const SelectGroup = forwardRef<HTMLDivElement, SelectGroupProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseSelect.Group ref={ref} className={className} {...props}>
@@ -301,14 +300,10 @@ export interface SelectGroupLabelProps extends Omit<BaseSelect.GroupLabel.Props,
   children?: ReactNode;
 }
 
-export const SelectGroupLabel = forwardRef<HTMLDivElement, SelectGroupLabelProps>(
+const SelectGroupLabel = forwardRef<HTMLDivElement, SelectGroupLabelProps>(
   ({ className, children, ...props }, ref) => {
     return (
-      <BaseSelect.GroupLabel
-        ref={ref}
-        className={twMerge("px-3 py-1.5 text-xs font-medium text-surface-500", className)}
-        {...props}
-      >
+      <BaseSelect.GroupLabel ref={ref} className={twMerge(popupGroupLabel, className)} {...props}>
         {children}
       </BaseSelect.GroupLabel>
     );
@@ -316,7 +311,12 @@ export const SelectGroupLabel = forwardRef<HTMLDivElement, SelectGroupLabelProps
 );
 SelectGroupLabel.displayName = "Select.GroupLabel";
 
-// Compound export
+/**
+ * One choice from a list short enough to read at a glance.
+ *
+ * A list the reader has to search is a `Combobox`, and two to four choices that fit a row
+ * are a `SegmentedControl`.
+ */
 export const Select = {
   Root: SelectRoot,
   Trigger: SelectTrigger,
@@ -332,7 +332,7 @@ export const Select = {
   GroupLabel: SelectGroupLabel,
 };
 
-// --- Simplified SelectField for common use cases ---
+/** A labelled select over a flat option list in one tag: `Field.Root` around the parts. */
 
 export interface SelectOption {
   value: string;
@@ -341,11 +341,10 @@ export interface SelectOption {
 }
 
 export interface SelectFieldProps {
-  label?: string;
-  description?: string;
-  error?: string;
+  label?: ReactNode;
+  description?: ReactNode;
+  error?: ReactNode;
   required?: boolean;
-  placeholder?: string;
   options: SelectOption[];
   value?: string;
   defaultValue?: string;
@@ -370,17 +369,14 @@ export function SelectField({
   className,
   triggerClassName,
 }: SelectFieldProps) {
-  // Field layout is imported from FormField module but kept inline here
-  // to avoid circular dependency with compound Field exports
   return (
-    <div className={twMerge("flex flex-col gap-1.5", className)}>
-      {label && (
-        <label className="text-sm font-medium text-surface-200">
-          {label}
-          {required && <span className="ml-1 text-required">*</span>}
-        </label>
-      )}
-      {description && <p className="text-xs text-surface-400">{description}</p>}
+    <Field.Root
+      label={label}
+      description={description}
+      error={error}
+      required={required}
+      className={className}
+    >
       <SelectRoot
         value={value}
         defaultValue={defaultValue}
@@ -388,7 +384,7 @@ export function SelectField({
         disabled={disabled}
         name={name}
       >
-        <SelectTrigger hasError={!!error} className={triggerClassName}>
+        <SelectTrigger className={triggerClassName}>
           <SelectValue>
             {(current) =>
               options.find((o) => o.value === current)?.label ?? (current as string | null) ?? ""
@@ -404,8 +400,7 @@ export function SelectField({
           ))}
         </SelectContent>
       </SelectRoot>
-      {error && <p className="text-xs text-danger-text">{error}</p>}
-    </div>
+    </Field.Root>
   );
 }
 SelectField.displayName = "SelectField";

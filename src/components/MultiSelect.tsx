@@ -1,9 +1,10 @@
-import { ChevronDown } from "lucide-react";
+import { CaretDownIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
 
 import { twMerge } from "@/utils";
 
 import { Combobox, useComboboxFilter } from "./Combobox";
+import { fieldFrame, fieldSizeClasses } from "./fieldFrame";
 
 export interface MultiSelectOption {
   value: string;
@@ -22,6 +23,11 @@ export interface MultiSelectProps {
   variant?: "compact" | "field";
 }
 
+/**
+ * Several choices from one list, ticked in a popup.
+ *
+ * One choice is a `Select`, or a `Combobox` where the list is long enough to search.
+ */
 export function MultiSelect({
   options,
   selected,
@@ -61,11 +67,10 @@ export function MultiSelect({
       {variant === "compact" ? (
         <Combobox.Trigger
           className={twMerge(
-            "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors",
-            "border-surface-500 bg-surface-700 text-surface-200",
-            "hover:border-accent-hover",
-            "focus:border-accent-500 focus:ring-1 focus:ring-accent-500 focus:outline-none",
-            "disabled:cursor-not-allowed disabled:opacity-50",
+            "inline-flex items-center gap-2",
+            fieldFrame,
+            fieldSizeClasses.md,
+            "w-auto text-surface-200",
             className,
           )}
         >
@@ -75,16 +80,15 @@ export function MultiSelect({
               {selected.size}
             </span>
           )}
-          <ChevronDown className="size-3.5 text-surface-400" />
+          <CaretDownIcon weight="bold" className="size-3.5 text-surface-400" />
         </Combobox.Trigger>
       ) : (
         <Combobox.Trigger
           className={twMerge(
-            "flex min-h-[42px] w-full items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors",
-            "border-surface-500 bg-surface-700 text-surface-200",
-            "hover:border-accent-hover",
-            "focus:border-accent-500 focus:ring-1 focus:ring-accent-500 focus:outline-none",
-            "disabled:cursor-not-allowed disabled:opacity-50",
+            "flex items-center gap-1.5",
+            fieldFrame,
+            /* Starts at the height of a `md` field, and grows with the chips it wraps. */
+            "min-h-8 px-2.5 py-1 text-sm text-surface-200",
             className,
           )}
         >
@@ -102,46 +106,27 @@ export function MultiSelect({
               <span className="text-surface-400">{label ?? "Select..."}</span>
             )}
           </span>
-          <ChevronDown className="size-3.5 shrink-0 text-surface-400" />
+          <CaretDownIcon weight="bold" className="size-3.5 shrink-0 text-surface-400" />
         </Combobox.Trigger>
       )}
-      <Combobox.Content
-        side="bottom"
-        sideOffset={4}
-        positionerClassName="z-50"
-        className={twMerge(
-          "flex max-h-60 w-64 flex-col overflow-hidden rounded-lg border border-surface-600 shadow-xl",
-          "animate-fade-in",
-          "data-ending-style:opacity-0 data-starting-style:opacity-0",
-        )}
-      >
-        <div className="shrink-0 border-b border-surface-600 p-2">
-          <div className="flex rounded-md border border-surface-500 bg-surface-700 px-2.5 has-[:focus]:border-accent-500 has-[:focus]:ring-1 has-[:focus]:ring-accent-500">
-            <Combobox.Input
-              placeholder={placeholder}
-              className="w-full rounded-none border-0 border-transparent bg-transparent px-0 py-1 text-sm text-surface-50 shadow-none outline-none placeholder:text-surface-400 hover:border-transparent focus:border-transparent focus:ring-0 focus:outline-none"
-            />
-          </div>
+      <Combobox.Content className="flex w-64 flex-col overflow-hidden p-0">
+        <div className="shrink-0 border-b border-surface-700 p-1">
+          <Combobox.Input size="sm" placeholder={placeholder} />
         </div>
-        <div className="flex-1 overflow-y-auto py-1">
+        <div className="flex-1 overflow-y-auto p-1">
           <Combobox.List>
             {(item: MultiSelectOption) => (
               <Combobox.Item
                 key={item.value}
                 value={item}
                 disabled={item.disabled}
-                className={twMerge(
-                  "text-surface-400 data-highlighted:bg-surface-600",
-                  "data-selected:text-surface-100",
-                )}
+                className="text-surface-400 data-selected:text-surface-100"
               >
-                {item.label}
+                <span className="min-w-0 truncate">{item.label}</span>
               </Combobox.Item>
             )}
           </Combobox.List>
-          <Combobox.Empty>
-            <p className="px-3 py-6 text-center text-sm text-surface-400">No results found</p>
-          </Combobox.Empty>
+          <Combobox.Empty />
         </div>
       </Combobox.Content>
     </Combobox.Root>

@@ -131,8 +131,6 @@ export function ColorField({
                 aria-label={m.workshop_bin_color_channel_label({
                   channel: CHANNEL_NAMES[at] ?? String(at),
                 })}
-                increaseLabel={m.common_number_increase_action()}
-                decreaseLabel={m.common_number_decrease_action()}
                 step={CHANNEL_STEP}
                 decimals={CHANNEL_DECIMALS}
                 value={value}
@@ -142,12 +140,12 @@ export function ColorField({
           ))}
         </span>
         <span className="flex justify-end gap-2">
-          <Button variant="ghost" size="xs" onClick={() => setOpen(false)}>
+          <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
             {m.common_cancel_action()}
           </Button>
           <Button
             variant="filled"
-            size="xs"
+            size="sm"
             onClick={() => {
               onCommit(draft);
               setOpen(false);

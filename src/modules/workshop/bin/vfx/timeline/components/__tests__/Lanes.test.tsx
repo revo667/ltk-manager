@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { BinRow } from "@/lib/tauri";
 import { useWorkshopLayoutStore } from "@/stores";
 
-import { BLEND_MODE, DRAG_MOTION, LINGER_TYPE } from "../../../engine/model/enums";
+import { BLEND_MODE, DRAG_MOTION, LINGER_TYPE, STENCIL_MODE } from "../../../engine/model/enums";
 import { type EmitterModel, POINT_SHAPE, type SystemModel } from "../../../engine/model/model";
 import { createDriver } from "../../../engine/simulation/driver";
 import { type EmitterChoice, EmitterChoiceContext } from "../../../inspector/state/emitterChoice";
@@ -46,6 +46,9 @@ function emitter(over: Partial<EmitterModel> = {}): EmitterModel {
     pass: 0,
     miscRenderFlags: 0,
     groundLayer: false,
+    stencilMode: STENCIL_MODE.disabled,
+    stencilRef: 0,
+    stencilReferenceId: null,
     childSet: null,
     fields: null,
     ...over,
@@ -58,6 +61,7 @@ function system(...emitters: EmitterModel[]): SystemModel {
     name: null,
     emitters,
     transform: null,
+    hudLayer: false,
     dragMotion: DRAG_MOTION.stepped,
     buildUpTime: 0,
   };
@@ -193,7 +197,8 @@ describe("Lanes", () => {
   it("draws one lane per emitter, in draw order rather than file order", () => {
     renderLanes();
 
-    expect(laneNames()).toEqual(["Sparkles", "Glow", "Burst", "Orb"]);
+    /* `Glow` is the one simple emitter, which draws after the complex ones of its pass. */
+    expect(laneNames()).toEqual(["Sparkles", "Burst", "Glow", "Orb"]);
   });
 
   it("carries each lane's index, the second list's tag and a disabled emitter's struck eye", () => {
@@ -202,6 +207,30 @@ describe("Lanes", () => {
     expect(screen.getByText("[2]")).toBeInTheDocument();
     expect(screen.getByText("simple")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Disabled" })).toBeInTheDocument();
+  });
+
+  it("says which gate keeps a culled emitter from spawning, on its struck eye", () => {
+    const gated = system(
+      emitter({ index: 0, name: "Never", disabled: true, culled: "never" }),
+      emitter({ index: 1, name: "Watched", listIndex: 1, disabled: true, culled: "spectator" }),
+      emitter({ index: 2, name: "Flat", simple: true, disabled: true, culled: "hudLayer" }),
+      emitter({ index: 3, name: "Cheap", listIndex: 2, disabled: true, culled: "importance" }),
+      emitter({ index: 4, name: "Tinted", listIndex: 3, disabled: true, culled: "colorblind" }),
+    );
+    const driver = createDriver(1);
+    driver.swap(gated);
+    renderLanes(runFixture({ system: gated, driver }).run, choice({ cards: [], total: 0 }));
+
+    for (const reason of [
+      "Never spawned, by its colorblind visibility",
+      "Spawned only while spectating",
+      "Simple emitter, dropped on the HUD layer",
+      "Low-spec substitute, not spawned at Very High effects quality",
+      "Colorblind palette only",
+    ]) {
+      expect(screen.getByRole("img", { name: reason })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("img", { name: "Disabled" })).not.toBeInTheDocument();
   });
 
   it("runs an endless emitter to the edge under an arrow", () => {
@@ -268,9 +297,10 @@ describe("Lanes", () => {
 
     fireEvent.pointerDown(toggleOf("Sparkles", "Solo"), { button: 0 });
     fireEvent.pointerUp(window);
-    fireEvent.pointerDown(toggleOf("Burst", "Solo"), { button: 0, shiftKey: true });
+    fireEvent.pointerDown(toggleOf("Glow", "Solo"), { button: 0, shiftKey: true });
 
-    expect(updated(run.setSoloed)).toEqual(new Set([1, 2, 3]));
+    /* `Burst` is listed between the two, though the file lists it after both. */
+    expect(updated(run.setSoloed)).toEqual(new Set([1, 3, 2]));
   });
 
   it("shows or hides every lane from the header, and clears every solo", async () => {
@@ -408,6 +438,18 @@ describe("Lanes", () => {
     expect(last()?.from).toBeCloseTo(0.75);
     expect(last()?.to).toBeCloseTo(1.25);
     expect(run.seek).not.toHaveBeenCalled();
+  });
+
+  it("fits a continuous run to the time its last bar ends", () => {
+    /* The bars end at 1.5 seconds, so the window is 1.575 seconds over 315 pixels. */
+    const measured = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(315);
+    onTestFinished(() => measured.mockRestore());
+    const { run } = renderLanes(fakeRun({ playback: "continuous", span: 60 }));
+    const ruler = screen.getByRole("group", { name: "Timeline ruler" });
+
+    fireEvent.pointerDown(ruler, { button: 0, clientX: 100 });
+
+    expect(vi.mocked(run.seek).mock.lastCall?.[0]).toBeCloseTo(0.5);
   });
 
   it("draws the live-count histogram only while its switch is on", () => {

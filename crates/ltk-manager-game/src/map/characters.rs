@@ -5,12 +5,12 @@
 //! the engine derives the character from the placeable's own name.
 
 use ltk_hash::BinHash;
-use ltk_manager_core::hashing::named;
+use ltk_manager_base::hashing::named;
 use ltk_meta::walk::Leaf;
 use serde::Serialize;
 
 use super::placeable::{controller, name, placeables, transform, visibility};
-use ltk_manager_core::bin_document::{
+use ltk_manager_bin::bin_document::{
     BinDocument, Fields, fields_of, hex, items, leaf, struct_of, text,
 };
 
@@ -46,7 +46,7 @@ pub struct MapCharacter {
     pub chunk: String,
     /// The key it sits under in that chunk, as `0x` and eight digits.
     pub key: String,
-    /// The placeable's own name, which is unique within a map.
+    /// The placeable's own name. A map skin can repeat one, so `chunk` and `key` identify it.
     pub name: String,
     /// The entry path of the skin it wears, such as `Characters/Turret/Skins/Skin0`.
     pub skin: String,

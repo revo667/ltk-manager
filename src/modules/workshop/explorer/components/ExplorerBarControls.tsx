@@ -126,7 +126,8 @@ export function SelectionReadout({
         size,
       })}
       <IconButton
-        icon={<XIcon className="size-3" />}
+        icon={<XIcon />}
+        size="row"
         onClick={onClear}
         aria-label={m.workshop_explorer_selection_clear_action()}
       />
@@ -139,7 +140,7 @@ export function ViewToggle({ view }: { view: ExplorerView }) {
 
   return (
     <SegmentedControl
-      size="xs"
+      size="sm"
       value={view}
       onChange={setView}
       aria-label={m.workshop_explorer_view_label()}
@@ -216,7 +217,7 @@ export function ExplorerOptions({ view, filter, onFilterChange }: ExplorerOption
             <IconButton
               icon={<SlidersHorizontalIcon />}
               aria-label={m.workshop_explorer_view_options_label()}
-              className={narrowed ? "text-accent-300" : undefined}
+              tone={narrowed ? "accent" : "neutral"}
             />
           }
         />
@@ -226,7 +227,7 @@ export function ExplorerOptions({ view, filter, onFilterChange }: ExplorerOption
         align="end"
         sideOffset={8}
         aria-label={m.workshop_explorer_view_options_label()}
-        className="w-64 divide-y divide-surface-600/50 bg-surface-900 p-0 select-none"
+        className="w-64 divide-y divide-surface-700 p-0 select-none"
       >
         <FilterSection
           title={m.workshop_explorer_sort_section_label()}
@@ -234,7 +235,6 @@ export function ExplorerOptions({ view, filter, onFilterChange }: ExplorerOption
             <Button
               variant="ghost"
               size="xs"
-              compact
               right={<DirectionIcon weight="bold" className="size-3.5" />}
               onClick={() => pickField(sort.field)}
               className="text-fine text-accent-300"
@@ -265,7 +265,6 @@ export function ExplorerOptions({ view, filter, onFilterChange }: ExplorerOption
                 <Button
                   variant="ghost"
                   size="xs"
-                  compact
                   onClick={() =>
                     onFilterChange({
                       ...filter,
@@ -397,7 +396,7 @@ function TreeThumbnailOptions() {
       {thumbnails && (
         <FilterSection title={m.workshop_explorer_art_shape_label()}>
           <SegmentedControl<ExplorerArtShape>
-            size="xs"
+            size="sm"
             value={shape}
             onChange={setShape}
             aria-label={m.workshop_explorer_art_shape_label()}

@@ -52,7 +52,7 @@ export function EditLayerDialog({ open, layer, onClose, projectPath }: EditLayer
       title={`Edit Layer: ${layer.displayName}`}
       size="sm"
     >
-      <form
+      <Dialog.Form
         onSubmit={(e) => {
           e.preventDefault();
           form.handleSubmit();
@@ -72,12 +72,13 @@ export function EditLayerDialog({ open, layer, onClose, projectPath }: EditLayer
         </Dialog.Body>
 
         <Dialog.Footer>
-          <Button variant="ghost" onClick={handleClose}>
+          <Button size="lg" variant="ghost" onClick={handleClose}>
             Cancel
           </Button>
           <form.Subscribe selector={(state) => ({ canSubmit: state.canSubmit })}>
             {({ canSubmit }) => (
               <Button
+                size="lg"
                 variant="filled"
                 loading={updateDescription.isPending}
                 disabled={!canSubmit}
@@ -88,7 +89,7 @@ export function EditLayerDialog({ open, layer, onClose, projectPath }: EditLayer
             )}
           </form.Subscribe>
         </Dialog.Footer>
-      </form>
+      </Dialog.Form>
     </Dialog.Shell>
   );
 }

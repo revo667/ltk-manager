@@ -23,25 +23,25 @@ same evaluator.
 
 ## 1. Current state (verified 2026-09-08)
 
-| Piece                           | Where                                            | Shape                                                                                                                                                                                         |
-| ------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The `preview` pane              | `src/modules/workshop/bin/shellPanes.ts`         | A registered `ShellPaneId` with an i18n label. Absent from `defaultShellLayout()`                                                                                                             |
-| Pane content                    | `ShellPaneTree.tsx`, `ShellPaneContent`          | `Record<ShellPaneId, ShellPane>`. The `preview` key takes a component                                                                                                                         |
-| Value families                  | `valueRows.ts`                                   | `ValueColor`, `ValueColorRgb`, `ValueFloat`, `ValueVector2`, `ValueVector3` decode to `CurveKey[]` and `ProbabilityTable[]`                                                                   |
-| Channel naming and hue          | `curveChannels.ts`                               | `CHANNELS`, `STROKE`, `CHIP` per family                                                                                                                                                       |
-| Bin commands                    | `src-tauri/src/commands/bin.rs`                  | `bin_open`, `bin_children`, `bin_read`, `class_schema`, `bin_close`                                                                                                                           |
-| The projected read              | `useBinRead.ts`                                  | Level-by-level, batched under `READ_ROW_CAP` = 2000 rows                                                                                                                                      |
-| Asset commands                  | `src-tauri/src/commands/preview.rs`              | `read_asset_info`, `save_asset_copy`. 56 lines                                                                                                                                                |
-| The asset URI scheme            | `src-tauri/src/protocol.rs`, `main.rs:61`        | `ltk-asset`, registered asynchronous. Path is a base64url `AssetRef`, `?w=` picks a mipmap                                                                                                    |
-| The asset URL helper            | `src/modules/workshop/preview/assetRef.ts`       | `previewUrl(asset, minWidth?)`, `assetKey`, `assetArchive`. No width answers full resolution                                                                                                  |
-| Texture decode                  | `crates/ltk-manager-core/src/preview/texture.rs` | `render(bytes, min_width)`, `info(bytes)`. `ltk_texture` 0.6.0 with `intel-tex`, a dependency                                                                                                 |
-| Archive reads                   | `ltk_manager_core::game_wads::WadCache`          | A four-entry LRU over mounted archives                                                                                                                                                        |
-| `AssetRef`                      | `crates/ltk-manager-core/src/preview/source.rs`  | `Layer`, `GameChunk { wad, pathHash }`, `File`. Bound into `@/lib/tauri`                                                                                                                      |
-| Texture prior art in the editor | `TextureSwatch.tsx`                              | Draws a chunk's pixels at row height off `previewUrl`                                                                                                                                         |
-| Mesh                            | `ltk_mesh`                                       | `skinned/` (`.skn`) and `static/` (`.scb`, `.sco`). Not a dependency                                                                                                                          |
-| Animation                       | `ltk_anim`                                       | Compressed and uncompressed assets, joints, an evaluator. Not a dependency                                                                                                                    |
-| league-toolkit deps             | `Cargo.toml`                                     | `ltk_wad` 0.5.4, `ltk_texture` 0.6.0, `ltk_file`, `ltk_hash`, `ltk_meta`, `ltk_rst`, `ltk_hashtable`. `ltk_meta`, `ltk_hash`, `ltk_io_ext` and `ltk_primitives` are patched to rev `0bc9d0ea` |
-| ThreeJS                         | —                                                | Absent                                                                                                                                                                                        |
+| Piece                           | Where                                              | Shape                                                                                                                                                                                         |
+| ------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The `preview` pane              | `src/modules/workshop/bin/shellPanes.ts`           | A registered `ShellPaneId` with an i18n label. Absent from `defaultShellLayout()`                                                                                                             |
+| Pane content                    | `ShellPaneTree.tsx`, `ShellPaneContent`            | `Record<ShellPaneId, ShellPane>`. The `preview` key takes a component                                                                                                                         |
+| Value families                  | `valueRows.ts`                                     | `ValueColor`, `ValueColorRgb`, `ValueFloat`, `ValueVector2`, `ValueVector3` decode to `CurveKey[]` and `ProbabilityTable[]`                                                                   |
+| Channel naming and hue          | `curveChannels.ts`                                 | `CHANNELS`, `STROKE`, `CHIP` per family                                                                                                                                                       |
+| Bin commands                    | `src-tauri/src/commands/bin.rs`                    | `bin_open`, `bin_children`, `bin_read`, `class_schema`, `bin_close`                                                                                                                           |
+| The projected read              | `useBinRead.ts`                                    | Level-by-level, batched under `READ_ROW_CAP` = 2000 rows                                                                                                                                      |
+| Asset commands                  | `src-tauri/src/commands/preview.rs`                | `read_asset_info`, `save_asset_copy`. 56 lines                                                                                                                                                |
+| The asset URI scheme            | `src-tauri/src/protocol.rs`, `main.rs:61`          | `ltk-asset`, registered asynchronous. Path is a base64url `AssetRef`, `?w=` picks a mipmap                                                                                                    |
+| The asset URL helper            | `src/modules/workshop/preview/assetRef.ts`         | `previewUrl(asset, minWidth?)`, `assetKey`, `assetArchive`. No width answers full resolution                                                                                                  |
+| Texture decode                  | `crates/ltk-manager-assets/src/preview/texture.rs` | `render(bytes, min_width)`, `info(bytes)`. `ltk_texture` 0.6.0 with `intel-tex`, a dependency                                                                                                 |
+| Archive reads                   | `ltk_manager_assets::game_wads::WadCache`          | A four-entry LRU over mounted archives                                                                                                                                                        |
+| `AssetRef`                      | `crates/ltk-manager-assets/src/preview/source.rs`  | `Layer`, `GameChunk { wad, pathHash }`, `File`. Bound into `@/lib/tauri`                                                                                                                      |
+| Texture prior art in the editor | `TextureSwatch.tsx`                                | Draws a chunk's pixels at row height off `previewUrl`                                                                                                                                         |
+| Mesh                            | `ltk_mesh`                                         | `skinned/` (`.skn`) and `static/` (`.scb`, `.sco`). Not a dependency                                                                                                                          |
+| Animation                       | `ltk_anim`                                         | Compressed and uncompressed assets, joints, an evaluator. Not a dependency                                                                                                                    |
+| league-toolkit deps             | `Cargo.toml`                                       | `ltk_wad` 0.5.4, `ltk_texture` 0.6.0, `ltk_file`, `ltk_hash`, `ltk_meta`, `ltk_rst`, `ltk_hashtable`. `ltk_meta`, `ltk_hash`, `ltk_io_ext` and `ltk_primitives` are patched to rev `0bc9d0ea` |
+| ThreeJS                         | —                                                  | Absent                                                                                                                                                                                        |
 
 `READ_ROW_CAP` bounds one projected read at 2000 rows. One `VfxSystemDefinitionData` carries a
 list of emitters, each with 139 properties, each property a nested value class. The pane's read
@@ -107,6 +107,12 @@ new definition.
 
 This is the shape of the engine's own override table: a value is transformed in place at
 evaluation time, and the particle pool is not consulted.
+
+The driver's `swap` follows this rule and reports whether the new definition changes a field the
+simulation reads. The owner of a run that the reader watches, the shell's run and
+`useParticleSystem`, then seeks the driver to its current phase. The seek replays the seeded run
+under the new definition, so the particles alive match an edit, an undo or a redo at once,
+playing or paused. Without it they keep the previous birth values until they die.
 
 ### 2.6 The simulation is seeded
 
@@ -1529,8 +1535,10 @@ the attachment keeping the owner's place and turn and dropping the
 particle's. `AttachedMeshes` draws one `SkinnedMesh` a particle, up to eight an emitter, on the
 `Character`'s own geometry and skeleton through `useCharacterSkin`. Its bind is detached and the
 identity, so a skinned vertex lands where the character stands and the mesh's own transform is the
-particle's scale. The material is the mesh emitter's fragment pass with the per-particle values
-as uniforms.
+particle's scale. The bones' world matrices already hold every transform above the character, so
+the mesh's matrix undoes its parent's world matrix before the scale. A character moved by the skin
+preview's placement is then placed once, and the scale is about the placement's origin. The
+material is the mesh emitter's fragment pass with the per-particle values as uniforms.
 
 A census of the 174 champion WADs counts 65,274 attached emitters, and it settles the scale:
 
@@ -2269,6 +2277,176 @@ The user checked all of them on the screen, and every one reads right: build-up 
 FeeneyPult and the laser turret, the stop wait on the Poro follower and the cauldron, the stretch
 on camera quads, arbitrary quads and a mesh, and the ground layer on arbitrary quads, camera quads
 and meshes.
+
+### 2.52 A particle lives in its emitter's frame, and the timing counts from the system's start
+
+A static read of the 16.17 client, property by property, is written up on the meta wiki at
+<https://meta-wiki.leaguetoolkit.dev/classes/vfxemitterdefinitiondata> and
+<https://meta-wiki.leaguetoolkit.dev/classes/vfxsystemdefinitiondata>. Where it disagrees with an
+earlier decision here, the engine follows the read, and the earlier decision stands only for what
+the list below does not name. None of it was checked in game.
+
+**Storage.** A particle's position, velocity and acceleration are in the frame it was born in,
+`pool.position` and `pool.velocity`, and the world is reached at draw time. `pool.placed` is the
+particle's own matrix translation: the position, `EmitterPosition` under `IsEmitterSpace`, the
+system's current orientation under `particleIsLocalOrientation`, the orbit, then the definition's
+`transform`. `drawnPlaceInto` turns it by the birth frame and stands it on `pool.anchor`, where
+that frame's origin stood at the birth, with the `bindWeight` travel of `pool.bound` and the
+`worldAcceleration` offset on top. This replaces the world-space pool of 2.31 and gives four
+readings their place:
+
+- Drag acts on the emitter's own axes, so a non-uniform drag under a `rotationOverride` is exact.
+- The orbit of `birthOrbitalVelocity` turns a particle about the origin of its emitter's frame.
+- The definition's `transform` is the last factor of a particle's own matrix, inside the birth
+  frame. It no longer moves the rig's origin, which settles finding 3.10 of
+  docs/research/vfx-engine-audit.md. A HUD-layer system takes its translation alone.
+- `translationOverride` is turned by the system's orientation alone. `rotationOverride` and
+  `scaleOverride` do not reach it.
+
+**Timing.** Every time is the system's own, counted from its start.
+
+| Field                    | Reading                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------ |
+| `lifetime`               | An end time. A delay eats into the emission, and a negative value never emits              |
+| `period`                 | Cycles from the system's start. It gates nothing without `timeActiveDuringPeriod`          |
+| `timeActiveDuringPeriod` | Alone, it limits emission to the system's first seconds                                    |
+| emitter phase            | `(now - timeBeforeFirstEmission) / min(end, active, period)`, unclamped, zero for none set |
+| spawn count              | `trunc((now - max(cycle start, last spawn)) * rate)`, the last spawn moved to `now`        |
+
+A spawn does not carry the fraction the truncation drops, and the last spawn starts at zero, so a
+delayed emitter opens on a burst up to the cap of `rate * 0.33 + 1`. The births of one step are
+spread evenly over it, in birth time and along the system's travel, which settles finding 3.5. A
+complex `isSingleParticle` emitter writing no material overrides, whose `lifetime` is unset or
+over ten seconds past `particleLifetime`, takes `particleLifetime` for its end, so one delayed
+past that value never emits. `emissionEnd` in `systemModel.ts` is that rule. A stopped system
+keeps spawning until its age passes `emitterLinger`.
+
+**Draws.** A birth vector and `birthColor` draw once per channel. `particleLifetime` draws its
+own. The UV birth values, the random start frame and the birth-random colour lookup share one
+number, which `ParticlesShareRandomValue` makes the emitter's. A table on `rate` or on a value
+read over a particle's life is drawn again each step. This replaces the one chance of 2.6.
+
+**Motion.** `acceleration`, `velocity`, `drag` and `bindWeight` are read at the particle's own
+age, where they were read at the emitter's phase. `birthAcceleration` joins `acceleration`. The
+spin is the closed form of the birth angle, rate and acceleration, which settles finding 3.6.
+`UseCalculusForPhysics` eases by the birth drag alone.
+
+**Integrated values.** `rotation0`, `worldAcceleration`, `particleUVScrollRate` and
+`particleUVRotateRate` are read through `integratedInto`: the curve's running integral over the
+age, as a 64-entry table, times the lifetime. A value writing no `dynamics` is not integrated,
+and is one fixed amount for the whole life rather than a rate.
+
+**Gates.** `ChanceToNotExist` is rolled once per run. `colorblindVisibility` of 3 or more never
+spawns. `Filtering.spectatorPolicy` set to spectators only does not spawn in a preview. A
+HUD-layer system drops its simple emitters. The keywords of `Filtering` are not gated, since what
+supplies an instance's keywords is not established.
+
+**Simple emitters.** The list an emitter is in makes it simple, so `LegacySimple` defaults where
+it is unwritten and is ignored on a complex emitter. A simple emitter reads none of the over-life
+motion, the emitter's own frame, `Linger` or `particleLingerType`, and draws only a camera quad,
+an arbitrary quad, a mesh, a planar projection and an attached mesh.
+
+**Orientation and stretch.** `isDirectionOriented` aims the own `+Z` of an arbitrary quad, a mesh
+and an attached mesh along the travel, on top of the particle's spin. This replaces the look 2.51
+records for the arbitrary quad, which was judged by eye, and is the first thing to check against
+the game. `directionVelocityScale` is read whether or not the emitter is direction oriented,
+stretches a camera quad's up and an arbitrary quad's side, and reaches no mesh.
+`postRotateOrientationAxis` is euler degrees turned after the spin.
+
+**Render phases.** `drawPhases` in `drawKind.ts` is the engine's own choice of phase. An emitter
+left automatic draws by the sign of its `pass`: negative before the late distortion, and zero or
+more after it. A distortion block warps only with a non-zero `distortionMode`, bit 2 ahead of
+every particle and bit 1 between the two colour phases. `renderPhaseOverride` forces one phase.
+`Passes` draws the phases in that order, which replaces the single warp over every particle of
+2.25.
+
+**Other readings.**
+
+- `modulationFactor` multiplies every particle's colour.
+- `emitterUvScrollRate` lands after the flips and moves the mult layer too. No mesh reads it.
+- A flipbook rate at or under zero plays nothing.
+- The soft fade starts its fade out at `beginOut` itself, none for a value at or under zero, and
+  its unnamed byte picks what it reaches, in place of the blend mode of 2.43.
+- `emissionMeshName` is sampled by triangle area, with `emissionMeshScale` and
+  `useEmissionMeshNormalForBirth`.
+- `offsetLifetimeScaling` adds seconds per unit of the raw shape offset.
+- `rateByVelocityFunction` replaces `rate` by the system's speed.
+- The unnamed flag `0xd1ee8634` reverses a mesh's front face.
+
+**Not built.** The fixed 30 Hz step a system takes with `SimulateEveryFrame` clear, the flex
+values, `isFollowingTerrain`, the importance rate multiplier below Very High, the slice shaders of
+`sliceTechniqueRange` and the shadow phase. The stencil modes are built in 2.53.
+
+**What to check on the screen.**
+
+- A direction-oriented arbitrary quad, against the game.
+- A delayed emitter with a rate, which now opens on a burst.
+- A system whose `transform` rotates, which now turns about its attachment point.
+- An emitter whose `rotation0` or `particleUVScrollRate` writes a constant and no curve, which no
+  longer spins or scrolls.
+
+### 2.53 An emitter tests against the stencil the scene's emitters write
+
+This replaces the `stencilMode` paragraphs of 2.27 and 2.28, which read the mode and drew every
+emitter untested. The reading is the meta wiki's `stencilMode`, `stencilRef` and
+`StencilReferenceId` on <https://meta-wiki.leaguetoolkit.dev/classes/vfxemitterdefinitiondata>.
+None of it was checked in game.
+
+**The drawing buffer has a stencil buffer.** `createOpaqueRenderer` asks for one. The first draw
+of a frame clears it, and the later phases of `Passes` draw without clearing, so a mask written in
+one phase is tested in the next.
+
+**Each mode is one compare and one write.** `stencilState` in `rendering/utils/stencil.ts` sets
+them on the ThreeJS material. The compare mask and the write mask are both `0x3f`, because the
+engine compares the low six bits.
+
+| mode                        | compare    | on pass              |
+| --------------------------- | ---------- | -------------------- |
+| `1` WriteMask               | always     | writes the reference |
+| `2` TestEqual               | `EQUAL`    | keeps the buffer     |
+| `3` TestNotEqual            | `NOTEQUAL` | keeps the buffer     |
+| `4` WriteMaskIfTestNotEqual | `NOTEQUAL` | writes the reference |
+
+A fragment that fails the depth test or the alpha test writes nothing.
+
+**A simple emitter and a custom material use no stencil state.** The engine reads the mode on
+complex emitters only, so the reader returns the disabled mode for a simple one. A resolved custom
+material replaces the emitter's stencil fields with the stencil state of its own passes, and the
+preview does not read that state.
+
+**A `StencilReferenceId` takes a value per scene.** The engine gives each distinct hash drawn in a
+frame a value counting down from 63, in draw order. The preview gives each distinct hash of a
+scene a value counting down from 63, in the order its emitter mounted. Two emitters with the same
+hash get the same value across systems. An authored `stencilRef` of 63 or just below it can match
+a different hash here than in the engine.
+
+**A tester that no texel can pass draws untested.** This is the one deliberate difference from the
+engine. The buffer is cleared to 0, and the emitters that draw in the scene write a known set of
+values. `canPass` in `rendering/utils/stencil.ts` checks each tester against them:
+
+- `TestEqual` is tested where its reference is written in the scene, or is 0. A reference of 0
+  draws outside every mask, which 2,479 emitters of the 16.19 install author.
+- `TestNotEqual` is tested where its reference is not 0, or the scene writes any value.
+- Mode `4` writes its own reference, so it is always tested.
+
+A tester that fails this check would be hidden everywhere in the engine. The preview assumes
+its writer is outside the scene and draws it whole. The cases:
+
+- An emitter previewed alone in the Graph pane or the inspector has no writer.
+- A muted writer, or one left out of a solo, counts as absent.
+- The mask is written by another system, or by a material pass of a character.
+
+**A written mask can draw as a tint.** A mask writer usually draws no visible colour, such as
+black under an additive blend, so its node preview in the Graph pane would be empty. `VfxSystem`
+takes `masks`. Under it, an emitter of mode `1` or `4` draws a twin beneath its colour in the
+scene's wire colour at 35% opacity, over the texels whose alpha passes the pick threshold. The
+emitter and geometry node previews always set it. The viewport sets it from the Show menu's
+Stencil masks item, which is off by default.
+
+**Not built.** The stencil fields of `StaticMaterialPassDef`, which a custom material's passes
+carry. The pick render and the wireframe twin ignore the stencil. ThreeJS draws every opaque
+object before every transparent one, so a tester with `blendMode` `NONE` draws before a blended
+writer of a lower `pass`.
 
 ### T1 — subdivided textures and the UV transform
 

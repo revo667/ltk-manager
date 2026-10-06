@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import {
   AlertBox,
+  Badge,
   Button,
   EmptyState,
   ProgressBar,
@@ -151,7 +152,7 @@ export function CacheSection() {
             <Spinner />
           </div>
         )}
-        {error && <AlertBox variant="error">{errorSummary(error)}</AlertBox>}
+        {error && <AlertBox tone="danger">{errorSummary(error)}</AlertBox>}
       </SectionCard>
     );
   }
@@ -165,7 +166,6 @@ export function CacheSection() {
   const syncButton = (
     <Button
       variant="filled"
-      size="sm"
       loading={syncing}
       left={<DownloadSimpleIcon weight="bold" className="size-4" />}
       onClick={() => runSync(false)}
@@ -180,7 +180,7 @@ export function CacheSection() {
     <div className="flex min-w-0 flex-col gap-1.5">
       {!progress && (
         <div className="flex items-center gap-2 text-xs text-surface-400">
-          <Spinner size="sm" />
+          <Spinner size={16} />
           <span>Checking for updates…</span>
         </div>
       )}
@@ -234,13 +234,10 @@ export function CacheSection() {
                   Updated {formatUpdatedAt(status.generatedAt!)}
                 </p>
                 {updates && !updates.upToDate && (
-                  <span
-                    className="rounded-full bg-info/10 px-2 py-0.5 text-xs text-info-text"
-                    title={behindLabels(updates).join(", ")}
-                  >
+                  <Badge size="md" tone="info" title={behindLabels(updates).join(", ")}>
                     {updateLabel(behindLabels(updates).length)}
                     {downloadSizeLabel(updates.downloadBytes)}
-                  </span>
+                  </Badge>
                 )}
                 {updates?.upToDate && <span className="text-xs text-surface-500">Up to date</span>}
               </div>
@@ -297,7 +294,6 @@ export function CacheSection() {
                 {syncButton}
                 <Button
                   variant="outline"
-                  size="sm"
                   disabled={syncing}
                   left={<ArrowsClockwiseIcon weight="bold" className="size-4" />}
                   onClick={() => runSync(true)}

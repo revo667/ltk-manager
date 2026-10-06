@@ -53,7 +53,10 @@ import {
   clickIntent,
   useCurveAimRequest,
   useLendOpenBin,
+  useFloatingShellPanes,
+  useFloatShellPane,
   useOpenShellPane,
+  useOpenShellPanes,
   useRowRevealRequest,
   useSettleCurveAim,
   useSettleRowReveal,
@@ -64,7 +67,6 @@ import { useClassSchema } from "../../classes/hooks/useClassSchema";
 import { classLayout, type LayoutFrame, shellHoldsCurve } from "../../classes/utils/classLayouts";
 import { CurveSurface } from "../../curves/components/CurveSurface";
 import { type CurveDock, CurveDockContext, type CurveTarget } from "../../curves/state/curveTarget";
-import { OtherDeclarations } from "../../links/components/OtherDeclarations";
 import { useShowInFile } from "../../links/hooks/useShowInFile";
 import {
   ShellHeaderContext,
@@ -191,14 +193,20 @@ function OpenObject({
      other frame and Properties get, and no tab draws the surface twice. */
   const paned = frame === "shell" && layout !== undefined && shellHoldsCurve(layout);
   const openShellPane = useOpenShellPane(layout?.shell ?? "vfx");
-  /* A reader who closed the curve pane gets it back by asking for a curve. */
+  const openPanes = useOpenShellPanes(layout?.shell ?? "vfx");
+  const paneOpen = paned && openPanes.has("curve");
+  const paneFloats = useFloatingShellPanes(layout?.shell ?? "vfx").includes("curve");
+  const floatShellPane = useFloatShellPane(layout?.shell ?? "vfx");
+  /* An open curve pane comes to the front, and a closed one floats, per "A pane floats" in
+     docs/ux/BIN_EDITOR.md. */
   const aim = useCallback(
-    (next: CurveTarget) => {
+    (next: CurveTarget, quiet = false) => {
       setTarget(next);
       setAimed(true);
-      if (paned) openShellPane("curve");
+      if (paneOpen) openShellPane("curve");
+      else if (paned && !paneFloats && !quiet) floatShellPane("curve");
     },
-    [paned, openShellPane],
+    [paned, paneOpen, paneFloats, openShellPane, floatShellPane],
   );
   const dock = useMemo<CurveDock>(
     () => ({ target, aim, clear: () => setTarget(null) }),
@@ -258,9 +266,6 @@ function OpenObject({
               <CaretRightIcon weight="bold" className="size-3 shrink-0 text-surface-500" />
             </span>
             <ClassCard classHash={object.classHash} name={object.class} />
-            {!narrow && (
-              <OtherDeclarations asset={asset} objectHash={object.entry} objectPath={objectPath} />
-            )}
           </span>
           {shelled && (
             <>
@@ -270,7 +275,7 @@ function OpenObject({
           )}
           {layout && (
             <SegmentedControl
-              size="xs"
+              size="sm"
               aria-label={m.workshop_bin_view_mode_label()}
               value={mode}
               onChange={setMode}
@@ -286,7 +291,7 @@ function OpenObject({
           {!narrow && (
             <Button
               variant="ghost"
-              size="xs"
+              size="sm"
               left={<FileIcon className="size-4" />}
               onClick={showFile}
             >
@@ -414,7 +419,7 @@ function HeaderMenu({ document, object, onShowInFile }: HeaderMenuProps) {
   return (
     <Menu.Root>
       <Menu.Trigger
-        render={<IconButton compact={false} icon={<DotsThreeVerticalIcon />} aria-label={label} />}
+        render={<IconButton size="sm" icon={<DotsThreeVerticalIcon />} aria-label={label} />}
       />
       <Menu.Content align="end" sideOffset={4} className="w-56">
         {onShowInFile && (

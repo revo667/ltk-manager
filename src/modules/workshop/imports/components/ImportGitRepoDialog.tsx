@@ -66,7 +66,7 @@ export function ImportGitRepoDialog() {
       size="lg"
       closable={!isImporting}
     >
-      <form
+      <Dialog.Form
         onSubmit={(e) => {
           e.preventDefault();
           form.handleSubmit();
@@ -119,7 +119,7 @@ export function ImportGitRepoDialog() {
         </Dialog.Body>
 
         <Dialog.Footer>
-          <Button variant="ghost" onClick={handleClose} disabled={isImporting}>
+          <Button size="lg" variant="ghost" onClick={handleClose} disabled={isImporting}>
             Cancel
           </Button>
           <form.Subscribe
@@ -127,6 +127,7 @@ export function ImportGitRepoDialog() {
           >
             {({ canSubmit, isValid }) => (
               <Button
+                size="lg"
                 variant="filled"
                 loading={isImporting}
                 disabled={!canSubmit || !isValid || isImporting}
@@ -137,7 +138,7 @@ export function ImportGitRepoDialog() {
             )}
           </form.Subscribe>
         </Dialog.Footer>
-      </form>
+      </Dialog.Form>
     </Dialog.Shell>
   );
 }

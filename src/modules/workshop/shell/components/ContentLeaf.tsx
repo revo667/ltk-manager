@@ -35,8 +35,7 @@ interface ContentLeafProps {
  * An editor group's frame. A shown document of islands draws its own edges, and the frame
  * then draws none.
  */
-const FRAME =
-  "rounded-lg border border-surface-700 has-[[data-islands]:not([hidden]_[data-islands])]:border-transparent";
+const FRAME = "rounded-lg border border-surface-700 data-[islands-shown]:border-transparent";
 
 /** One editor group of the split tree, bound to the content documents it holds. */
 export function ContentLeaf({ leaf }: ContentLeafProps) {
@@ -100,14 +99,14 @@ function NothingOpenState() {
 
   const action = (
     <>
-      <Button variant="outline" size="sm" onClick={() => openDocument(gameDocument())}>
+      <Button variant="outline" onClick={() => openDocument(gameDocument())}>
         Browse game index
       </Button>
-      <Button variant="outline" size="sm" onClick={() => openDocument(objectsDocument())}>
+      <Button variant="outline" onClick={() => openDocument(objectsDocument())}>
         {m.workshop_objects_browse_action()}
       </Button>
       {!sidebarOpen && (
-        <Button variant="outline" size="sm" onClick={() => setLayerPanelOpen(true)}>
+        <Button variant="outline" onClick={() => setLayerPanelOpen(true)}>
           Show sidebar
         </Button>
       )}

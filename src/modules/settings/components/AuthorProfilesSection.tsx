@@ -10,6 +10,7 @@ import {
 import { useRef, useState } from "react";
 
 import {
+  Badge,
   Button,
   EmptyState,
   Field,
@@ -148,7 +149,6 @@ export function AuthorProfilesSection() {
           <ProfileCount used={rows.length} />
           <Button
             variant="outline"
-            size="sm"
             left={<PlusIcon weight="bold" className="size-4" />}
             onClick={beginAdd}
             disabled={atLimit}
@@ -187,8 +187,7 @@ export function AuthorProfilesSection() {
             description="Add your author profile, and use it by default."
             action={
               <Button
-                variant="light"
-                size="sm"
+                variant="tonal"
                 left={<PlusIcon weight="bold" className="size-4" />}
                 onClick={beginAdd}
               >
@@ -223,9 +222,9 @@ function ProfileRow({ profile, isDefault }: { profile: AuthorProfile; isDefault:
           {profile.name}
         </span>
         {isDefault && (
-          <span className="shrink-0 rounded-full bg-accent-500/15 px-2 py-0.5 text-fine font-medium tracking-wide text-accent-300 uppercase">
+          <Badge tone="accent" className="shrink-0 font-medium tracking-wide uppercase">
             Default
-          </span>
+          </Badge>
         )}
       </div>
       <RoleLine role={profile.role} />

@@ -10,10 +10,9 @@ import {
   Spinner,
 } from "@/components";
 import { m } from "@/i18n";
-import type { GameFindResult } from "@/lib/tauri";
+import type { SearchHits, GameFindHit } from "@/lib/tauri";
 import { DocumentToolbar, type EditorDocumentProps } from "@/modules/editor";
 import { useExplorerThumbnails, useExplorerTileSize, useExplorerView } from "@/stores";
-import { twMerge } from "@/utils";
 
 import {
   type ContentDocumentOf,
@@ -30,6 +29,7 @@ import {
   type ExplorerFileItem,
   ExplorerGrid,
   type ExplorerItem,
+  type ExplorerScope,
   ExplorerSearchBox,
   filterItems,
   filterTree,
@@ -89,6 +89,11 @@ export const EXPLORER_ID = explorerIdOf("game");
 /** The explorer id of the browser the caller sits in. */
 function useExplorerId(): string {
   return explorerIdOf(useWadSource());
+}
+
+/** What the box reads, which is the whole index until the reader narrows it. */
+function useIndexScope(): ExplorerScope {
+  return useExplorerScope(useExplorerId(), "whole");
 }
 
 /**
@@ -161,7 +166,7 @@ function GameExplorerBar({ nav, typing, onTypingChange, boxRef }: GameExplorerBa
       view={view}
       filter={filter}
       onFilterChange={(next) => setFilter(explorerId, next)}
-      box={<SearchField boxRef={boxRef} />}
+      box={<GameSearchField boxRef={boxRef} />}
       selection={selection.summary}
       onClearSelection={selection.clear}
       actions={
@@ -188,7 +193,7 @@ interface GameBodyProps {
 
 function GameBody({ location, onNavigate, onUp }: GameBodyProps) {
   const view = useExplorerView();
-  const scope = useExplorerScope(useExplorerId());
+  const scope = useIndexScope();
   const pattern = useGameSearchPattern();
 
   if (scope === "whole" && pattern.length > 0) return <GameFindResults />;
@@ -200,7 +205,7 @@ function GameBody({ location, onNavigate, onUp }: GameBodyProps) {
 /** Collapse all for whichever tree the body draws: the search results, or the index tree. */
 function CollapseIndexAction() {
   const view = useExplorerView();
-  const scope = useExplorerScope(useExplorerId());
+  const scope = useIndexScope();
   const pattern = useGameSearchPattern();
   const collapseAllGameDirs = useCollapseAllGameDirs();
 
@@ -254,9 +259,7 @@ function RebuildAction() {
 
   return (
     <IconButton
-      icon={
-        <ArrowsClockwiseIcon className={twMerge("size-4", rebuild.isPending && "animate-spin")} />
-      }
+      icon={<ArrowsClockwiseIcon className={rebuild.isPending ? "animate-spin" : undefined} />}
       onClick={() => rebuild.mutate()}
       disabled={rebuild.isPending}
       aria-label={copy.rebuildAction}
@@ -277,7 +280,7 @@ function useIndexCompletions(directory: string): readonly string[] {
   return useMemo(() => data?.dirs.map((dir) => dir.path) ?? [], [data]);
 }
 
-interface SearchFieldProps {
+interface GameSearchFieldProps {
   boxRef: React.RefObject<HTMLInputElement | null>;
 }
 
@@ -287,10 +290,10 @@ interface SearchFieldProps {
  * Whole game runs the index's own find, which ranks across every archive. This
  * folder narrows the rows already on screen, which costs no read at all.
  */
-function SearchField({ boxRef }: SearchFieldProps) {
+function GameSearchField({ boxRef }: GameSearchFieldProps) {
   const explorerId = useExplorerId();
   const copy = sourceCopy(useWadSource());
-  const scope = useExplorerScope(explorerId);
+  const scope = useIndexScope();
   const setScope = useSetExplorerScope();
   const filter = useExplorerFilter(explorerId);
   const setFilter = useSetExplorerFilter();
@@ -310,12 +313,21 @@ function SearchField({ boxRef }: SearchFieldProps) {
     else setFilter(explorerId, { ...filter, text: next });
   };
 
+  /* The text follows the scope, so a switch asks the same question wider or narrower. */
+  const onScopeChange = (next: ExplorerScope) => {
+    if (next === scope) return;
+
+    setScope(explorerId, next);
+    onPatternChange(next === "whole" ? value : "");
+    setFilter(explorerId, { ...filter, text: next === "whole" ? "" : value });
+  };
+
   return (
     <ExplorerSearchBox
       value={value}
       onChange={onChange}
       scope={scope}
-      onScopeChange={(next) => setScope(explorerId, next)}
+      onScopeChange={onScopeChange}
       wholeLabel={copy.whole}
       /* The index is what a regex is worth writing against. A filter over the
          rows on screen matches a substring and nothing more. */
@@ -327,13 +339,13 @@ function SearchField({ boxRef }: SearchFieldProps) {
           <MatchCount result={data} />
         </Count>
       )}
-      {scope === "whole" && isFetching && <Spinner size="xs" className="shrink-0" />}
+      {scope === "whole" && isFetching && <Spinner size={12} className="shrink-0" />}
     </ExplorerSearchBox>
   );
 }
 
 /** What the find turned up, and how much of it the answer carries. */
-export function MatchCount({ result }: { result: GameFindResult }) {
+export function MatchCount({ result }: { result: SearchHits<GameFindHit> }) {
   const formatted = result.total.toLocaleString();
 
   if (result.hits.length < result.total) {

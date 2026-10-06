@@ -62,8 +62,6 @@ export function DeleteContentPopover({
 
         <Popover.Positioner anchor={anchor} sideOffset={8} collisionPadding={12}>
           <Popover.Popup className="w-80">
-            <Popover.Arrow />
-
             <div className="flex flex-col gap-3 p-3">
               <p className="rounded-md border border-surface-600 bg-surface-950/40 px-2.5 py-2 font-mono text-meta leading-relaxed break-all text-surface-500">
                 {keeps}
@@ -83,12 +81,12 @@ export function DeleteContentPopover({
               </div>
 
               <div className="flex justify-end gap-2">
-                <Button size="sm" variant="ghost" onClick={onClose}>
+                <Button variant="ghost" onClick={onClose}>
                   Cancel
                 </Button>
                 <Button
-                  size="sm"
-                  variant="danger"
+                  variant="filled"
+                  tone="danger"
                   onClick={handleConfirm}
                   loading={deleteContent.isPending}
                 >

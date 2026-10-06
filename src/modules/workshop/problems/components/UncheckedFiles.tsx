@@ -36,11 +36,11 @@ export function UncheckedFiles() {
   return (
     <AlertBox
       data-ui="UncheckedFiles"
-      variant="warning"
+      tone="warning"
       className="items-start"
       title={m.workshop_problems_unchecked_title({ count: files.length })}
       actions={
-        <Button variant="ghost" size="xs" aria-expanded={open} onClick={() => setChosen(!open)}>
+        <Button variant="ghost" size="sm" aria-expanded={open} onClick={() => setChosen(!open)}>
           {toggleLabel}
         </Button>
       }

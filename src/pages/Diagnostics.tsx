@@ -67,7 +67,7 @@ export function Diagnostics() {
             Diagnostics
           </h1>
           <Separator orientation="vertical" className="mx-2 h-4" />
-          <Tabs.List className="border-b-0">
+          <Tabs.List divider={false}>
             <Tabs.Tab value="games">Games</Tabs.Tab>
             <Tabs.Tab value="system">System</Tabs.Tab>
           </Tabs.List>
@@ -115,7 +115,6 @@ function SystemTab() {
         <div className="flex shrink-0 items-center gap-2">
           <Button
             variant="ghost"
-            size="sm"
             onClick={copyReport}
             disabled={!report}
             left={<ClipboardTextIcon weight="bold" className="size-4" />}
@@ -124,7 +123,6 @@ function SystemTab() {
           </Button>
           <Button
             variant="filled"
-            size="sm"
             onClick={() => diagnostics.refetch()}
             loading={diagnostics.isFetching}
             left={<ArrowClockwiseIcon weight="bold" className="size-4" />}
@@ -135,14 +133,14 @@ function SystemTab() {
       </header>
 
       {diagnostics.isError && (
-        <AlertBox variant="error" title="Diagnostics failed to run">
+        <AlertBox tone="danger" title="Diagnostics failed to run">
           {diagnostics.error ? errorSummary(diagnostics.error) : "Unknown error"}
         </AlertBox>
       )}
 
       {!report && diagnostics.isFetching && (
         <div className="flex items-center justify-center rounded-xl border border-surface-700/50 bg-surface-900/50 py-16">
-          <Spinner size="lg" />
+          <Spinner size={32} />
         </div>
       )}
 

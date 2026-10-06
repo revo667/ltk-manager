@@ -35,14 +35,7 @@ export function ContentLayoutPopover() {
     <Popover.Root>
       <Tooltip content="Layout">
         <Popover.Trigger
-          render={
-            <IconButton
-              compact={false}
-              icon={<SidebarSimpleIcon />}
-              size="sm"
-              aria-label="Layout options"
-            />
-          }
+          render={<IconButton icon={<SidebarSimpleIcon />} size="sm" aria-label="Layout options" />}
         />
       </Tooltip>
       <Popover.Content
@@ -50,7 +43,7 @@ export function ContentLayoutPopover() {
         align="end"
         sideOffset={8}
         aria-label="Layout options"
-        className="w-56 divide-y divide-surface-600/50 p-0 select-none"
+        className="w-56 divide-y divide-surface-700 p-0 select-none"
       >
         <FilterSection>
           <Checkbox
@@ -72,7 +65,7 @@ export function ContentLayoutPopover() {
         )}
 
         <FilterSection>
-          <Button variant="outline" size="sm" className="w-full" onClick={resetLayout}>
+          <Button variant="outline" className="w-full" onClick={resetLayout}>
             Reset layout
           </Button>
         </FilterSection>

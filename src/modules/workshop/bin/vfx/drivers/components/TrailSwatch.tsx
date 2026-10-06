@@ -9,6 +9,7 @@ import { QUAD_TYPE } from "../../engine/model/enums";
 import type { EmitterModel } from "../../engine/model/model";
 import type { Point } from "../../engine/model/rig";
 import { constant } from "../../engine/parsing/readValue";
+import { NO_TRANSFORM } from "../../engine/simulation/integrate";
 import type { Source } from "../../engine/simulation/particleRead";
 import { createPool } from "../../engine/simulation/pool";
 import { useVfxRun } from "../../playback/state/run";
@@ -19,14 +20,14 @@ import {
   useVfxTextures,
 } from "../../rendering/hooks/useVfxTextures";
 import { drawnFor } from "../../rendering/utils/definitions";
-import { PARTICLE_LAYER } from "../../rendering/utils/frame";
+import { seeParticles } from "../../rendering/utils/frame";
 import { useBackdropColor } from "../state/previewBackdrop";
 import { SWATCH_POINTS, swatchInto, swatchMeasure, swatchWarmth } from "../utils/trailSwatch";
 import { PREVIEW_MIP_WIDTH, ViewGuard } from "./EmitterPreview";
 import type { Shown } from "./SurfacePreview";
 
 /** A narrow lens, so the camera stands far back and the flat ribbon reads as a drawing. */
-const FOV = 20;
+export const SWATCH_FOV = 20;
 
 /** The camera's distance as a factor of the one that holds the swatch's frame whole. */
 const MARGIN = 1.1;
@@ -65,6 +66,7 @@ export function TrailSwatch({ emitter, shown }: { emitter: EmitterModel; shown: 
       origin: ORIGIN,
       target: ORIGIN,
       orientation: UPRIGHT,
+      world: NO_TRANSFORM,
     }),
     [],
   );
@@ -85,11 +87,7 @@ export function TrailSwatch({ emitter, shown }: { emitter: EmitterModel; shown: 
     <>
       <color attach="background" args={[backdrop]} />
       <ViewGuard />
-      <PerspectiveCamera
-        makeDefault
-        fov={FOV}
-        onUpdate={(camera) => camera.layers.enable(PARTICLE_LAYER)}
-      />
+      <PerspectiveCamera makeDefault fov={SWATCH_FOV} onUpdate={(camera) => seeParticles(camera)} />
       {entry !== undefined && (
         <Trails
           emitter={flat}
@@ -104,7 +102,7 @@ export function TrailSwatch({ emitter, shown }: { emitter: EmitterModel; shown: 
   );
 }
 
-type Mutable<T> = { -readonly [Key in keyof T]: T[Key] };
+export type Mutable<T> = { -readonly [Key in keyof T]: T[Key] };
 
 /** `samplers` with the layer `shown` leaves out as white, the neutral factor. */
 function layersShown(samplers: EmitterSamplers, shown: Shown): EmitterSamplers {
@@ -124,7 +122,7 @@ function flatTrail(emitter: EmitterModel): EmitterModel {
 }
 
 /** The camera straight in front of the swatch, far enough to hold its frame whole. */
-function stand(camera: Camera, halfWidth: number, halfHeight: number): void {
+export function stand(camera: Camera, halfWidth: number, halfHeight: number): void {
   const half = Math.max(halfHeight, halfWidth / (camera.aspect || 1));
   const distance = (half / Math.tan((camera.fov * Math.PI) / 360)) * MARGIN;
   if (camera.position.z === distance) return;

@@ -1,8 +1,10 @@
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { open } from "@tauri-apps/plugin-shell";
-import { ExternalLink as ExternalLinkIcon } from "lucide-react";
 import { type AnchorHTMLAttributes, forwardRef, type MouseEvent } from "react";
 
 import { twMerge } from "@/utils";
+
+import { focusRing } from "./focus";
 
 export interface ExternalLinkProps extends Omit<
   AnchorHTMLAttributes<HTMLAnchorElement>,
@@ -35,13 +37,14 @@ export const ExternalLink = forwardRef<HTMLAnchorElement, ExternalLinkProps>(
           if (event.button === MIDDLE_BUTTON) leaveTheApp(event, href);
         }}
         className={twMerge(
-          "inline-flex items-center gap-1 text-accent-400 transition-colors hover:text-accent-300",
+          "inline-flex items-center gap-1 rounded-sm text-accent-400 transition-colors hover:text-accent-300",
+          focusRing,
           className,
         )}
         {...props}
       >
         {children}
-        {!hideIcon && <ExternalLinkIcon className="size-3.5" />}
+        {!hideIcon && <ArrowSquareOutIcon weight="bold" className="size-3.5" />}
       </a>
     );
   },

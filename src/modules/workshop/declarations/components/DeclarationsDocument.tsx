@@ -71,7 +71,7 @@ export function DeclarationsDocument({
           disabled={view !== "outline"}
         />
         <SegmentedControl
-          size="xs"
+          size="sm"
           aria-label={m.workshop_declarations_view_label()}
           value={view}
           onChange={setChosen}
@@ -288,7 +288,6 @@ function NewModuleButton({ documentId, layerName }: { documentId: string; layerN
 
   return (
     <Button
-      size="sm"
       variant="outline"
       left={<PlusIcon weight="bold" className="size-3.5" />}
       onClick={() => {

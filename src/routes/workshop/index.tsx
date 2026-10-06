@@ -10,6 +10,7 @@ import {
   NoProjectsState,
   NoSearchResultsState,
   ProjectGrid,
+  ProjectTable,
   useFilteredProjects,
   useFolderDrop,
   useHasActiveWorkshopFilters,
@@ -18,7 +19,10 @@ import {
   useWorkshopSearchQuery,
   useWorkshopSelectionStore,
   useWorkshopTestState,
+  useWorkshopViewMode,
+  WorkshopListFooter,
   WorkshopStartPage,
+  WorkshopTestDock,
 } from "@/modules/workshop";
 
 export const Route = createFileRoute("/workshop/")({
@@ -33,6 +37,7 @@ function WorkshopIndex() {
   const searchQuery = useWorkshopSearchQuery();
   const filteredProjects = useFilteredProjects();
   const hasActiveFilters = useHasActiveWorkshopFilters();
+  const viewMode = useWorkshopViewMode();
 
   const selectAll = useWorkshopSelectionStore((s) => s.selectAll);
 
@@ -48,6 +53,22 @@ function WorkshopIndex() {
 
   function handleEditProject(project: WorkshopProject) {
     navigate({ to: "/workshop/$projectId", params: { projectId: project.id } });
+  }
+
+  const ready = !isLoading && !error && filteredProjects.length > 0;
+  if (ready && viewMode === "table") {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <ProjectTable projects={filteredProjects} onEdit={handleEditProject} />
+          <WorkshopTestDock />
+        </div>
+        <div className="shrink-0 px-4 pb-4 empty:hidden">
+          <MissingProjects />
+        </div>
+        <WorkshopListFooter />
+      </div>
+    );
   }
 
   function renderContent() {
@@ -71,5 +92,19 @@ function WorkshopIndex() {
     );
   }
 
-  return <div className="h-full overflow-auto p-6">{renderContent()}</div>;
+  /* The footer holds the way back to the table, so it draws wherever there are projects to list. */
+  const listed = !isLoading && !error && (projects?.length ?? 0) > 0;
+  /* Test is what ends the session it started, so it stays while one is up. */
+  const docked = listed || testState.kind !== "idle";
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* The bottom padding clears the dock that floats over the corner. */}
+        <div className="min-h-0 flex-1 overflow-auto p-6 pb-16">{renderContent()}</div>
+        {docked && <WorkshopTestDock />}
+      </div>
+      {listed && <WorkshopListFooter />}
+    </div>
+  );
 }

@@ -161,7 +161,7 @@ function MissileSetup({
           >
             <Select.Trigger
               aria-label={m.workshop_missile_effect_label()}
-              className="h-8 min-w-0 flex-1 gap-2 bg-surface-900 px-2 text-meta"
+              className="min-w-0 flex-1 bg-surface-900"
             >
               <Select.Value
                 className="min-w-0 truncate"
@@ -173,7 +173,7 @@ function MissileSetup({
             </Select.Trigger>
             <Select.Content>
               {items.map((item) => (
-                <Select.Item key={item.value} value={item.value} className="text-meta">
+                <Select.Item key={item.value} value={item.value}>
                   {item.label}
                 </Select.Item>
               ))}
@@ -284,7 +284,7 @@ function Failure({ message, retry }: { message: string; retry: () => void }) {
   return (
     <div className="flex flex-col gap-2 p-2 text-meta">
       <p className="text-danger-text select-text">{message}</p>
-      <Button size="xs" onClick={retry}>
+      <Button size="sm" onClick={retry}>
         {m.workshop_objects_retry_action()}
       </Button>
     </div>

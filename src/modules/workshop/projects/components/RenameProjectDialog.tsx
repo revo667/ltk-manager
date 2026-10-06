@@ -62,7 +62,7 @@ export function RenameProjectDialog() {
       title={`Rename ${project.displayName}`}
       size="sm"
     >
-      <form
+      <Dialog.Form
         onSubmit={(e) => {
           e.preventDefault();
           handleSubmit();
@@ -91,6 +91,7 @@ export function RenameProjectDialog() {
 
         <Dialog.Footer>
           <Button
+            size="lg"
             variant="ghost"
             type="button"
             onClick={closeDialog}
@@ -99,6 +100,7 @@ export function RenameProjectDialog() {
             Cancel
           </Button>
           <Button
+            size="lg"
             type="submit"
             disabled={error !== null || unchanged}
             loading={renameProject.isPending}
@@ -106,7 +108,7 @@ export function RenameProjectDialog() {
             Rename
           </Button>
         </Dialog.Footer>
-      </form>
+      </Dialog.Form>
     </Dialog.Shell>
   );
 }

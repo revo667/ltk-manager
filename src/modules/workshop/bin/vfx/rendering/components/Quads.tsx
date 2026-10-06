@@ -18,16 +18,19 @@ import {
   type Source,
   spinOf,
   stretchOf,
+  travelBasisInto,
 } from "../../engine/simulation/particleRead";
 import { FRAME_SLOTS } from "../../engine/simulation/pool";
-import { mirrorInto, multiplyInto } from "../../engine/utils/basis";
+import { mirrorInto } from "../../engine/utils/basis";
 import { useParticlePrograms } from "../hooks/useParticlePrograms";
 import type { EmitterSamplers } from "../hooks/useVfxTextures";
+import { useDrawStencil } from "../state/stencil";
 import { fragmentTests, premultiplyInto, sortsBackToFront } from "../utils/blend";
 import { quadBuffers, QUADS_PER_EMITTER, written } from "../utils/buffers";
 import { colorLookupInto } from "../utils/colorLookup";
-import { distorts, drawsAsQuad } from "../utils/drawKind";
+import { drawsAsQuad, facesTheCamera } from "../utils/drawKind";
 import { bucketRange, bucketsOf, renderStamp } from "../utils/emitterBuckets";
+import { drawLayersOf } from "../utils/frame";
 import { quadMaterial, quadOrientation } from "../utils/materials";
 import { sourcesScrollInto } from "../utils/palette";
 import { quadDraw } from "../utils/particleDraws";
@@ -121,13 +124,14 @@ export function Quads({
 
   useEffect(() => () => buffers.geometry.dispose(), [buffers]);
 
-  const pair = useDrawPair<Mesh>(material, distorts(emitter));
+  const pair = useDrawPair<Mesh>(material, drawLayersOf(emitter));
   const draw = useMemo(() => quadDraw(orientation), [orientation]);
   const programs = useParticlePrograms(emitter, samplers, draw, buffers.geometry, document);
   const program = programs[0] ?? null;
   useProgramDraw(pair.solid, programs, rank);
 
   const drawn = !hidden && !emitter.disabled && drawsAsQuad(emitter);
+  useDrawStencil(emitter, drawn, material, programs);
   const sorted =
     emitter.customMaterial !== null && !emitter.customMaterial.missing
       ? emitter.customMaterial.renderState.blending !== "opaque"
@@ -255,8 +259,11 @@ function write(
     centers[instance * 3 + 1] = PLACED.place[1] * AXIS_SIGN[1];
     centers[instance * 3 + 2] = PLACED.place[2] * AXIS_SIGN[2];
 
-    sizes[instance * 3] = DRAWN.scale[0];
-    sizes[instance * 3 + 1] = DRAWN.scale[1] * stretchOf(pool, at, emitter);
+    /* A camera quad stretches its up with its speed, and an arbitrary quad its side. */
+    const stretch = stretchOf(pool, at, emitter);
+    const camera = facesTheCamera(emitter);
+    sizes[instance * 3] = DRAWN.scale[0] * (camera ? 1 : stretch);
+    sizes[instance * 3 + 1] = DRAWN.scale[1] * (camera ? stretch : 1);
     sizes[instance * 3 + 2] = DRAWN.scale[2];
 
     colors[instance * 4] = DRAWN.color[0];
@@ -266,10 +273,10 @@ function write(
 
     /* A roll is an angle rather than a position, so the mirrored axis reaches it as a
        reversed turn about the view axis. */
-    rolls[instance] = -spinOf(pool, at, emitter, time) * DEGREE;
+    rolls[instance] = -spinOf(pool, at, emitter) * DEGREE;
 
-    particleBasisInto(pool, at, emitter, frame, BASIS);
-    if (PLACED.orbited) multiplyInto(PLACED.turn, BASIS, BASIS);
+    if (camera && emitter.directionOriented) travelBasisInto(pool, at, BASIS);
+    else particleBasisInto(pool, at, emitter, frame, BASIS);
     mirrorInto(BASIS, 0, MIRRORED, 0);
     for (let column = 0; column < 3; column += 1) {
       bases[column][instance * 3] = MIRRORED[column];

@@ -130,8 +130,6 @@ export function CurveKeyEditor({
         <StepperField
           className={FIELD}
           aria-label={m.workshop_bin_curve_lifetime_label()}
-          increaseLabel={m.common_number_increase_action()}
-          decreaseLabel={m.common_number_decrease_action()}
           value={draft.time}
           min={previous?.time}
           max={next?.time}
@@ -160,8 +158,6 @@ export function CurveKeyEditor({
             className={FIELD}
             aria-label={label}
             channel={sashed ? channel : undefined}
-            increaseLabel={m.common_number_increase_action()}
-            decreaseLabel={m.common_number_decrease_action()}
             value={value}
             min={colorLimit ? 0 : undefined}
             max={colorLimit ? 1 : undefined}
@@ -263,12 +259,12 @@ function ColorEditor({
           onValueChange={setDraft}
         />
         <div className="mt-3 flex justify-end gap-2">
-          <Button variant="ghost" size="xs" onClick={() => setOpen(false)}>
+          <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
             {m.common_cancel_action()}
           </Button>
           <Button
             variant="filled"
-            size="xs"
+            size="sm"
             onClick={() => {
               onCommit(draft);
               setOpen(false);

@@ -5,12 +5,12 @@
 //! placements and the systems they play.
 
 use ltk_hash::BinHash;
-use ltk_manager_core::hashing::named;
+use ltk_manager_base::hashing::named;
 use ltk_meta::walk::Leaf;
 use serde::Serialize;
 
 use super::placeable::{Placed, controller, name, placeables, transform, visibility};
-use ltk_manager_core::bin_document::{BinDocument, hex, leaf, link};
+use ltk_manager_bin::bin_document::{BinDocument, hex, leaf, link};
 
 pub(super) const PARTICLE: BinHash = named("MapParticle");
 /// `MapParticle.system`.
@@ -28,7 +28,7 @@ pub struct MapParticle {
     pub chunk: String,
     /// The key it sits under in that chunk, as `0x` and eight digits.
     pub key: String,
-    /// The placeable's own name, which is unique within a map.
+    /// The placeable's own name. A map skin can repeat one, so `chunk` and `key` identify it.
     pub name: String,
     /// The system it plays, an object of the same document, as `0x` and eight digits.
     pub system: String,

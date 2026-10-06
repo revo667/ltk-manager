@@ -1,19 +1,29 @@
-import { ChecksIcon, HeartbeatIcon, ProhibitIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
+import {
+  CaretUpIcon,
+  ChecksIcon,
+  FoldersIcon,
+  HeartbeatIcon,
+  ProhibitIcon,
+  TrashIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
-import { Button, IconButton, Tooltip } from "@/components";
+import { Button, IconButton, Menu, Tooltip } from "@/components";
+import { m, Marked } from "@/i18n";
 import type { HealthCheckReadiness, InstalledMod } from "@/lib/tauri";
 import { useSelectionActions } from "@/modules/library/api";
 import { isOverlayOpen } from "@/utils";
 
 import { useLibrarySelectionStore } from "../state";
+import { MoveToFolderItems } from "./MoveToFolderMenu";
 
 /** What the press will do, or what it is waiting on before it can. */
-const CHECK_HINTS: Record<HealthCheckReadiness, string> = {
-  ready: "Check the selected mods for problems",
-  syncing: "Syncing the hashtables a check needs. Try again in a moment.",
-  unsynced: "The hashtables a check needs are not synced. Sync them in Settings.",
+const CHECK_HINTS: Record<HealthCheckReadiness, () => string> = {
+  ready: m.library_selection_check_ready_hint,
+  syncing: m.library_selection_check_syncing_hint,
+  unsynced: m.library_selection_check_unsynced_hint,
 };
 
 interface SelectionActionBarProps {
@@ -44,64 +54,84 @@ export function SelectionActionBar({ visibleMods }: SelectionActionBarProps) {
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-6">
       <div className="pointer-events-auto flex max-w-full animate-slide-up flex-wrap items-center gap-1 rounded-xl border border-surface-700 bg-surface-800/95 p-1.5 shadow-glass backdrop-blur-md">
         <IconButton
-          compact={false}
           icon={<XIcon />}
-          size="sm"
+          size="md"
           onClick={actions.clear}
-          aria-label="Clear selection"
-          tooltip="Clear selection (Esc)"
+          aria-label={m.library_selection_clear_action()}
+          tooltip={m.library_selection_clear_hint()}
         />
 
         <span className="px-2 text-sm whitespace-nowrap text-surface-200 select-none">
-          <span className="font-semibold text-accent-400">{actions.count}</span> selected
-          {hiddenCount > 0 && <span className="ml-1 text-surface-500">· {hiddenCount} hidden</span>}
+          <Marked text={m.library_selection_count_label({ count: actions.count })}>
+            {(count) => <span className="font-semibold text-accent-400">{count}</span>}
+          </Marked>
+          {hiddenCount > 0 && (
+            <span className="ml-1 text-surface-500">
+              {m.library_selection_hidden_label({ count: hiddenCount })}
+            </span>
+          )}
         </span>
 
         <div className="mx-1 h-6 w-px bg-surface-700" />
 
         <Button
           variant="ghost"
-          size="sm"
           onClick={actions.enable}
           disabled={!actions.canEnable}
           left={<ChecksIcon weight="bold" className="size-4" />}
         >
-          Enable {actions.count}
+          {m.library_selection_enable_action({ count: actions.count })}
         </Button>
 
         <Button
           variant="ghost"
-          size="sm"
           onClick={actions.disable}
           disabled={!actions.canDisable}
           left={<ProhibitIcon weight="bold" className="size-4" />}
         >
-          Disable {actions.count}
+          {m.library_selection_disable_action({ count: actions.count })}
         </Button>
+
+        <Menu.Root>
+          <Menu.Trigger
+            render={
+              <Button
+                variant="ghost"
+                disabled={actions.count === 0}
+                left={<FoldersIcon weight="bold" className="size-4" />}
+                right={<CaretUpIcon weight="bold" className="size-3" />}
+              >
+                {m.library_selection_move_action()}
+              </Button>
+            }
+          />
+          <Menu.Content side="top" data-ui="SelectionActionBar:move">
+            <MoveToFolderItems mods={actions.mods} />
+          </Menu.Content>
+        </Menu.Root>
 
         <div className="mx-1 h-6 w-px bg-surface-700" />
 
-        <Tooltip content={CHECK_HINTS[actions.checkReadiness]}>
+        <Tooltip content={CHECK_HINTS[actions.checkReadiness]()}>
           <Button
             variant="outline"
-            size="sm"
             onClick={actions.checkHealth}
             loading={actions.checkPending}
             disabled={actions.count === 0 || actions.checkReadiness !== "ready"}
             left={<HeartbeatIcon weight="bold" className="size-4" />}
           >
-            Check health {actions.count}
+            {m.library_selection_check_action({ count: actions.count })}
           </Button>
         </Tooltip>
 
         <Button
-          variant="danger"
-          size="sm"
+          variant="filled"
+          tone="danger"
           onClick={actions.uninstall}
           disabled={!actions.canUninstall}
           left={<TrashIcon weight="bold" className="size-4" />}
         >
-          Uninstall {actions.count}
+          {m.library_selection_uninstall_action({ count: actions.count })}
         </Button>
       </div>
     </div>

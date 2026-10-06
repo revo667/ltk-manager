@@ -5,7 +5,6 @@ import { use, useEffect, useMemo, useState } from "react";
 import { Combobox } from "@/components";
 import { errorSummary, m } from "@/i18n";
 import type { BinRow } from "@/lib/tauri";
-import { twMerge } from "@/utils";
 
 import { binQueries } from "../../../documents/hooks/useBinDocument";
 import { LeafEditContext } from "../../../tree/hooks/useLeafEdit";
@@ -99,10 +98,8 @@ export function AddPropertyBox({ holder, onAdded, onClose }: AddPropertyBoxProps
           disabled={pending}
           spellCheck={false}
           autoComplete="off"
-          className={twMerge(
-            "h-6 w-full pl-7 text-xs select-text",
-            refused !== null && "border-danger",
-          )}
+          size="xs"
+          className="pl-7 select-text"
           onKeyDown={(event) => {
             if (event.key !== "Escape") return;
 
@@ -112,19 +109,10 @@ export function AddPropertyBox({ holder, onAdded, onClose }: AddPropertyBoxProps
           }}
         />
       </div>
-      <Combobox.Content
-        side="bottom"
-        align="start"
-        sideOffset={2}
-        className="max-h-72 min-w-80 py-0.5"
-      >
+      <Combobox.Content side="bottom" align="start" sideOffset={2} className="max-h-72 min-w-80">
         <Combobox.List>
           {(suggestion: AddSuggestion) => (
-            <Combobox.Item
-              key={suggestionKey(suggestion)}
-              value={suggestion}
-              className="gap-2 px-2 py-1 text-row"
-            >
+            <Combobox.Item key={suggestionKey(suggestion)} value={suggestion} className="text-row">
               <SuggestionText suggestion={suggestion} />
             </Combobox.Item>
           )}

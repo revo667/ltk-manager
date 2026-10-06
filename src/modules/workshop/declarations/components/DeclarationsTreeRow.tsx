@@ -31,7 +31,7 @@ import { clickIntent } from "../../state";
 import { type DropTarget, isDraggable, moduleOfRow } from "../utils/outlineDrop";
 import { entryTitle, isInGame, type OutlineNode, pathSegments } from "../utils/outlineTree";
 import { ModuleBody } from "./ModuleRowBody";
-import { Caret, Count, RowTag, useOutlineRow } from "./OutlineRowParts";
+import { Caret, OutlineCount, RowTag, SELECTED_ROW_ACTION, useOutlineRow } from "./OutlineRowParts";
 import { ValueSummaryView } from "./ValueView";
 
 interface DeclarationsTreeRowProps {
@@ -106,7 +106,7 @@ function DeclarationsTreeRowInner({
       onFocus={() => onSelect(rowIndex)}
       style={{ height: `${height}px` }}
       className={twMerge(
-        "group/row relative cursor-pointer",
+        "group/row group/reveal relative cursor-pointer",
         TREE_ROW_BASE_CLASSES,
         TREE_ROW_STATE_CLASSES,
         draggedId === node.id && "opacity-40",
@@ -203,7 +203,7 @@ function LayerBody({ node }: { node: Extract<OutlineNode, { type: "layer" }> }) 
           </span>
         </Tooltip>
       )}
-      {layer.error === null && <Count value={layer.modules.length} />}
+      {layer.error === null && <OutlineCount value={layer.modules.length} />}
     </>
   );
 }
@@ -232,7 +232,7 @@ function EntryBody({
       </span>
       {entry.knownName !== null && <Code className="shrink-0 select-text">{entry.name}</Code>}
       {entry.object !== null && <ObjectEditTag entry={entry} />}
-      <Count value={entry.keys.length} />
+      <OutlineCount value={entry.keys.length} />
       {shape.keys && isInGame(entry) && <GoToAction onGoTo={onGoTo} />}
     </>
   );
@@ -364,13 +364,15 @@ function OverrideBody({ node }: { node: Extract<OutlineNode, { type: "override" 
 function GoToAction({ onGoTo }: { onGoTo: (intent: OpenIntent) => void }) {
   return (
     <IconButton
-      icon={<ArrowSquareOutIcon className="size-3.5" />}
+      icon={<ArrowSquareOutIcon />}
       tabIndex={-1}
       onClick={(event) => {
         event.stopPropagation();
         onGoTo(clickIntent(event));
       }}
-      className="size-5 shrink-0 opacity-0 group-hover/row:opacity-100 group-aria-selected/row:opacity-100"
+      size="row"
+      reveal
+      className={SELECTED_ROW_ACTION}
       label={m.workshop_declarations_go_to_action()}
       tooltipSide="left"
     />

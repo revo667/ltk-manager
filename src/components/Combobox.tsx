@@ -1,8 +1,18 @@
 import { Combobox as BaseCombobox } from "@base-ui/react/combobox";
-import { Check, ChevronDown, X } from "lucide-react";
+import { CaretDownIcon, CheckIcon, XIcon } from "@phosphor-icons/react";
 import { forwardRef, type ReactNode } from "react";
 
 import { twMerge } from "@/utils";
+
+import { fieldFrame, type FieldSize, fieldSizeClasses } from "./fieldFrame";
+import {
+  popupGroupLabel,
+  popupItem,
+  popupItemMark,
+  popupItemTone,
+  popupMotion,
+  popupSurface,
+} from "./popup";
 
 // Re-export the filter hook for consumers
 export const useComboboxFilter = BaseCombobox.useFilter;
@@ -18,7 +28,7 @@ export interface ComboboxRootProps<
   children?: ReactNode;
 }
 
-export function ComboboxRoot<Value = string, Multiple extends boolean | undefined = false>({
+function ComboboxRoot<Value = string, Multiple extends boolean | undefined = false>({
   children,
   ...props
 }: ComboboxRootProps<Value, Multiple>) {
@@ -27,25 +37,21 @@ export function ComboboxRoot<Value = string, Multiple extends boolean | undefine
 ComboboxRoot.displayName = "Combobox.Root";
 
 // Input
-export interface ComboboxInputProps extends Omit<BaseCombobox.Input.Props, "className"> {
-  className?: string;
+export interface ComboboxInputProps extends Omit<BaseCombobox.Input.Props, "className" | "size"> {
+  /** `md`, 32px, unless told otherwise. */
+  size?: FieldSize;
+  /** Marks an input standing outside a `Field.Root` invalid. */
   hasError?: boolean;
+  className?: string;
 }
 
-export const ComboboxInput = forwardRef<HTMLInputElement, ComboboxInputProps>(
-  ({ className, hasError, ...props }, ref) => {
+const ComboboxInput = forwardRef<HTMLInputElement, ComboboxInputProps>(
+  ({ size = "md", className, hasError, ...props }, ref) => {
     return (
       <BaseCombobox.Input
         ref={ref}
-        className={twMerge(
-          "h-8 w-full rounded-md border px-4 py-1 text-sm transition-colors",
-          "bg-surface-700 text-surface-50 placeholder:text-surface-400",
-          "border-surface-500 hover:border-accent-hover",
-          "focus:border-accent-500 focus:ring-1 focus:ring-accent-500 focus:outline-none",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          hasError && "border-danger focus:border-danger focus:ring-danger",
-          className,
-        )}
+        {...(hasError && { "aria-invalid": true })}
+        className={twMerge(fieldFrame, fieldSizeClasses[size], className)}
         {...props}
       />
     );
@@ -59,7 +65,7 @@ export interface ComboboxTriggerProps extends Omit<BaseCombobox.Trigger.Props, "
   children?: ReactNode;
 }
 
-export const ComboboxTrigger = forwardRef<HTMLButtonElement, ComboboxTriggerProps>(
+const ComboboxTrigger = forwardRef<HTMLButtonElement, ComboboxTriggerProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.Trigger
@@ -83,11 +89,11 @@ export interface ComboboxIconProps extends Omit<BaseCombobox.Icon.Props, "classN
   className?: string;
 }
 
-export const ComboboxIcon = forwardRef<HTMLDivElement, ComboboxIconProps>(
+const ComboboxIcon = forwardRef<HTMLDivElement, ComboboxIconProps>(
   ({ className, ...props }, ref) => {
     return (
       <BaseCombobox.Icon ref={ref} className={twMerge("text-surface-400", className)} {...props}>
-        <ChevronDown className="size-4" />
+        <CaretDownIcon weight="bold" className="size-3.5" />
       </BaseCombobox.Icon>
     );
   },
@@ -99,7 +105,7 @@ export interface ComboboxPortalProps extends BaseCombobox.Portal.Props {
   children?: ReactNode;
 }
 
-export const ComboboxPortal = ({ children, ...props }: ComboboxPortalProps) => {
+const ComboboxPortal = ({ children, ...props }: ComboboxPortalProps) => {
   return <BaseCombobox.Portal {...props}>{children}</BaseCombobox.Portal>;
 };
 ComboboxPortal.displayName = "Combobox.Portal";
@@ -110,7 +116,7 @@ export interface ComboboxPositionerProps extends Omit<BaseCombobox.Positioner.Pr
   children?: ReactNode;
 }
 
-export const ComboboxPositioner = forwardRef<HTMLDivElement, ComboboxPositionerProps>(
+const ComboboxPositioner = forwardRef<HTMLDivElement, ComboboxPositionerProps>(
   ({ className, children, side = "bottom", sideOffset = 4, ...props }, ref) => {
     return (
       <BaseCombobox.Positioner
@@ -133,18 +139,15 @@ export interface ComboboxPopupProps extends Omit<BaseCombobox.Popup.Props, "clas
   children?: ReactNode;
 }
 
-export const ComboboxPopup = forwardRef<HTMLDivElement, ComboboxPopupProps>(
+const ComboboxPopup = forwardRef<HTMLDivElement, ComboboxPopupProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.Popup
         ref={ref}
         className={twMerge(
-          "max-h-60 overflow-y-auto",
-          "rounded-lg border border-surface-600 py-1 shadow-xl outline-none",
-          /* DS-GLASS */
-          "bg-(--ltk-glass-panel-fill) backdrop-filter-(--ltk-glass-panel-blur)",
-          "animate-fade-in",
-          "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
+          "max-h-60 min-w-(--anchor-width) overflow-y-auto p-1",
+          popupSurface,
+          popupMotion,
           className,
         )}
         {...props}
@@ -168,7 +171,7 @@ export interface ComboboxContentProps
 }
 
 /** Portal, Positioner and Popup as one part, taking the positioning props itself. */
-export const ComboboxContent = forwardRef<HTMLDivElement, ComboboxContentProps>(
+const ComboboxContent = forwardRef<HTMLDivElement, ComboboxContentProps>(
   (
     {
       side,
@@ -206,7 +209,7 @@ export interface ComboboxListProps extends Omit<BaseCombobox.List.Props, "classN
   className?: string;
 }
 
-export const ComboboxList = forwardRef<HTMLDivElement, ComboboxListProps>(
+const ComboboxList = forwardRef<HTMLDivElement, ComboboxListProps>(
   ({ className, ...props }, ref) => {
     return <BaseCombobox.List ref={ref} className={className} {...props} />;
   },
@@ -219,23 +222,18 @@ export interface ComboboxItemProps extends Omit<BaseCombobox.Item.Props, "classN
   children?: ReactNode;
 }
 
-export const ComboboxItem = forwardRef<HTMLDivElement, ComboboxItemProps>(
+const ComboboxItem = forwardRef<HTMLDivElement, ComboboxItemProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.Item
         ref={ref}
-        className={twMerge(
-          "flex cursor-default items-center gap-2 px-3 py-1.5 text-sm outline-none select-none",
-          "text-surface-200 data-[highlighted]:bg-surface-600",
-          "data-[disabled]:opacity-50",
-          className,
-        )}
+        className={twMerge(popupItem, popupItemTone.default, className)}
         {...props}
       >
-        <BaseCombobox.ItemIndicator className="inline-flex size-4 shrink-0 items-center justify-center">
-          <Check className="size-3.5" />
-        </BaseCombobox.ItemIndicator>
         {children}
+        <BaseCombobox.ItemIndicator className={twMerge(popupItemMark, "ml-auto")}>
+          <CheckIcon weight="bold" className="size-3.5" />
+        </BaseCombobox.ItemIndicator>
       </BaseCombobox.Item>
     );
   },
@@ -248,13 +246,13 @@ export interface ComboboxEmptyProps extends Omit<BaseCombobox.Empty.Props, "clas
   children?: ReactNode;
 }
 
-export const ComboboxEmpty = forwardRef<HTMLDivElement, ComboboxEmptyProps>(
+const ComboboxEmpty = forwardRef<HTMLDivElement, ComboboxEmptyProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.Empty
         ref={ref}
         /* The live region stays mounted while items show, so it must take no space then. */
-        className={twMerge("px-3 py-6 text-center text-sm text-surface-400 empty:p-0", className)}
+        className={twMerge("px-2 py-6 text-center text-sm text-surface-400 empty:p-0", className)}
         {...props}
       >
         {children ?? "No results found"}
@@ -270,7 +268,7 @@ export interface ComboboxClearProps extends Omit<BaseCombobox.Clear.Props, "clas
   children?: ReactNode;
 }
 
-export const ComboboxClear = forwardRef<HTMLButtonElement, ComboboxClearProps>(
+const ComboboxClear = forwardRef<HTMLButtonElement, ComboboxClearProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.Clear
@@ -281,7 +279,7 @@ export const ComboboxClear = forwardRef<HTMLButtonElement, ComboboxClearProps>(
         )}
         {...props}
       >
-        {children ?? <X className="size-4" />}
+        {children ?? <XIcon weight="bold" className="size-4" />}
       </BaseCombobox.Clear>
     );
   },
@@ -292,7 +290,7 @@ ComboboxClear.displayName = "Combobox.Clear";
 export type ComboboxValueProps = BaseCombobox.Value.Props;
 
 /** The selected value, drawn by `children`, such as a multiple root's chips. Adds no DOM element. */
-export function ComboboxValue(props: ComboboxValueProps) {
+function ComboboxValue(props: ComboboxValueProps) {
   return <BaseCombobox.Value {...props} />;
 }
 ComboboxValue.displayName = "Combobox.Value";
@@ -302,7 +300,7 @@ export interface ComboboxChipsProps extends Omit<BaseCombobox.Chips.Props, "clas
   className?: string;
 }
 
-export const ComboboxChips = forwardRef<HTMLDivElement, ComboboxChipsProps>(
+const ComboboxChips = forwardRef<HTMLDivElement, ComboboxChipsProps>(
   ({ className, ...props }, ref) => {
     return (
       <BaseCombobox.Chips
@@ -321,7 +319,7 @@ export interface ComboboxChipProps extends Omit<BaseCombobox.Chip.Props, "classN
   children?: ReactNode;
 }
 
-export const ComboboxChip = forwardRef<HTMLDivElement, ComboboxChipProps>(
+const ComboboxChip = forwardRef<HTMLDivElement, ComboboxChipProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.Chip
@@ -345,7 +343,7 @@ export interface ComboboxChipRemoveProps extends Omit<BaseCombobox.ChipRemove.Pr
   children?: ReactNode;
 }
 
-export const ComboboxChipRemove = forwardRef<HTMLButtonElement, ComboboxChipRemoveProps>(
+const ComboboxChipRemove = forwardRef<HTMLButtonElement, ComboboxChipRemoveProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.ChipRemove
@@ -357,7 +355,7 @@ export const ComboboxChipRemove = forwardRef<HTMLButtonElement, ComboboxChipRemo
         )}
         {...props}
       >
-        {children ?? <X className="size-3" />}
+        {children ?? <XIcon weight="bold" className="size-3" />}
       </BaseCombobox.ChipRemove>
     );
   },
@@ -370,7 +368,7 @@ export interface ComboboxGroupProps extends Omit<BaseCombobox.Group.Props, "clas
   children?: ReactNode;
 }
 
-export const ComboboxGroup = forwardRef<HTMLDivElement, ComboboxGroupProps>(
+const ComboboxGroup = forwardRef<HTMLDivElement, ComboboxGroupProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.Group ref={ref} className={className} {...props}>
@@ -387,14 +385,10 @@ export interface ComboboxGroupLabelProps extends Omit<BaseCombobox.GroupLabel.Pr
   children?: ReactNode;
 }
 
-export const ComboboxGroupLabel = forwardRef<HTMLDivElement, ComboboxGroupLabelProps>(
+const ComboboxGroupLabel = forwardRef<HTMLDivElement, ComboboxGroupLabelProps>(
   ({ className, children, ...props }, ref) => {
     return (
-      <BaseCombobox.GroupLabel
-        ref={ref}
-        className={twMerge("px-3 py-1.5 text-xs font-medium text-surface-500", className)}
-        {...props}
-      >
+      <BaseCombobox.GroupLabel ref={ref} className={twMerge(popupGroupLabel, className)} {...props}>
         {children}
       </BaseCombobox.GroupLabel>
     );
@@ -406,7 +400,7 @@ ComboboxGroupLabel.displayName = "Combobox.GroupLabel";
 export type ComboboxCollectionProps = BaseCombobox.Collection.Props;
 
 /** Renders the `items` of one `Group`. Adds no DOM element. */
-export function ComboboxCollection(props: ComboboxCollectionProps) {
+function ComboboxCollection(props: ComboboxCollectionProps) {
   return <BaseCombobox.Collection {...props} />;
 }
 ComboboxCollection.displayName = "Combobox.Collection";
@@ -417,7 +411,7 @@ export interface ComboboxStatusProps extends Omit<BaseCombobox.Status.Props, "cl
   children?: ReactNode;
 }
 
-export const ComboboxStatus = forwardRef<HTMLDivElement, ComboboxStatusProps>(
+const ComboboxStatus = forwardRef<HTMLDivElement, ComboboxStatusProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <BaseCombobox.Status ref={ref} className={twMerge("sr-only", className)} {...props}>
@@ -428,7 +422,12 @@ export const ComboboxStatus = forwardRef<HTMLDivElement, ComboboxStatusProps>(
 );
 ComboboxStatus.displayName = "Combobox.Status";
 
-// Compound export
+/**
+ * One choice from a list the reader narrows by typing.
+ *
+ * A list short enough to read at a glance is a `Select`, and several choices at once are a
+ * `MultiSelect`.
+ */
 export const Combobox = {
   Root: ComboboxRoot,
   Input: ComboboxInput,
@@ -452,98 +451,9 @@ export const Combobox = {
   Status: ComboboxStatus,
 };
 
-// --- Simplified ComboboxField for common use cases ---
-
+/** One entry of a flat option list. */
 export interface ComboboxOption {
   value: string;
   label: string;
   disabled?: boolean;
 }
-
-export interface ComboboxFieldProps {
-  label?: string;
-  description?: string;
-  error?: string;
-  required?: boolean;
-  placeholder?: string;
-  options: ComboboxOption[];
-  value?: string;
-  defaultValue?: string;
-  onValueChange?: (value: string | null) => void;
-  disabled?: boolean;
-  name?: string;
-  className?: string;
-  inputClassName?: string;
-}
-
-export function ComboboxField({
-  label,
-  description,
-  error,
-  required,
-  placeholder,
-  options,
-  value,
-  defaultValue,
-  onValueChange,
-  disabled,
-  name,
-  className,
-  inputClassName,
-}: ComboboxFieldProps) {
-  const filter = useComboboxFilter();
-
-  const selectedOption = value != null ? options.find((o) => o.value === value) : undefined;
-  const defaultOption =
-    defaultValue != null ? options.find((o) => o.value === defaultValue) : undefined;
-
-  return (
-    <div className={twMerge("flex flex-col gap-1.5", className)}>
-      {label && (
-        <label className="text-sm font-medium text-surface-200">
-          {label}
-          {required && <span className="ml-1 text-required">*</span>}
-        </label>
-      )}
-      {description && <p className="text-xs text-surface-400">{description}</p>}
-      <ComboboxRoot<ComboboxOption>
-        value={selectedOption}
-        defaultValue={defaultOption}
-        onValueChange={(opt) => onValueChange?.(opt?.value ?? null)}
-        disabled={disabled}
-        name={name}
-        items={options}
-        filter={(item, query) => filter.contains(item, query, (o) => o.label)}
-        itemToStringLabel={(item) => item.label}
-        itemToStringValue={(item) => item.value}
-      >
-        <div className="relative">
-          <ComboboxInput
-            placeholder={placeholder}
-            hasError={!!error}
-            className={twMerge("pr-8", inputClassName)}
-          />
-          <ComboboxTrigger className="absolute top-0 right-0 flex h-full items-center pr-3">
-            <ComboboxIcon />
-          </ComboboxTrigger>
-        </div>
-        <ComboboxPortal>
-          <ComboboxPositioner>
-            <ComboboxPopup>
-              <ComboboxList>
-                {(item: ComboboxOption) => (
-                  <ComboboxItem key={item.value} value={item} disabled={item.disabled}>
-                    {item.label}
-                  </ComboboxItem>
-                )}
-              </ComboboxList>
-              <ComboboxEmpty />
-            </ComboboxPopup>
-          </ComboboxPositioner>
-        </ComboboxPortal>
-      </ComboboxRoot>
-      {error && <p className="text-xs text-danger-text">{error}</p>}
-    </div>
-  );
-}
-ComboboxField.displayName = "ComboboxField";

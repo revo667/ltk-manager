@@ -3,7 +3,7 @@ import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
 
 import { Button, Count, EmptyState, LoadingState, SearchField, Spinner } from "@/components";
 import { errorSummary, m } from "@/i18n";
-import type { ObjectFindResult } from "@/lib/tauri";
+import type { SearchHits, ObjectFindHit } from "@/lib/tauri";
 import {
   DocumentToolbar,
   type EditorDocumentProps,
@@ -16,6 +16,7 @@ import { hasErrorCode } from "@/utils/errors";
 
 import type { ContentDocumentOf } from "../../documents/utils/contentDocument";
 import { GameWadsErrorState } from "../../gameBrowser/components/GameBrowserStates";
+import { readyValue } from "../../shared/api/indexQueries";
 import { CollapseAllButton } from "../../shared/components/CollapseAllButton";
 import { DocumentFrame } from "../../shared/components/DocumentFrame";
 import { focusRows } from "../../shared/utils/focusRows";
@@ -44,6 +45,7 @@ import { useObjectFind } from "../api/useObjectFind";
 import { useWarmOnAbsent } from "../api/useObjectIndex";
 import { useLayerDeclarations } from "../hooks/useLayerDeclarations";
 import { useOpenObjectNode } from "../hooks/useOpenObjectNode";
+import { useProjectObjects } from "../hooks/useProjectObjects";
 import { retryPreviews, useFailedInView } from "../state/previewStills";
 import {
   buildFindTree,
@@ -56,6 +58,7 @@ import {
   NO_LAYER_DECLARATIONS,
   type ObjectTreeNode,
 } from "../utils/objectTree";
+import { withProjectListings } from "../utils/projectObjects";
 import {
   ObjectIndexBuildingState,
   ObjectIndexFailedState,
@@ -94,7 +97,7 @@ export function ObjectsDocument({
 
   useEffect(() => {
     if (reveal !== null && view === "grid") {
-      setDisplay({ location: ancestorPrefixes(reveal.path).at(-1) ?? "" });
+      setDisplay({ location: ancestorPrefixes(reveal.id).at(-1) ?? "" });
     }
   }, [reveal, view, setDisplay]);
 
@@ -162,7 +165,6 @@ function RetryPreviews() {
   return (
     <Button
       size="xs"
-      compact
       variant="ghost"
       left={<ArrowClockwiseIcon weight="bold" className="size-3.5" />}
       onClick={() => retryPreviews()}
@@ -201,7 +203,8 @@ function useFindBranches(): readonly string[] {
       return [];
     }
 
-    return branchIds(buildFindTree(data.hits, data.total, NO_LAYER_DECLARATIONS, () => true));
+    const { hits, total } = data.value;
+    return branchIds(buildFindTree(hits, total, NO_LAYER_DECLARATIONS, () => true));
   }, [data]);
 }
 
@@ -211,7 +214,8 @@ function ObjectsStats() {
   const searching = useObjectsSearchPattern().length > 0;
   if (data?.status !== "ready" || searching) return null;
 
-  const count = data.prefixes.reduce((sum, prefix) => sum + prefix.count, 0) + data.objects.length;
+  const { prefixes, objects } = data.value;
+  const count = prefixes.reduce((sum, prefix) => sum + prefix.count, 0) + objects.length;
   return (
     <span className="text-xs text-surface-400 select-none">
       {m.workshop_objects_count_label({ count })}
@@ -232,7 +236,8 @@ function ObjectSearch({ onCommit, boxRef }: ObjectSearchProps) {
   const onRegexChange = useSetObjectsSearchRegex();
 
   const { data, error, isFetching } = useObjectFind(pattern, regex);
-  const counted = pattern.length > 0 && data?.status === "ready" && data.total > 0 && !error;
+  const found = readyValue(data);
+  const counted = pattern.length > 0 && found !== undefined && found.total > 0 && !error;
 
   return (
     <SearchField
@@ -247,13 +252,13 @@ function ObjectSearch({ onCommit, boxRef }: ObjectSearchProps) {
       onCommit={onCommit}
       inputRef={boxRef}
     >
-      {counted && <Count>{countText(data)}</Count>}
-      {isFetching && <Spinner size="xs" className="shrink-0" />}
+      {counted && <Count>{countText(found)}</Count>}
+      {isFetching && <Spinner size={12} className="shrink-0" />}
     </SearchField>
   );
 }
 
-function countText(result: ObjectFindResult): string {
+function countText(result: SearchHits<ObjectFindHit>): string {
   if (result.hits.length < result.total) {
     return m.workshop_objects_matches_capped_label({
       shown: result.hits.length.toLocaleString(),
@@ -271,7 +276,7 @@ function SwitchOffHint() {
   return (
     <p className="flex shrink-0 items-center gap-2 border-b border-surface-700/50 px-3 py-1 text-xs text-surface-400 select-none">
       <span className="min-w-0 flex-1 truncate">{m.workshop_objects_index_off_label()}</span>
-      <Button variant="ghost" size="xs" onClick={() => setOn(true)}>
+      <Button variant="ghost" size="sm" onClick={() => setOn(true)}>
         {m.workshop_objects_keep_on_action()}
       </Button>
     </p>
@@ -292,12 +297,13 @@ function ObjectsIndexTree() {
   const expandedPaths = useMemo(() => [...expanded].sort(), [expanded]);
   const listings = useObjectDirs(expandedPaths);
 
+  const projectObjects = useProjectObjects();
   const tree = useMemo(() => {
     if (root.data?.status !== "ready") return [];
-    const all = new Map(listings);
-    all.set("", root.data);
+
+    const all = withProjectListings(root.data.value, listings, projectObjects);
     return buildObjectTree(all, (path) => expanded.has(path), layers);
-  }, [root.data, listings, expanded, layers]);
+  }, [root.data, listings, expanded, layers, projectObjects]);
 
   const isExpanded = useCallback((node: ObjectTreeNode) => expanded.has(node.id), [expanded]);
   /* Every open prefix is a listing to fetch, so a subtree toggle expands one level only. */
@@ -333,7 +339,8 @@ function ObjectsIndexTree() {
       </>
     );
   }
-  if (root.data.prefixes.length === 0 && root.data.objects.length === 0) {
+  const rootListing = root.data.value;
+  if (rootListing.prefixes.length === 0 && rootListing.objects.length === 0) {
     return (
       <>
         <SwitchOffHint />
@@ -349,7 +356,7 @@ function ObjectsIndexTree() {
   return (
     <>
       <SwitchOffHint />
-      {holdsOnlyUnnamed(root.data) && <ObjectIndexUnnamedHint />}
+      {holdsOnlyUnnamed(rootListing) && <ObjectIndexUnnamedHint />}
       <ObjectsTree
         nodes={tree}
         ariaLabel={m.workshop_objects_title()}
@@ -399,7 +406,8 @@ function FindResults({
   const findBranches = useFindBranches();
   const tree = useMemo(() => {
     if (data?.status !== "ready") return [];
-    return buildFindTree(data.hits, data.total, layers, (path) => grid || !shut.has(path));
+    const { hits, total } = data.value;
+    return buildFindTree(hits, total, layers, (path) => grid || !shut.has(path));
   }, [data, layers, shut, grid]);
   const tiles = useMemo(
     () =>
@@ -437,6 +445,7 @@ function FindResults({
   }
   if (data && data.status !== "ready") return <ObjectIndexBuildingState />;
 
+  const found = readyValue(data);
   return (
     <>
       {patternError && (
@@ -444,15 +453,15 @@ function FindResults({
           {errorSummary(patternError)}
         </p>
       )}
-      {data && data.unnamed && <ObjectIndexUnnamedHint />}
-      {data && data.hits.length === 0 && (
+      {found && found.unnamed && <ObjectIndexUnnamedHint />}
+      {found && found.hits.length === 0 && (
         <EmptyState
           size="sm"
           title={m.workshop_objects_no_match_title()}
           description={m.workshop_objects_no_match_description()}
         />
       )}
-      {data && data.hits.length > 0 && (
+      {found && found.hits.length > 0 && (
         <div
           className={twMerge(
             "flex min-h-0 flex-1 flex-col transition-opacity",

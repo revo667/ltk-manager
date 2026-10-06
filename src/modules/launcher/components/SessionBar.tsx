@@ -10,7 +10,16 @@ import { useNavigate } from "@tanstack/react-router";
 import { lazy, type ReactNode, Suspense, useEffect } from "react";
 import { match } from "ts-pattern";
 
-import { Button, IconButton, ProgressBar, Spinner, Tooltip } from "@/components";
+import {
+  Badge,
+  Button,
+  ChromeSlot,
+  IconButton,
+  ProgressBar,
+  Spinner,
+  Tooltip,
+  useChromeSlotFilled,
+} from "@/components";
 import { usePlatformSupport } from "@/hooks";
 import type { Incident, VerdictKind } from "@/lib/tauri";
 import {
@@ -76,7 +85,8 @@ function BorderShimmer() {
 }
 
 /**
- * The bar itself: its chrome, and the two regions every state fills.
+ * The bar itself: its chrome, the two regions every state fills, and the slot a page
+ * draws its own actions in.
  *
  * Per "The status bar item" in docs/ux/MOD_HEALTH.md. The activity region is
  * whichever line has the news, and it supersedes itself as the session moves.
@@ -85,13 +95,14 @@ function BorderShimmer() {
  */
 function Bar({ working, children }: { working?: boolean; children?: ReactNode }) {
   return (
-    <div className="relative flex shrink-0 items-stretch bg-surface-950 px-2 py-1 select-none">
+    <div className="relative flex shrink-0 items-stretch gap-2 bg-surface-950 px-2 py-1 select-none">
       {working && (
         <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-accent-500" />
       )}
       {working && <BorderShimmer />}
       <div className="min-w-0 flex-1">{children}</div>
       <ModHealthStatusItem />
+      <ChromeSlot name="status" />
     </div>
   );
 }
@@ -141,11 +152,9 @@ function TestingPill({ className }: { className?: string }) {
           const label = describeTestingProjects(names);
           if (!label) return null;
           return (
-            <span
-              className={`rounded-full bg-accent-500/10 px-2 py-0.5 text-xs font-medium text-accent-400 ${className ?? ""}`}
-            >
+            <Badge size="md" tone="accent" className={className}>
               {label}
-            </span>
+            </Badge>
           );
         }}
       </SessionProjectNames>
@@ -176,15 +185,10 @@ function LineActions({
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1">
       {children}
-      <Button variant="ghost" size="xs" compact onClick={onAction} className="h-5">
+      <Button variant="ghost" size="xs" onClick={onAction} className="h-5">
         {label}
       </Button>
-      <IconButton
-        icon={<XIcon className="size-3" />}
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="size-5"
-      />
+      <IconButton icon={<XIcon />} onClick={onDismiss} aria-label="Dismiss" size="row" />
     </div>
   );
 }
@@ -245,7 +249,6 @@ function VerdictLine({ incident }: { incident: Incident }) {
           <Button
             variant="ghost"
             size="xs"
-            compact
             onClick={rebuild.run}
             loading={rebuild.pending}
             className="h-5"
@@ -308,13 +311,7 @@ function CancelLaunchButton() {
 
   return (
     <Tooltip content="Stop waiting for the Riot Client. A request it already took still starts a game.">
-      <Button
-        variant="ghost"
-        size="xs"
-        compact
-        onClick={() => cancelLaunch.mutate()}
-        disabled={cancelling}
-      >
+      <Button variant="ghost" size="xs" onClick={() => cancelLaunch.mutate()} disabled={cancelling}>
         {cancelLabel(cancelling)}
       </Button>
     </Tooltip>
@@ -348,6 +345,7 @@ export function SessionBar() {
   const clearFailure = usePatcherFailureStore((s) => s.clear);
   const { data: platform } = usePlatformSupport();
   const broken = useHealthVerdicts({ health: "broken" });
+  const pageActions = useChromeSlotFilled("status");
   const phase = patcherStatus?.phase ?? "idle";
 
   // A build that starts is the user trying again, and the start that failed
@@ -371,11 +369,14 @@ export function SessionBar() {
   });
 
   return match(view)
-    .with({ kind: "hidden" }, () => null)
+    .with({ kind: "hidden" }, () => {
+      if (!pageActions) return null;
+      return <Bar />;
+    })
     .with({ kind: "itemsOnly" }, () => <Bar />)
     .with({ kind: "stopping" }, () => (
       <RestingLine>
-        <Spinner size="sm" className="size-3.5 shrink-0" />
+        <Spinner size={14} className="shrink-0" />
         <span className="font-medium text-surface-300">Stopping patcher</span>
         <span className="text-surface-500">Waiting for the injector to shut down...</span>
       </RestingLine>

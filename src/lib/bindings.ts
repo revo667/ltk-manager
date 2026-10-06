@@ -640,6 +640,32 @@ export type Category =
 /**  Mod library state checks (index integrity). */
 "library";
 
+/**  `DynamicsChainProperties`, each parameter a value scaled by a curve along the tree. */
+export type ChainProperties = {
+	/**  `UseRodPhysics`. */
+	useRodPhysics: boolean,
+	/**  `Damping`. */
+	damping: ScaledCurve,
+	/**  `AnimPoseAttraction`. */
+	attraction: ScaledCurve,
+	/**  `JointRadius`. */
+	radius: ScaledCurve,
+	/**  `Envelope`. */
+	envelope: ScaledCurve,
+	/**  `LimitAngle`, in degrees. */
+	limitAngle: ScaledCurve,
+	/**  `Stretch`. */
+	stretch: ScaledCurve,
+	/**  `RodBendStiffness`. */
+	rodBend: ScaledCurve,
+	/**  `RodTwistStiffness`. */
+	rodTwist: ScaledCurve,
+	/**  `RodStretchStiffness`. */
+	rodStretch: ScaledCurve,
+	/**  `RodShearStiffness`. */
+	rodShear: ScaledCurve,
+};
+
 /**  One champion the install ships. */
 export type Champion = {
 	/**  The folder its paths name it by, such as `MonkeyKing`. */
@@ -681,19 +707,6 @@ export type CharacterSpell = {
 	/**  Every declaration, including conflicting classes, in archive order. */
 	declarations: ObjectDeclaration[],
 };
-
-/**  The character spell catalog and the index state supplying it. */
-export type CharacterSpells = 
-/**  Nothing has warmed the index. */
-({ status: "absent" }) & { error?: never } | 
-/**  The catalog is waiting for an index build. */
-({ status: "building" }) & { error?: never } | 
-/**  The last index build failed. */
-{ status: "failed"; error: AppErrorResponse } | 
-/**  Every named spell for the requested character. */
-{
-	status: "ready",
-} & SpellCatalog;
 
 /**  Result of a single diagnostic check. */
 export type Check = Check_Serialize | Check_Deserialize;
@@ -806,17 +819,6 @@ export type ClassDocs = {
 	properties: { [key in string]: PropertyDocs },
 };
 
-/**  How many objects of the install declare a class, given the slot the index is in. */
-export type ClassObjectCount = 
-/**  Nothing has warmed the index, or the switch that gates it is off. */
-{ status: "absent" } | 
-/**  A build is running. The count follows it. */
-{ status: "building" } | 
-/**  The last build failed, and the next warm retries it. */
-{ status: "failed"; error: AppErrorResponse } | 
-/**  The index answered. */
-{ status: "ready"; count: number };
-
 /**  A class as a card names it. */
 export type ClassRef = {
 	hash: HexBinHash,
@@ -868,6 +870,40 @@ export type ClipHeader = {
 	fps: number | null,
 	/**  Seconds one pass of the clip lasts. */
 	duration: number | null,
+};
+
+/**  A capsule between two joints, each end in the bind pose's model space with its own radius. */
+export type ColliderCapsule = {
+	/**  The name of the joint the first end rides. */
+	jointA: string,
+	/**  The first end. */
+	endA: [(number | null), (number | null), (number | null)],
+	/**  The radius at the first end. */
+	radiusA: number | null,
+	/**  The name of the joint the second end rides. */
+	jointB: string,
+	/**  The second end. */
+	endB: [(number | null), (number | null), (number | null)],
+	/**  The radius at the second end. */
+	radiusB: number | null,
+};
+
+/**  The shapes of one collider file. */
+export type ColliderShapes = {
+	/**  The spheres, in file order. */
+	spheres: ColliderSphere[],
+	/**  The capsules, in file order. */
+	capsules: ColliderCapsule[],
+};
+
+/**  A sphere on one joint, its centre in the bind pose's model space. */
+export type ColliderSphere = {
+	/**  The name of the joint the sphere rides. */
+	joint: string,
+	/**  The centre. */
+	centre: [(number | null), (number | null), (number | null)],
+	/**  The radius. */
+	radius: number | null,
 };
 
 /**
@@ -1190,6 +1226,16 @@ export type CslolModInfo = {
 	author: string,
 	version: string,
 	description: string,
+};
+
+/**  One `CurveFloat`, its three lists as the file holds them. */
+export type CurveKeys = {
+	/**  `times`. */
+	times: (number | null)[],
+	/**  `values`, which a cubic span takes four of. */
+	values: (number | null)[],
+	/**  `InterpModes`, one per span. */
+	modes: number[],
 };
 
 /**  One layer's declarations manifest, read for an outline. */
@@ -1818,6 +1864,38 @@ mask: KeyRef | null;
 blendIn: number | null; 
 /**  `mBlendOutTime`, seconds it eases out over. */
 blendOut: number | null } | 
+/**  `DynamicsChainBlendEventData`: every dynamics chain leaves its default state over the span. */
+{ kind: "dynamicsChainBlend"; 
+/**  `BlendFromDefaultDuration`, seconds the change takes at the start frame. */
+blendFromDefault: number | null; 
+/**  `BlendToDefaultDuration`, seconds the change back takes at the end frame. */
+blendToDefault: number | null } | 
+/**  `SpringPhysicsEventData`: a spring is turned off over the span. */
+{ kind: "springPhysics"; 
+/**  `SpringToAffect`, the spring's `name`, and none for every spring of the skin. */
+spring: HashRef | null; 
+/**  `BlendOutTime`, seconds. */
+blendOut: number | null } | 
+/**
+ *  `JointOrientationEventData`: every joint orientation leaves its default state over
+ *  the span, or follows another source over it.
+ */
+{ kind: "jointOrientation"; 
+/**
+ *  `BlendData.BlendFromDefaultDuration`, seconds the change takes at the start frame,
+ *  and none for an event with no blend, which changes no weight.
+ */
+blendFromDefault: number | null; 
+/**  `BlendData.BlendToDefaultDuration`, seconds the change back takes at the end frame. */
+blendToDefault: number | null; 
+/**  The event names a source of its own, which the modifier follows over the span. */
+overridesSource: boolean } | 
+/**  `LockRootOrientationEventData`: a joint keeps facing where it did while the unit turns. */
+{ kind: "lockRootOrientation"; 
+/**  `JointName`, the joint held, and none for an event naming no joint. */
+joint: HashRef | null; 
+/**  `BlendOutTime`, seconds the joint takes to follow the unit again. */
+blendOut: number | null } | 
 /**  Any other kind, which the viewport draws nothing for. */
 { kind: "other" };
 
@@ -1906,6 +1984,16 @@ export type ExportSummary = {
 	skipped: string[],
 	/**  What the export wrote, for a surface that offers to reveal it. */
 	destination: string,
+};
+
+/**  One `ExtraJointChainData`: a second chain turned by the angles of the first. */
+export type ExtraJointChain = {
+	/**  `StartingJointName`, the joint nearest the root. */
+	start: HashRef | null,
+	/**  `EndingJointName`. */
+	end: HashRef | null,
+	/**  `RightBias`, how much of each angle's size is taken off it, most at the start. */
+	rightBias: number | null,
 };
 
 /**  One kind of file an extract wrote, and how many. */
@@ -2329,23 +2417,6 @@ export type GameFindHit = {
 	pathRanges: ([number, number])[],
 };
 
-/**  What one full search of the folded index found. */
-export type GameFindResult = {
-	/**  Every matching row in tree order, capped at [`FIND_LIMIT`]. */
-	hits: GameFindHit[],
-	/**  How many files matched in all, counted on past the cap. */
-	total: number,
-	/**
-	 *  A newer search started before this one finished, so it gave up early.
-	 * 
-	 *  Its rows are whatever it had found, which is not the whole answer. The
-	 *  caller is expected to be showing the newer pattern by now.
-	 */
-	superseded: boolean,
-	/**  No hash table named a single chunk, so only a hash can match. */
-	unnamed: boolean,
-};
-
 /**  What a built index holds. */
 export type GameIndexStats = {
 	/**  Archives merged, including any that failed to read. */
@@ -2404,29 +2475,6 @@ export type GameSearchHit = {
 	score: number | null,
 	nameRanges: ([number, number])[],
 	pathRanges: ([number, number])[],
-};
-
-/**  What one search of the folded index found. */
-export type GameSearchResult = {
-	/**  The best rows, best first, capped at [`SEARCH_LIMIT`]. */
-	hits: GameSearchHit[],
-	/**  How many files matched in all, which the cap trimmed. */
-	total: number,
-	/**
-	 *  A newer search started before this one finished, so it gave up early.
-	 * 
-	 *  Its rows are whatever it had found, which is not the whole answer. The
-	 *  caller is expected to be showing the newer query by now.
-	 */
-	superseded: boolean,
-	/**
-	 *  No hash table named a single chunk, so only a hash can match.
-	 * 
-	 *  An install whose names never resolved answers every path query with
-	 *  nothing, which reads exactly like an install that holds no match. The
-	 *  caller says which of the two it is.
-	 */
-	unnamed: boolean,
 };
 
 /**  One chunk of a WAD archive. */
@@ -2502,6 +2550,11 @@ export type GraphClip = {
 	interruptionGroups: string[],
 	/**  `mFlags`. */
 	flags: number,
+	/**
+	 *  The clip fires the events of its own `mEventDataMap` while it plays other clips: a
+	 *  sequencer clip, and a parametric clip whose own-events flag is set.
+	 */
+	ownEvents: boolean,
 };
 
 /**
@@ -3084,6 +3137,17 @@ export type Incident_Serialize = {
 	dismissed: boolean,
 };
 
+/**  A response of the object index, given the slot the index is in. */
+export type IndexResponse<T> = 
+/**  Nothing has warmed the index, or the switch that gates it is off. */
+{ status: "absent" } | 
+/**  A build is running. The answer follows it. */
+{ status: "building" } | 
+/**  The last build failed, and the next warm retries it. */
+{ status: "failed"; error: AppErrorResponse } | 
+/**  The index answered. */
+{ status: "ready"; value: T };
+
 /**  Which stage of a start failed, for [`PatcherError::InjectionFailed`]. */
 export type InjectionStage = 
 /**
@@ -3332,6 +3396,36 @@ export type IntegrationStatus = {
 	operation: IntegrationOperation | null,
 };
 
+/**  One `DynamicsJointTreeData`: a root joint and the joints under it left unsimulated. */
+export type JointTree = {
+	/**  The hash path of the tree under the skin object. */
+	path: string,
+	/**  `RootJointName`, and none for a tree naming no joint. */
+	root: HashRef | null,
+	/**  `ExcludeJointNames`. */
+	excluded: HashRef[],
+};
+
+/**  One `DynamicsJointTreeGroupData`: the trees sharing one set of parameters. */
+export type JointTreeGroup = {
+	/**  The hash path of the group under the skin object. */
+	path: string,
+	/**  `JointTrees`. */
+	trees: JointTree[],
+	/**  `ChainProperties`. */
+	properties: ChainProperties,
+	/**  Every curve is read over the longest branch of the group rather than of each tree. */
+	sharedCurveLength: boolean,
+	/**  `GenerateLateralLinks`. */
+	lateralLinks: boolean,
+	/**  `LateralLinkMaterial`, the compliance preset of the lateral links. */
+	lateralLinkMaterial: number,
+	/**  A segment's rest length is measured off the animated pose every step. */
+	restLengthFromPose: boolean,
+	/**  A joint with no simulated child collides with no radius. */
+	tipsWithoutRadius: boolean,
+};
+
 /**  A key one clip names into a map of the graph. */
 export type KeyRef = {
 	/**  The key as the tables name it, and its hash where none does. */
@@ -3487,7 +3581,7 @@ export type LaunchStage =
 "error" | 
 /**
  *  A stage this build of the manager does not know, from a newer
- *  [`ritoclient`]. Not terminal, because there is no way to tell whether it
+ *  `ritoclient`. Not terminal, because there is no way to tell whether it
  *  should be.
  */
 "unknown";
@@ -3557,7 +3651,7 @@ export type LayerContent = {
 	ignoredDirectories: IgnoredDirectory[],
 };
 
-/**  One file of one project layer, as [`AssetRef::Layer`](crate::preview::AssetRef::Layer) names it. */
+/**  One file of one project layer, as a layer asset reference names it. */
 export type LayerFile = {
 	/**  The layer's directory name under `content`. */
 	layer: string,
@@ -3613,7 +3707,7 @@ export type LayoutMigrationReport = {
  *  What the layout migration has to say for itself this launch.
  * 
  *  The run starts with the app, so a window that opens afterwards has no
- *  [`LayoutMigrationFinished`](crate::events::BackendEvent) event to catch. It
+ *  [`LayoutMigrationFinished`](ltk_manager_base::events::BackendEvent) event to catch. It
  *  asks instead, and [`Pending`](Self::Pending) is what tells it to ask again.
  */
 export type LayoutMigrationState = 
@@ -3727,7 +3821,7 @@ export type MapCharacter = {
 	chunk: string,
 	/**  The key it sits under in that chunk, as `0x` and eight digits. */
 	key: string,
-	/**  The placeable's own name, which is unique within a map. */
+	/**  The placeable's own name. A map skin can repeat one, so `chunk` and `key` identify it. */
 	name: string,
 	/**  The entry path of the skin it wears, such as `Characters/Turret/Skins/Skin0`. */
 	skin: string,
@@ -3862,7 +3956,7 @@ export type MapParticle = {
 	chunk: string,
 	/**  The key it sits under in that chunk, as `0x` and eight digits. */
 	key: string,
-	/**  The placeable's own name, which is unique within a map. */
+	/**  The placeable's own name. A map skin can repeat one, so `chunk` and `key` identify it. */
 	name: string,
 	/**  The system it plays, an object of the same document, as `0x` and eight digits. */
 	system: string,
@@ -4621,19 +4715,6 @@ export type ObjectDeclaration = {
 	class: string,
 };
 
-/**  What one prefix of the object tree holds, given the slot the index is in. */
-export type ObjectDir = 
-/**  Nothing has warmed the index, or the switch that gates it is off. */
-({ status: "absent" }) & { error?: never } | 
-/**  A build is running. The listing follows it. */
-({ status: "building" }) & { error?: never } | 
-/**  The last build failed, and the next warm retries it. */
-{ status: "failed"; error: AppErrorResponse } | 
-/**  The index answered. */
-{
-	status: "ready",
-} & ObjectDirListing;
-
 /**
  *  What one prefix of the object tree holds.
  * 
@@ -4658,19 +4739,6 @@ export type ObjectEdit =
 /**  Take back the removal of `entry`. [`BinDocument::restore_object`]. */
 { kind: "restore"; entry: string };
 
-/**  What a full search of the objects found, given the slot the index is in. */
-export type ObjectFind = 
-/**  Nothing has warmed the index, or the switch that gates it is off. */
-({ status: "absent" }) & { error?: never } | 
-/**  A build is running. The hits follow it. */
-({ status: "building" }) & { error?: never } | 
-/**  The last build failed, and the next warm retries it. */
-{ status: "failed"; error: AppErrorResponse } | 
-/**  The index answered. */
-{
-	status: "ready",
-} & ObjectFindResult;
-
 /**  One object the full search matched, with the runs its path marks. */
 export type ObjectFindHit = {
 	/**  The object's path hash, as `0x` and eight hex digits. */
@@ -4681,18 +4749,6 @@ export type ObjectFindHit = {
 	ranges: ([number, number])[],
 	/**  Every declaration of the object, in archive order. */
 	declarations: ObjectDeclaration[],
-};
-
-/**  What one full search of the object index found. */
-export type ObjectFindResult = {
-	/**  Every matching object in path order, capped at `FIND_LIMIT`, the unnamed last. */
-	hits: ObjectFindHit[],
-	/**  How many objects matched in all, counted on past the cap. */
-	total: number,
-	/**  A newer search overtook this one. The hits are a part of the answer. */
-	superseded: boolean,
-	/**  No table named a single object. Only a hash can match. */
-	unnamed: boolean,
 };
 
 /**  The slot the index is in, as an answer reports it. */
@@ -4787,32 +4843,6 @@ export type ObjectPrefixEntry = {
 	/**  Objects below the prefix. */
 	count: number,
 };
-
-/**  What a reference query found, given the slot the index is in. */
-export type ObjectReferences = 
-/**  Nothing has warmed the index, or the switch that gates it is off. */
-({ status: "absent" }) & { error?: never } | 
-/**  A build is running. The groups follow it. */
-({ status: "building" }) & { error?: never } | 
-/**  The last build failed, and the next warm retries it. */
-{ status: "failed"; error: AppErrorResponse } | 
-/**  The index or the walk answered. */
-{
-	status: "ready",
-} & ReferenceResult;
-
-/**  What a search answers, given the slot the index is in. */
-export type ObjectSearch = 
-/**  Nothing has warmed the index, or the switch that gates it is off. */
-({ status: "absent" }) & { error?: never } | 
-/**  A build is running, so the rows are on their way. */
-({ status: "building" }) & { error?: never } | 
-/**  The last build failed, and the next warm retries it. */
-{ status: "failed"; error: AppErrorResponse } | 
-/**  The index answered. */
-{
-	status: "ready",
-} & ObjectSearchResult;
 
 /**
  *  One row a search matched, with the runs its path marks.
@@ -5186,6 +5216,145 @@ export type PlatformSupport = {
 	patcherAvailable: boolean,
 	hotkeysAvailable: boolean,
 };
+
+/**  One entry of `rigPoseModifierData`, of any kind of `BaseRigPoseModifierData`. */
+export type PoseModifier = 
+/**  `SpringPhysicsRigPoseModifierData`: one joint lags the unit's movement or turning. */
+{ kind: "spring"; 
+/**  The hash path of the modifier under the skin object. */
+path: string; 
+/**  `name`, which a spring event names the spring by. */
+name: HashRef | null; 
+/**  `Joint`, the joint moved. */
+joint: HashRef | null; 
+/**  `Mass`. */
+mass: number | null; 
+/**  `SpringStiffness`. */
+stiffness: number | null; 
+/**  `Damping`. */
+damping: number | null; 
+/**  `DoTranslation`. */
+doTranslation: boolean; 
+/**  `DoRotation`. */
+doRotation: boolean; 
+/**  `maxDistance`, and zero for no limit. */
+maxDistance: number | null; 
+/**  `maxAngle`, and zero for no limit. */
+maxAngle: number | null; 
+/**  `Invert`. */
+invert: boolean; 
+/**  `DefaultOn`. */
+defaultOn: boolean } | 
+/**  `DynamicsChainRigPoseModifierData`: trees of joints simulated as particles. */
+{ kind: "dynamicsChain"; 
+/**  The hash path of the modifier under the skin object. */
+path: string; 
+/**  `DefaultOn`. */
+defaultOn: boolean; 
+/**  `GlobalEnvelope`, multiplied into every joint's envelope. */
+globalEnvelope: number | null; 
+/**  `PhysicsSimLocalSettings.GravityScale`. */
+gravityScale: number | null; 
+/**  `PhysicsSimLocalSettings.GravityOverride`, and none for the game's own gravity. */
+gravityOverride: [(number | null), (number | null), (number | null)] | null; 
+/**  The file the collision shapes are read from, and none for a chain naming none. */
+colliderFile: NamedAsset | null; 
+/**  `JointTreeGroups`. */
+groups: JointTreeGroup[] } | 
+/**  `ConformToPathRigPoseModifierData`: a chain of joints turns to trail the unit. */
+{ kind: "conformToPath"; 
+/**  The hash path of the modifier under the skin object. */
+path: string; 
+/**  `mStartingJointName`, the joint of the chain nearest the root. */
+start: HashRef | null; 
+/**  `mEndingJointName`, the joint the chain runs down to. */
+end: HashRef | null; 
+/**  `mDefaultMaskName`, the mask that weighs each joint's turn, and none for none. */
+defaultMask: HashRef | null; 
+/**  `mMaxBoneAngle`, the most one joint turns, in degrees. */
+maxBoneAngle: number | null; 
+/**  `mDampingValue`. */
+damping: number | null; 
+/**  `mFrequency`. */
+frequency: number | null; 
+/**  `mVelMultiplier`, how much of the unit's velocity a joint's aim is carried by. */
+velMultiplier: number | null; 
+/**  `OnlyActivateInTurns`. */
+onlyInTurns: boolean; 
+/**  `ActivationAngle`, the bend of the unit's path that counts as a turn, in degrees. */
+activationAngle: number | null; 
+/**  `ActivationDistance`, how near a turn a joint turns whole. */
+activationDistance: number | null; 
+/**  `BlendDistance`, how far from a turn a joint stops turning. */
+blendDistance: number | null; 
+/**  `ExtraJointChains`. */
+extraChains: ExtraJointChain[] } | 
+/**  `JointOrientationRigPoseModifierData`: joints turn to a direction a driver gives. */
+{ kind: "jointOrientation"; 
+/**  The hash path of the modifier under the skin object. */
+path: string; 
+/**  `Joints`, the joints turned, in list order. */
+joints: HashRef[]; 
+/**  The class of `OrientationSource` as the tables name it, and none for a null pointer. */
+source: string | null; 
+/**  `orientationType`: 0 the source is a direction, 1 a place each joint turns toward. */
+orientationType: number; 
+/**  `PlaneConstraint`: the normal of the plane a joint turns in, 0 z, 1 y, 2 x. */
+planeConstraint: number; 
+/**  The axis the plane tilts about: 0 none, 1 x, 2 y, 3 z. */
+tiltAxis: number; 
+/**  The axis of the joint pointed along the direction: 0 none, 1 x, 2 y, 3 z. */
+aimAxis: number; 
+/**  The aim axis is the negative one. */
+aimNegated: boolean; 
+/**  The joint is turned half way round its normal first, and its tilt runs the other way. */
+flipped: boolean; 
+/**  The most a joint turns in its plane, in degrees. */
+maxAngle: number | null; 
+/**  `DefaultOn`. */
+defaultOn: boolean } | 
+/**
+ *  `LockRootOrientationRigPoseModifierData`: a joint keeps its facing while the unit
+ *  turns, for as long as a `LockRootOrientationEventData` of a clip runs.
+ */
+{ kind: "lockRootOrientation"; 
+/**  The hash path of the modifier under the skin object. */
+path: string } | 
+/**
+ *  `JointSnapRigPoseModifilerData`: a joint stands on another, for as long as a
+ *  `JointSnapEventData` of a clip runs.
+ */
+{ kind: "jointSnap"; 
+/**  The hash path of the modifier under the skin object. */
+path: string } | 
+/**
+ *  `SyncedAnimationRigPoseModifierData`: the unit moves to the place it shares with the
+ *  other units of a `SyncedAnimationEventData`.
+ */
+{ kind: "syncedAnimation"; 
+/**  The hash path of the modifier under the skin object. */
+path: string } | 
+/**
+ *  `VertexAnimationRigPoseModifierData`: a spring on the unit's movement, whose change
+ *  the pose carries to the mesh rather than to a joint.
+ */
+{ kind: "vertexAnimation"; 
+/**  The hash path of the modifier under the skin object. */
+path: string; 
+/**  `mMaxSpeed`. */
+maxSpeed: number | null; 
+/**  `mStiffness`. */
+stiffness: number | null; 
+/**  `mMass`. */
+mass: number | null; 
+/**  `mDamping`. */
+damping: number | null } | 
+/**  Any other kind, which the viewport simulates nothing for. */
+{ kind: "other"; 
+/**  The hash path of the modifier under the skin object. */
+path: string; 
+/**  The modifier's class as the tables name it, and its hash where none does. */
+class: string };
 
 /**  One finding, at one site, from one rule. */
 export type Problem = Problem_Serialize | Problem_Deserialize;
@@ -5881,6 +6050,16 @@ project: string;
 /**  The layer's name. */
 layer: string };
 
+/**  One `CurveScaledFloat`. */
+export type ScaledCurve = {
+	/**  `value`, and the parameter's own default where the struct sets none. */
+	value: number | null,
+	/**  `UseCurve`. */
+	useCurve: boolean,
+	/**  `Curve`, and none for a null pointer. */
+	curve: CurveKeys | null,
+};
+
 /**  Which scan the DLL ran, as it decided from the flags and the command line. */
 export type ScanMode = "eager" | "lazy";
 
@@ -5958,6 +6137,27 @@ export type SearchFor =
 /**  A path field, the files `preference` names first. */
 { kind: "pathField"; preference: SearchPreference };
 
+/**  The rows one search of an index kept, up to its limit, and how many matched in all. */
+export type SearchHits<T> = {
+	/**  The rows in the order the search gives them, at most its limit. */
+	hits: T[],
+	/**  How many rows matched in all, counted on past the limit. */
+	total: number,
+	/**
+	 *  A newer search overtook this one, so the hits are a part of the answer.
+	 * 
+	 *  The caller is expected to be showing the newer search by now.
+	 */
+	superseded: boolean,
+	/**
+	 *  No table named a single entry of the index, so only a hash can match.
+	 * 
+	 *  An index whose names never resolved answers every path query with nothing,
+	 *  which reads exactly like an index that holds no match. The caller says which.
+	 */
+	unnamed: boolean,
+};
+
 /**
  *  The files a path field wants ranked first in a search.
  * 
@@ -6002,7 +6202,7 @@ export type SessionFailure =
  *  The overlay build failed, with the builder's own words.
  * 
  *  `kind` is carried because `message` is [`Display`](std::fmt::Display)
- *  output and several [`AppError`](crate::error::AppError) variants render
+ *  output and several [`AppError`](ltk_manager_base::error::AppError) variants render
  *  with no prefix of their own, so a thin inner error leaves nothing at all
  *  to read. The kind is always there to say what failed. `category` is the
  *  overlay's own word on which remedy applies, and `None` on records from
@@ -6420,6 +6620,10 @@ export type SkinModel = {
 	 *  [`search_linked_systems`] adds those its linked files declare.
 	 */
 	effectSystems: EffectSystem[],
+	/**  `skinMeshProperties.rigPoseModifierData`, in the order the skin lists them. */
+	poseModifiers: PoseModifier[],
+	/**  `skinMeshProperties.SocketDefinitions`, in the order the skin lists them. */
+	sockets: Socket[],
 };
 
 /**  Why a property edit does not apply, as `ltk_game_data` names it. */
@@ -6430,6 +6634,41 @@ export type SkippedArchive = {
 	wad: string,
 	why: string,
 };
+
+/**  One entry of `SocketDefinitions`, of any kind of `SocketDefinitionBase`. */
+export type Socket = 
+/**  `SocketDefinitionSingleJoint`: a point riding one joint. */
+{ kind: "singleJoint"; 
+/**  The hash path of the socket under the skin object. */
+path: string; 
+/**  `name`, which a lookup by bone name finds the socket under. */
+name: string; 
+/**  `ParentJoint`, and none for a socket naming no joint. */
+parent: HashRef | null; 
+/**  `PositionOffset`, in the axes of the bind pose. */
+position: [(number | null), (number | null), (number | null)]; 
+/**  `RotationOffset`, Euler degrees. */
+rotation: [(number | null), (number | null), (number | null)]; 
+/**  `FreezePositionX`, `Y` and `Z`. */
+freezePosition: [boolean, boolean, boolean]; 
+/**  `FreezeRotationX`, `Y` and `Z`. */
+freezeRotation: [boolean, boolean, boolean] } | 
+/**  `SocketDefinitionWorld`: a point riding the character's root. */
+{ kind: "world"; 
+/**  The hash path of the socket under the skin object. */
+path: string; 
+/**  `name`. */
+name: string; 
+/**  `PositionOffset`. */
+position: [(number | null), (number | null), (number | null)] } | 
+/**  Any other kind, which the viewport resolves nowhere. */
+{ kind: "other"; 
+/**  The hash path of the socket under the skin object. */
+path: string; 
+/**  `name`. */
+name: string; 
+/**  The socket's class as the tables name it, and its hash where none does. */
+class: string };
 
 /**  The install's named spells for one character, without a search result cap. */
 export type SpellCatalog = {

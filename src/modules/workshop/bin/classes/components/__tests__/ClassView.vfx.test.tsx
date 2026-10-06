@@ -498,7 +498,7 @@ async function fromPanesMenu(user: UserEvent, name: string) {
 
 /** The lanes stand in for the strip in the shell, so a card case opens the Emitters pane first. */
 async function showCards(user: UserEvent) {
-  await screen.findByText("Emitter Lifetime");
+  await screen.findByText("Emission End Time");
   await fromPanesMenu(user, "Emitters");
   await screen.findAllByRole("button", { name: /Sparks/ });
 }
@@ -688,7 +688,7 @@ describe("ClassView over a particle system", () => {
     ).toBeInTheDocument();
     await userEvent.pointer({
       keys: "[MouseRight]",
-      target: within(line).getByText("Emitter Lifetime"),
+      target: within(line).getByText("Emission End Time"),
     });
 
     expect(await screen.findByRole("menuitem", { name: "Paste reference" })).toBeInTheDocument();
@@ -1094,7 +1094,7 @@ describe("ClassView over a particle system", () => {
     renderSystem();
 
     await screen.findAllByText("Glow");
-    for (const group of ["Emission", "Birth", "Position", "Texture", "Render", "Material"]) {
+    for (const group of ["Emission", "Source", "Birth", "Texture", "Render", "Material"]) {
       expect(screen.getAllByText(group).length).toBeGreaterThan(0);
     }
     expect(await screen.findByText("Scale")).toBeInTheDocument();
@@ -1104,24 +1104,24 @@ describe("ClassView over a particle system", () => {
   it("opens on the first emitter's first group", async () => {
     renderSystem();
 
-    expect(await screen.findByText("Emitter Lifetime")).toBeInTheDocument();
+    expect(await screen.findByText("Emission End Time")).toBeInTheDocument();
   });
 
   it("leaves every group drawn when a chip picks one, because picking scrolls rather than filters", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
-    await user.click(cardChip("Position"));
+    await user.click(cardChip("Source"));
 
     expect(await screen.findByText("Spawn Shape")).toBeInTheDocument();
-    expect(screen.getByText("Emitter Lifetime")).toBeInTheDocument();
+    expect(screen.getByText("Emission End Time")).toBeInTheDocument();
     expect(screen.getByText("Blend Mode")).toBeInTheDocument();
   });
 
   it("draws every group the emitter sets at once, each a section of its own", async () => {
     renderSystem();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     expect(screen.getByText("Spawn Shape")).toBeInTheDocument();
     expect(screen.getByText("Blend Mode")).toBeInTheDocument();
@@ -1130,18 +1130,18 @@ describe("ClassView over a particle system", () => {
   it("folds a section from its own header", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await user.click(section("Emission"));
 
-    expect(screen.queryByText("Emitter Lifetime")).toBeNull();
+    expect(screen.queryByText("Emission End Time")).toBeNull();
     expect(screen.getByText("Blend Mode")).toBeInTheDocument();
   });
 
   it("reads no row of a folded section, and reads them once it opens", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await user.click(section("Emission"));
     await user.click(await screen.findByRole("button", { name: /Sparks/ }));
@@ -1211,9 +1211,9 @@ describe("ClassView over a particle system", () => {
     await screen.findByText("Spawn Shape");
     scrolled.mockClear();
 
-    await user.click(cardChip("Position"));
+    await user.click(cardChip("Source"));
 
-    expect(scrolled.mock.contexts).toContain(section("Position").closest("section"));
+    expect(scrolled.mock.contexts).toContain(section("Source").closest("section"));
   });
 
   it("dims an emitter its own field disables", async () => {
@@ -1306,7 +1306,7 @@ describe("The shell frame", () => {
 
   it("names the system, the open emitter and its group", async () => {
     renderSystem();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     expect(crumb().getByRole("button", { name: "Smolder_Base_Idle" })).toBeInTheDocument();
     expect(crumb().getByRole("button", { name: /Glow/ })).toBeInTheDocument();
@@ -1316,7 +1316,7 @@ describe("The shell frame", () => {
   it("draws the system's own sections from the crumb's first segment", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
     expect(screen.queryByRole("button", { name: "Identity" })).not.toBeInTheDocument();
 
     await user.click(crumb().getByRole("button", { name: "Smolder_Base_Idle" }));
@@ -1329,11 +1329,11 @@ describe("The shell frame", () => {
   it("draws every group the emitter sets from the crumb's second segment", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await user.click(crumb().getByRole("button", { name: /Glow/ }));
 
-    expect(await screen.findByText("Emitter Lifetime")).toBeInTheDocument();
+    expect(await screen.findByText("Emission End Time")).toBeInTheDocument();
     expect(screen.getByText("Spawn Shape")).toBeInTheDocument();
     expect(await fieldRow("texture")).toBeInTheDocument();
   });
@@ -1341,11 +1341,11 @@ describe("The shell frame", () => {
   it("opens a menu of that emitter's groups on the crumb's last segment", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await user.click(crumb().getByRole("button", { name: "Emission" }));
 
-    expect(await screen.findByRole("menuitem", { name: "Position" })).toBeInTheDocument();
+    expect(await screen.findByRole("menuitem", { name: "Source" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Scale" })).not.toBeInTheDocument();
   });
 
@@ -1358,7 +1358,7 @@ describe("The shell frame", () => {
     });
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
     scrolled.mockClear();
 
     await user.click(crumb().getByRole("button", { name: "Emission" }));
@@ -1369,8 +1369,8 @@ describe("The shell frame", () => {
 
   it("holds the crumb's group segment still while the pane scrolls", async () => {
     renderSystem();
-    await screen.findByText("Emitter Lifetime");
-    const sections = ["Emission", "Birth", "Position"].map(
+    await screen.findByText("Emission End Time");
+    const sections = ["Emission", "Source", "Birth"].map(
       (title) => section(title).closest("section") as HTMLElement,
     );
     const pane = sections[0]?.parentElement as HTMLElement;
@@ -1391,7 +1391,7 @@ describe("The shell frame", () => {
     fireEvent.scroll(pane);
 
     expect(crumb().getByRole("button", { name: "Emission" })).toBeInTheDocument();
-    expect(crumb().queryByRole("button", { name: "Birth" })).not.toBeInTheDocument();
+    expect(crumb().queryByRole("button", { name: "Source" })).not.toBeInTheDocument();
   });
 
   it("aims the crumb at the emitter when a card names itself", async () => {
@@ -1408,7 +1408,7 @@ describe("The shell frame", () => {
 
   it("holds a place for the curve before a mark targets it", async () => {
     renderSystem();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     expect(screen.getByRole("tab", { name: "Curve" })).toBeInTheDocument();
     expect(screen.getByText("No value targeted")).toBeInTheDocument();
@@ -1499,10 +1499,10 @@ describe("The shell frame", () => {
     await screen.findByText("Glow [0] . rate");
 
     await user.click(crumb().getByRole("button", { name: "Emission" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Position" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Source" }));
 
     expect(await screen.findByText("VfxShapeSphere")).toBeInTheDocument();
-    expect(screen.getByText("Glow [0] . rate")).toBeInTheDocument();
+    expect(await screen.findByText("Glow [0] . rate")).toBeInTheDocument();
   });
 
   it("gives a row with dynamics both triggers, and a row without neither", async () => {
@@ -1531,7 +1531,7 @@ describe("The shell frame", () => {
 
   it("keeps unauthored fields in collapsed sections without requiring a Defaults switch", async () => {
     renderSystem();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
     expect(await findSection("Scale", false)).toBeInTheDocument();
     expect(screen.queryByText("Scale over Lifetime")).not.toBeInTheDocument();
     await userEvent.click(section("Scale", false));
@@ -1565,11 +1565,11 @@ describe("The shell frame", () => {
       return read(command, args);
     });
     renderSystem();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await waitFor(() => expect(section("Render", false)).toBeInTheDocument());
     expect(section("Emission")).toBeInTheDocument();
-    expect(section("Position")).toBeInTheDocument();
+    expect(section("Source")).toBeInTheDocument();
     expect(screen.queryByText("Blend Mode")).not.toBeInTheDocument();
 
     await userEvent.click(section("Render", false));
@@ -1581,7 +1581,7 @@ describe("The shell frame", () => {
 
   it("reveals default-only sections during search and preserves an explicit expansion", async () => {
     renderSystem();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
     const search = screen.getByRole("textbox", { name: "Search emitter properties" });
     expect(await findSection("Scale", false)).toBeInTheDocument();
 
@@ -1600,15 +1600,15 @@ describe("The shell frame", () => {
   it("drops every field at its default while only defined properties are shown", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
-    const toggle = screen.getByRole("button", { name: "Show only defined properties" });
+    await screen.findByText("Emission End Time");
     expect(await findSection("Scale", false)).toBeInTheDocument();
 
-    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "View" }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: "Defined only" }));
 
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "View" })).toHaveAttribute("data-pressed");
     expect(screen.queryByRole("button", { name: "Scale" })).not.toBeInTheDocument();
-    expect(screen.getByText("Emitter Lifetime")).toBeInTheDocument();
+    expect(screen.getByText("Emission End Time")).toBeInTheDocument();
   });
 
   it("adds a field the emitter lacks from the action bar's add box", async () => {
@@ -1632,7 +1632,7 @@ describe("The shell frame", () => {
     });
     renderSystem(vi.fn(), true);
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await user.click(screen.getByRole("button", { name: "Add property" }));
     const box = screen.getByRole("combobox", { name: "Add a property, or type name: kind" });
@@ -1661,7 +1661,7 @@ describe("The shell frame", () => {
     expect(await screen.findByRole("menuitem", { name: "Show curve" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
-    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Emitter Lifetime") });
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Emission End Time") });
 
     expect(screen.queryByRole("menuitem", { name: "Show curve" })).not.toBeInTheDocument();
   });
@@ -1669,7 +1669,7 @@ describe("The shell frame", () => {
   it("sends a cell of the inspector its own key, for the tree to reveal", async () => {
     const onShowInProperties = renderSystem();
     const user = userEvent.setup();
-    const cell = await screen.findByText("Emitter Lifetime");
+    const cell = await screen.findByText("Emission End Time");
 
     await user.pointer({ keys: "[MouseRight]", target: cell });
     await user.click(await screen.findByRole("menuitem", { name: "Show in properties" }));
@@ -1682,27 +1682,27 @@ describe("The shell frame", () => {
     const user = userEvent.setup();
     await showCards(user);
 
-    await user.click(cardChip("Position"));
+    await user.click(cardChip("Source"));
 
-    expect(await crumb().findByRole("button", { name: "Position" })).toBeInTheDocument();
+    expect(await crumb().findByRole("button", { name: "Source" })).toBeInTheDocument();
   });
 
   it("draws the panel under the strip once the pane is too narrow for a shell", async () => {
     paneWidth = NARROW;
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await user.click(screen.getByRole("button", { name: "Emitters" }));
 
-    expect(screen.queryByText("Emitter Lifetime")).not.toBeInTheDocument();
+    expect(screen.queryByText("Emission End Time")).not.toBeInTheDocument();
   });
 
   it("keeps the open emitter and its group when the pane narrows to the stack", async () => {
     renderSystem();
     const user = userEvent.setup();
     await showCards(user);
-    await user.click(cardChip("Position"));
+    await user.click(cardChip("Source"));
     await screen.findByText("VfxShapeSphere");
 
     await resizeTo(NARROW);
@@ -1856,7 +1856,7 @@ describe("The shell's panes", () => {
 
   it("draws the preview, the inspector, the timeline and the curve, each in a panel of its own", async () => {
     renderSystem();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     for (const pane of ["Preview", "Inspector", "Timeline", "Curve"]) {
       expect(paneTab(pane)).toBeInTheDocument();
@@ -1876,7 +1876,7 @@ describe("The shell's panes", () => {
   it("closes a pane from its own tab", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await user.click(screen.getByRole("button", { name: "Close Curve" }));
 
@@ -1886,7 +1886,7 @@ describe("The shell's panes", () => {
   it("reopens the preview from the Panes menu", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
     await fromPanesMenu(user, "Preview");
     expect(paneTab("Preview")).not.toBeInTheDocument();
 
@@ -1898,7 +1898,7 @@ describe("The shell's panes", () => {
   it("puts every pane back from Reset layout", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
     await fromPanesMenu(user, "Preview");
     await fromPanesMenu(user, "Curve");
 
@@ -1912,7 +1912,7 @@ describe("The shell's panes", () => {
   it("keeps the inspector aimed where the crumb left it", async () => {
     renderSystem();
     const user = userEvent.setup();
-    await screen.findByText("Emitter Lifetime");
+    await screen.findByText("Emission End Time");
 
     await user.click(
       within(screen.getByRole("navigation", { name: "What the inspector draws" })).getByRole(
@@ -1993,7 +1993,7 @@ describe("ClassView over sixty emitters", () => {
 it("keeps the shell mounted while a hidden document reports zero width", async () => {
   paneWidth = WIDE;
   renderSystem();
-  await screen.findByText("Emitter Lifetime");
+  await screen.findByText("Emission End Time");
   const shell = document.querySelector('[data-ui="ClassView:shell"]');
   expect(shell).not.toBeNull();
   await resizeTo(0);

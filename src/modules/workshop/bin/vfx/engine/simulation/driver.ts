@@ -6,6 +6,7 @@ import {
   flightTime,
   fliesAsMissile,
   landed,
+  type Motion,
   originAt,
   phaseAt,
   type Point,
@@ -21,7 +22,7 @@ import {
   simulationEquals,
   systemSpan,
 } from "../model/systemModel";
-import { flightInto, multiplyInto, turnInto, yawInto } from "../utils/basis";
+import { flightInto, yawInto } from "../utils/basis";
 import { Rng } from "../utils/Rng";
 import { createCheckpoints } from "./checkpoints";
 import {
@@ -184,12 +185,12 @@ export interface Driver extends Source {
   readonly phase: number;
   /** The emitters' own age, which is the phase plus the seconds the run built up before it. */
   readonly elapsed: number;
-  /** Where the rig has the system at this moment, under the definition's own transform. */
+  /** Where the rig has the system at this moment. */
   readonly origin: Point;
-  /** Where the rig aims the system at this moment, likewise, which a beam reaches for. */
+  /** Where the rig aims the system at this moment, which a beam reaches for. */
   readonly target: Point;
   /**
-   * How the rig turns the system at this moment, under the definition's own transform.
+   * How the rig turns the system at this moment.
    *
    * The engine keeps this beside the definition's `transform`, which is what a particle
    * of `particleIsLocalOrientation` stands on in place of the frame it was born in.
@@ -213,9 +214,17 @@ export interface Driver extends Source {
   /** Read every birth's tables at `chance` from here on, and at its own draw again for null. */
   pin(chance: number | null): void;
   setSurfaces(surfaces: EmissionSurfaces): void;
+  /** The emission samplers currently installed, which the viewport's birth overlay samples. */
+  surfaces(): EmissionSurfaces;
   setMeshJoints(joints: ReadonlyMap<string, Joints>): void;
-  /** Draw the next appearance pass from `next`, keeping the particles already alive. */
-  swap(next: SystemModel): void;
+  /**
+   * Draw the next appearance pass from `next`, keeping the particles already alive.
+   *
+   * Returns true when `next` changes a field the simulation reads. The live particles were
+   * born under the previous definition, so an owner that shows the run seeks to its current
+   * phase after such a swap.
+   */
+  swap(next: SystemModel): boolean;
   /** Carry the system on `next`, restarting the run where the motion itself changed. */
   steer(next: RigModel): void;
   /**
@@ -249,8 +258,8 @@ export interface DriverOptions {
  * The rig is the driver's rather than the model's, per decision 2.9, and it holds
  * nothing about when it was bound: where a run stands is read off the clock, so the
  * replay above reaches what a play reaches. The rig also faces the system, the way the
- * engine yaws a missile toward its target, and the definition's own transform is the
- * outermost factor of everything the rig places.
+ * engine yaws a missile toward its target. The definition's own transform is no part of
+ * where the rig has the system: it is a factor of each particle's own matrix.
  */
 export function createDriver(
   seed: number,
@@ -266,7 +275,6 @@ export function createDriver(
   let rng = new Rng(seed);
   let states: EmitterState[] = [];
   const yaw = new Float32Array(FRAME_SLOTS);
-  const orientation = new Float32Array(FRAME_SLOTS);
   const lineage = createLineage(seed);
   lineage.joints = rig.joints ?? null;
   const children = createChildren(lineage, "", 0);
@@ -299,10 +307,10 @@ export function createDriver(
       const placed: SystemStep = {
         dt: step.dt,
         now: step.now,
-        origin: place(world, now),
-        moved: turn(world, displacement(origin, now)),
+        origin: stand(world, now),
+        moved: displacement(origin, now),
         yaw,
-        world: world.basis,
+        world,
         stopped: (rig.stopAt != null && reached >= rig.stopAt) || landed(rig.motion, reached),
         pinned: lineage.pinned,
         surfaces: lineage.surfaces.get(""),
@@ -376,7 +384,7 @@ export function createDriver(
   }
 
   /**
-   * The rig's own turn at `reached`, into the yaw and the orientation beside it.
+   * The rig's own turn at `reached`, into the yaw.
    *
    * A path, and a missile-oriented orbit, stand in for a missile's own game object,
    * whose travel is its local `Y`, where a unit's system is the look-at yaw of question 11.
@@ -387,7 +395,6 @@ export function createDriver(
     if (motion.kind === "bone") motion.anchor.basisInto(reached, yaw);
     else if (fliesAsMissile(motion)) flightInto(facingAt(motion, reached), yaw);
     else yawInto(facingAt(motion, reached), yaw);
-    multiplyInto(world.basis, yaw, orientation);
   }
 
   /**
@@ -403,7 +410,7 @@ export function createDriver(
     if (steps === 0) return;
 
     orientInto(reached);
-    const stood = place(world, origin);
+    const stood = stand(world, origin);
     for (let at = 1; at <= steps; at += 1) {
       const now = until - (steps - at) * SEEK_STEP;
       building = { now, age: at * SEEK_STEP };
@@ -413,7 +420,7 @@ export function createDriver(
         origin: stood,
         moved: STILL,
         yaw,
-        world: world.basis,
+        world,
         stopped: false,
         pinned: lineage.pinned,
         surfaces: lineage.surfaces.get(""),
@@ -430,7 +437,7 @@ export function createDriver(
     pool.count = 0;
     children.clear();
     lineage.births.length = 0;
-    states = createEmitterStates(system.emitters);
+    states = createEmitterStates(system.emitters, rng);
     origin = originAt(rig.motion, 0, rig.height);
     lanes.wrap();
     buildUp(until, 0);
@@ -445,7 +452,7 @@ export function createDriver(
     lineage.births.length = 0;
     rng = new Rng(seed);
     stepper.reset();
-    states = createEmitterStates(system.emitters);
+    states = createEmitterStates(system.emitters, rng);
     phase = 0;
     origin = originAt(rig.motion, 0, rig.height);
     buildUp(0, 0);
@@ -465,13 +472,16 @@ export function createDriver(
       return building?.age ?? phaseAt(rig, stepper.now, span, tail) + system.buildUpTime;
     },
     get origin() {
-      return place(world, origin);
+      return stand(world, origin);
     },
     get target() {
-      return place(world, targetAt(rig.motion, phaseAt(rig, stepper.now, span, tail), rig.height));
+      return targetAt(rig.motion, phaseAt(rig, stepper.now, span, tail), rig.height);
     },
     get orientation() {
-      return orientation;
+      return yaw;
+    },
+    get world() {
+      return world;
     },
     histogram: lanes,
     advance: run,
@@ -500,6 +510,9 @@ export function createDriver(
       lineage.surfaces = surfaces;
       marks.clear();
       driver.seek(driver.phase);
+    },
+    surfaces() {
+      return lineage.surfaces;
     },
     setMeshJoints(joints) {
       if (jointsEquals(lineage.meshJoints, joints)) return;
@@ -532,19 +545,20 @@ export function createDriver(
       orientInto(phase);
       if (drawOnly) {
         children.repoint(next);
-        return;
+        return false;
       }
 
       marks.clear();
       relane();
       if (same) {
         children.repoint(next);
-        return;
+        return true;
       }
 
       /* The pool's `emitter` column no longer addresses the new list, so the run replays to
          the current phase, which keeps the clock, the lanes and the particles in one run. */
       driver.seek(phase);
+      return true;
     },
 
     /*
@@ -552,9 +566,13 @@ export function createDriver(
      * rather than dropping the effect part-way along a path it never travelled. Tuning
      * one holds the run, and only re-reads the origin, so a drag along a slider moves
      * what it is describing rather than pinning the run to its first frame.
+     *
+     * A bone on another anchor is the same joint under another pose. What is alive was born
+     * where the last pose had the joint, so the run replays to its phase on the new one.
      */
     steer(next) {
       const turned = next.motion.kind !== rig.motion.kind;
+      const posed = reposed(rig.motion, next.motion);
       rig = next;
       tail = lingerTail(system, flightTime(next.motion));
       lineage.joints = next.joints ?? null;
@@ -562,6 +580,11 @@ export function createDriver(
 
       if (turned) {
         rewind();
+        return;
+      }
+
+      if (posed) {
+        driver.seek(phaseAt(next, stepper.now, span, tail));
         return;
       }
       /* The phase moves with the rig, because a tune that shortens the run wraps it back
@@ -587,20 +610,21 @@ export function createDriver(
   return driver;
 }
 
-/** `point` under the world's basis and offset. */
-function place(world: World, point: Point): Point {
-  const turned = turn(world, point);
-  return [turned[0] + world.offset[0], turned[1] + world.offset[1], turned[2] + world.offset[2]];
+/** Both motions ride a bone and stand on different anchors, which is one joint under two poses. */
+function reposed(from: Motion, to: Motion): boolean {
+  if (from.kind !== "bone" || to.kind !== "bone") return false;
+
+  return from.anchor !== to.anchor || from.target !== to.target;
 }
 
-/** `vector` under the world's basis alone. */
-function turn(world: World, vector: Point): Point {
-  TURNED.set(vector);
-  turnInto(world.basis, TURNED, 0);
-  return [TURNED[0], TURNED[1], TURNED[2]];
+/**
+ * Where a system the rig has at `point` stands: the point itself, and for a HUD-layer
+ * system the point moved by its `transform`'s translation, which is all of it that layer reads.
+ */
+function stand(world: World, point: Point): Point {
+  if (!world.hud) return point;
+  return [point[0] + world.offset[0], point[1] + world.offset[1], point[2] + world.offset[2]];
 }
-
-const TURNED = new Float32Array(3);
 
 /** The travel of a step that moves nothing, which every build-up step takes. */
 const STILL: Point = [0, 0, 0];
