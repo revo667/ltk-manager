@@ -91,7 +91,8 @@ export function readLegacyEditorSeed(projectPath: string): PersistedProjectEdito
   return entry === undefined ? null : sanitizeEditorState(entry);
 }
 
-function persistedSlice(editor: ProjectEditor | undefined): PersistedProjectEditor | null {
+/** The slice of one project's editor that `.ltk/editor.json` holds, or null for none. */
+export function persistedSlice(editor: ProjectEditor | undefined): PersistedProjectEditor | null {
   if (!editor) return null;
   return {
     documents: editor.documents,
@@ -104,6 +105,7 @@ function persistedSlice(editor: ProjectEditor | undefined): PersistedProjectEdit
     pinned: editor.pinned,
     shells: editor.shells,
     abilities: editor.abilities,
+    markers: editor.markers,
   };
 }
 
@@ -122,7 +124,8 @@ function sameSlice(a: PersistedProjectEditor | null, b: PersistedProjectEditor |
     a.previewIds === b.previewIds &&
     a.pinned === b.pinned &&
     a.shells === b.shells &&
-    a.abilities === b.abilities
+    a.abilities === b.abilities &&
+    a.markers === b.markers
   );
 }
 

@@ -12,13 +12,15 @@ use std::sync::Arc;
 
 use ltk_declarations::{Edit as ManifestEdit, Manifest, ModuleChoice};
 use ltk_game_data::{
-    Edit, EntryName, Module, ModuleName, Names, ObjectEdit, PropertyEdit, Selector, Sign, Value,
-    apply,
+    Edit, EntryName, Module, ModuleName, Names, ObjectEdit, PropertyEdit, Selector, Sign, Target,
+    Value,
 };
 use ltk_hash::{BinHash, WadHash};
 use ltk_meta::path::{FieldNames, MapKey, PropertyPath, Subscript, ValuePath};
 use ltk_meta::walk::TreeValue as _;
-use ltk_meta::{Bin, BinFile, BinObject, PropertyValueEnum};
+use ltk_meta::{
+    ApplyReport, Bin, BinFile, BinObject, BinOverride, PropertyPatch, PropertyValueEnum,
+};
 use ltk_mod_project::{ModProjectLayer, game_data::load_layer};
 use serde::{Deserialize, Serialize};
 
@@ -27,10 +29,13 @@ use self::diagnostics::Raised;
 pub use self::diagnostics::{DeclaredDiagnostic, DeclaredDiagnosticKind, ObjectSkip, SkipReason};
 pub use self::links::{DeclaredLinkMark, LinkChange};
 pub use self::objects::{DeclaredObjectMark, NewObject, ObjectChange};
+pub use self::project::ProjectDeclarations;
 use super::edit::UNDO_DEPTH;
-use super::{BinDocument, BinDocumentError, EditRejection, EntryKey, RowNames, Trace, hex};
+use super::{
+    BinDocument, BinDocumentError, EditRejection, EntryKey, HashPath, RowNames, Trace, hex,
+};
 use crate::error::{AppError, AppResult, Utf8PathRefExt as _};
-use crate::meta_schema::PatchSchema;
+use crate::meta_schema::{PatchSchema, SchemaNames};
 
 use crate::workshop::{ModuleAction, ProjectDir};
 
@@ -58,14 +63,23 @@ pub struct DeclareContext {
     pub game: Arc<dyn GameCopy>,
 }
 
+impl DeclareContext {
+    /// The names a declaration spells a path with: the game's tables, then the meta schema's
+    /// names for the classes and fields they leave, as the document's rows draw them.
+    fn with_names(&self, read: &mut dyn FnMut(RenderNames<'_>)) {
+        self.game.with_names(&mut |names| {
+            let named = SchemaNames::new(names, self.schema.meta());
+            read(RenderNames(&named));
+        });
+    }
+}
+
 /// Whether a declared document takes edits, the project's "Use game data declarations".
 ///
 /// Off draws the same applied tree and marks, read-only.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum Declaring {
     /// An edit lands as a declaration in the chosen layer.
     On,
@@ -98,6 +112,45 @@ pub(super) struct Declared {
     diagnostics: Vec<DeclaredDiagnostic>,
     undo: VecDeque<TextEdit>,
     redo: Vec<TextEdit>,
+    /// The writes of an open `declared_group`, folded into one as they land, which the undo
+    /// stack's depth never splits.
+    group: Option<Option<TextEdit>>,
+    /// The base scene a declared variant lays over. Absent for every other chunk.
+    variant: Option<VariantBase>,
+}
+
+/// The base scene bin of a declared variant, which the variant's `PTCH` lays over. ADR-0035 of
+/// `league-mod` takes the variant's declarations as its records.
+struct VariantBase {
+    /// The variant chunk, as a `target` module names it.
+    target: Target,
+    /// The game's copy of the base scene bin, and its path hash.
+    game: Vec<u8>,
+    chunk_hash: u64,
+    /// The objects of the base's game copy, and of the variant's own.
+    base_entries: Vec<BinHash>,
+    variant_entries: Vec<BinHash>,
+    /// The declared variant's records, and what laying it over the declared base did.
+    laid: LaidVariant,
+}
+
+/// The declared variant's records, and what laying them over the declared base did.
+#[derive(Debug, Clone, Default)]
+pub struct LaidVariant {
+    pub records: Vec<PropertyPatch>,
+    pub report: ApplyReport,
+}
+
+/// What a declared variant opens from: the game's copies of the variant and of its base.
+pub struct VariantSource {
+    /// The game's variant, a `PTCH`.
+    pub game: Vec<u8>,
+    /// The variant chunk, as a `target` module names it.
+    pub target: Target,
+    /// The game's base scene bin, a `PROP`, and its path hash.
+    pub base: Vec<u8>,
+    pub base_hash: u64,
+    pub context: DeclareContext,
 }
 
 impl fmt::Debug for Declared {
@@ -124,9 +177,7 @@ struct TextEdit {
 /// What a declared document says beside its rows.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct DeclaredState {
     /// The layer an edit writes to.
     pub layer: String,
@@ -153,9 +204,7 @@ pub struct DeclaredState {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum DeclaredModuleChoice {
     /// The last `entries` module naming the entry, else the last module, else a new one.
     #[default]
@@ -189,9 +238,7 @@ impl DeclaredModuleChoice {
 /// One module of the chosen layer's manifest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct DeclaredModuleSummary {
     /// The module's index in `modules`.
     pub index: usize,
@@ -203,13 +250,11 @@ pub struct DeclaredModuleSummary {
 /// One row a declaration of the chosen layer touches.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct DeclaredMark {
     /// The object's path hash, `0x` and eight hex digits.
     pub entry: String,
-    /// The row's path on the wire. Empty where the declared path reaches no row.
+    /// The row's hash path. Empty where the declared path reaches no row.
     pub path: String,
     /// The property path the declaration names, as a module action takes it.
     pub property: String,
@@ -226,12 +271,25 @@ pub struct DeclaredMark {
     pub game: Option<String>,
 }
 
+/// One row a layer's declaration sets: a row of a layer file, which the declaration overrides
+/// at build (ADR-0056), or a row of a declared document.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct LayerOverride {
+    /// The layer whose `game_data.yaml` holds the declaration.
+    pub layer: String,
+    /// The declaration's mark. Its `game` field holds the layer file's value for a layer
+    /// file, and the game's for a declared document.
+    pub mark: DeclaredMark,
+    /// The value the declaration writes, as YAML. Absent when it cannot be written as YAML.
+    pub value: Option<String>,
+}
+
 /// The sign of a declared key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum DeclaredSign {
     Set,
     Add,
@@ -268,6 +326,71 @@ impl BinDocument {
                 return Err(BinDocumentError::ReadOnly(super::ReadOnly::Patch));
             }
         };
+        Self::declared(game, chunk_hash, game_tree, None, context)
+    }
+
+    /// The game's variant `source.game`, a `PTCH` of the chunk `chunk_hash`, laid over the
+    /// game's base scene bin, as a declared document of the source's project.
+    ///
+    /// The tree is the base with the project's declarations of the base, and the variant with
+    /// the project's declarations of the variant laid over it: what the client loads with the
+    /// variant switched on. An edit lands in a `target` module of the variant.
+    ///
+    /// # Errors
+    ///
+    /// As [`BinDocument::declare`], and with [`BinDocumentError::Declaring`] where the variant
+    /// is no `PTCH` or its base no `PROP`.
+    pub fn declare_variant(
+        source: VariantSource,
+        chunk_hash: u64,
+    ) -> Result<Self, BinDocumentError> {
+        let VariantSource {
+            game,
+            target,
+            base,
+            base_hash,
+            context,
+        } = source;
+        let BinFile::Override(patch) = BinFile::from_reader(&mut Cursor::new(&game))? else {
+            return Err(declaring(AppError::ValidationFailed(
+                "A variant is a PTCH".to_owned(),
+            )));
+        };
+        let BinFile::Prop(mut game_tree) = BinFile::from_reader(&mut Cursor::new(&base))? else {
+            return Err(declaring(AppError::ValidationFailed(
+                "A variant's base is a PROP".to_owned(),
+            )));
+        };
+
+        let variant = VariantBase {
+            target,
+            chunk_hash: base_hash,
+            base_entries: game_tree.objects.keys().copied().collect(),
+            variant_entries: patch.objects.keys().copied().collect(),
+            game: base,
+            laid: LaidVariant::default(),
+        };
+        patch.apply(&mut game_tree);
+        Self::declared(game, chunk_hash, game_tree, Some(variant), context)
+    }
+
+    /// The declared variant's records and what laying them did, `None` for any other document.
+    #[must_use]
+    pub fn laid_variant(&self) -> Option<&LaidVariant> {
+        self.declared
+            .as_ref()?
+            .variant
+            .as_ref()
+            .map(|variant| &variant.laid)
+    }
+
+    fn declared(
+        game: Vec<u8>,
+        chunk_hash: u64,
+        game_tree: Bin,
+        variant: Option<VariantBase>,
+        context: DeclareContext,
+    ) -> Result<Self, BinDocumentError> {
         let mut declared = Declared {
             context,
             declaring: Declaring::Off,
@@ -285,6 +408,8 @@ impl BinDocument {
             diagnostics: Vec::new(),
             undo: VecDeque::new(),
             redo: Vec::new(),
+            group: None,
+            variant,
         };
         let bytes = declared.apply().map_err(declaring)?;
         let mut document = Self::parse(bytes)?;
@@ -338,11 +463,7 @@ impl BinDocument {
     ) -> Result<DeclaredState, BinDocumentError> {
         let Self { declared, file, .. } = self;
         let declared = declared.as_mut().ok_or_else(not_declared)?;
-        if !declared.layers.iter().any(|held| held == layer) {
-            return Err(declaring(AppError::ValidationFailed(format!(
-                "The project holds no layer {layer}"
-            ))));
-        }
+        declared.check_layer(layer)?;
         module.to_module_choice().map_err(declaring)?;
 
         layer.clone_into(&mut declared.layer);
@@ -364,11 +485,7 @@ impl BinDocument {
         action: &ModuleAction,
     ) -> Result<DeclaredState, BinDocumentError> {
         let declared = self.declared.as_mut().ok_or_else(not_declared)?;
-        if !declared.layers.iter().any(|held| held == layer) {
-            return Err(declaring(AppError::ValidationFailed(format!(
-                "The project holds no layer {layer}"
-            ))));
-        }
+        declared.check_layer(layer)?;
 
         let change = declared
             .context
@@ -403,6 +520,32 @@ impl BinDocument {
         })
     }
 
+    /// Run `edits`, each declaring itself, and fold what they wrote into one undo step. A
+    /// refusal takes back what the ones before it wrote.
+    pub(super) fn declared_group(
+        &mut self,
+        edits: impl FnOnce(&mut Self) -> Result<(), BinDocumentError>,
+    ) -> Result<(), BinDocumentError> {
+        self.declared.as_mut().ok_or_else(not_declared)?.group = Some(None);
+        let outcome = edits(self);
+        let declared = self.declared.as_mut().ok_or_else(not_declared)?;
+        let folded = declared.group.take().flatten();
+        if outcome.is_ok() {
+            if let Some(folded) = folded {
+                declared.hold(folded);
+            }
+            return Ok(());
+        }
+
+        if let Some(folded) = folded {
+            declared
+                .put(&folded.layer, &folded.after, &folded.before)
+                .map_err(declaring)?;
+        }
+        self.reapply()?;
+        outcome
+    }
+
     /// Restore the manifest text from before the latest edit, answering whether one was held.
     pub(super) fn undo_declared(&mut self) -> Result<bool, BinDocumentError> {
         let declared = self.declared.as_mut().ok_or_else(not_declared)?;
@@ -433,6 +576,111 @@ impl BinDocument {
         Ok(true)
     }
 
+    /// The rows of this layer file that the declarations of `project`'s layers override,
+    /// in build order. `chunk_hash` is the path hash the file is packed under. ADR-0056.
+    ///
+    /// The read is best-effort: a project or a layer that cannot be read adds no overrides.
+    #[must_use]
+    pub fn overrides(
+        &self,
+        chunk_hash: u64,
+        project: &ProjectDir,
+        names: &dyn RowNames,
+    ) -> Vec<LayerOverride> {
+        let BinFile::Prop(file) = &self.file else {
+            return Vec::new();
+        };
+        let Ok(root) = project.path().try_as_utf8("project directory") else {
+            return Vec::new();
+        };
+        let (Ok(config), Ok(ignore)) = (project.config(), project.ignore_filter()) else {
+            return Vec::new();
+        };
+
+        let mut layers = config.layers;
+        layers.sort_by(ModProjectLayer::apply_order);
+
+        let names = RenderNames(names);
+        let file_objects: Vec<BinHash> = file.objects.keys().copied().collect();
+        let mut overrides = Vec::new();
+        for layer in &layers {
+            let Ok(Some(declarations)) = load_layer(root, &layer.name, &ignore).declarations else {
+                continue;
+            };
+            for module in &declarations.modules {
+                for edit in edits_on(module, chunk_hash, &file_objects) {
+                    let sets = edit
+                        .objects
+                        .iter()
+                        .map(|(name, object)| (name, object.properties()));
+                    let entries = edit
+                        .entries
+                        .iter()
+                        .map(|(name, properties)| (name, properties.as_slice()));
+                    for (name, properties) in sets.chain(entries) {
+                        let entry = name.object_hash();
+                        let Some(object) = file.objects.get(&entry) else {
+                            continue;
+                        };
+                        for property in properties {
+                            overrides.extend(
+                                valued_marks_of(
+                                    entry,
+                                    object,
+                                    Some(object),
+                                    property,
+                                    module,
+                                    &names,
+                                )
+                                .into_iter()
+                                .map(|(mark, value)| {
+                                    LayerOverride {
+                                        layer: layer.name.clone(),
+                                        mark,
+                                        value,
+                                    }
+                                }),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        overrides
+    }
+
+    /// Every layer's declarations on the rows of this declared document, in build order, with
+    /// the value each writes. A mark's `game` holds the game's value. Empty for a document
+    /// that declares nothing.
+    #[must_use]
+    pub fn declared_overrides(&self) -> Vec<LayerOverride> {
+        let (Some(declared), BinFile::Prop(applied)) = (&self.declared, &self.file) else {
+            return Vec::new();
+        };
+        declared.layer_overrides(applied)
+    }
+
+    /// Update a declared document after the project's layer `from` is renamed to `to`.
+    pub(super) fn rename_layer(&mut self, from: &str, to: &str) {
+        let Some(declared) = self.declared.as_mut() else {
+            return;
+        };
+        let rename = |layer: &mut String| {
+            if layer == from {
+                to.clone_into(layer);
+            }
+        };
+
+        rename(&mut declared.layer);
+        declared.layers.iter_mut().for_each(rename);
+        declared
+            .undo
+            .iter_mut()
+            .chain(declared.redo.iter_mut())
+            .for_each(|edit| rename(&mut edit.layer));
+    }
+
     /// Apply the project's declarations over the game's copy again, replacing the tree.
     pub(super) fn reapply(&mut self) -> Result<(), BinDocumentError> {
         let declared = self.declared.as_mut().ok_or_else(not_declared)?;
@@ -448,59 +696,67 @@ impl BinDocument {
 }
 
 impl Declared {
-    /// The game's copy with every layer's declarations applied, in build order.
-    fn apply(&mut self) -> AppResult<Vec<u8>> {
-        let project = &self.context.project;
-        let root = project.path().try_as_utf8("project directory")?;
-        let mut layers = project.config()?.layers;
+    /// Refuse `layer` unless the project holds it. The project's layers are read again first
+    /// when `layer` is not among the ones the last apply read, so a layer created since is
+    /// accepted.
+    fn check_layer(&mut self, layer: &str) -> Result<(), BinDocumentError> {
+        if !self.layers.iter().any(|known| known == layer) {
+            self.layers = self.project_layers().map_err(declaring)?;
+        }
+        if self.layers.iter().any(|known| known == layer) {
+            return Ok(());
+        }
+
+        Err(declaring(AppError::ValidationFailed(format!(
+            "The project holds no layer {layer}"
+        ))))
+    }
+
+    /// The project's layers in build order.
+    fn project_layers(&self) -> AppResult<Vec<String>> {
+        let mut layers = self.context.project.config()?.layers;
         layers.sort_by(ModProjectLayer::apply_order);
-        self.layers = layers.into_iter().map(|layer| layer.name).collect();
+        Ok(layers.into_iter().map(|layer| layer.name).collect())
+    }
+
+    /// The game's copy with every layer's declarations applied, in build order. A variant is
+    /// its declared `PTCH` laid over its declared base.
+    fn apply(&mut self) -> AppResult<Vec<u8>> {
+        let declarations = ProjectDeclarations::load(
+            &self.context.project,
+            self.context.schema.clone(),
+            self.context.game.clone(),
+        )?;
+        self.layers = declarations.layers().map(str::to_owned).collect();
         if !self.layers.contains(&self.layer) {
             BASE_LAYER.clone_into(&mut self.layer);
         }
 
-        let ignore = project.ignore_filter()?;
-        let entries: Vec<BinHash> = self.game_tree.objects.keys().copied().collect();
-        let mut bytes = self.game.clone();
-        self.raised.clear();
-        for layer in &self.layers {
-            let loaded = load_layer(root, layer, &ignore);
-            let Ok(Some(declarations)) = &loaded.declarations else {
-                continue;
-            };
-            let edits: Vec<Edit> = declarations
-                .modules
-                .iter()
-                .flat_map(|module| edits_on(module, self.chunk_hash, &entries))
-                .collect();
-            if edits.is_empty() {
-                continue;
-            }
-            let game = &self.context.game;
-            let applied = apply(
-                &bytes,
-                &edits,
-                |path| {
-                    let file = loaded
-                        .override_files()
-                        .iter()
-                        .find(|file| file.path == *path)
-                        .ok_or_else(|| {
-                            ltk_game_data::Error::in_document(
-                                ltk_game_data::ErrorKind::InputMissing,
-                                path.as_str(),
-                            )
-                        })?;
-                    fs_err::read(&file.source)
-                        .map_err(|error| ltk_game_data::Error::io(path.as_str(), &error))
-                },
-                |entry| read_entry(game.as_ref(), entry),
-                &self.context.schema,
-            )
-            .map_err(|error| AppError::Other(format!("The declarations do not apply: {error}")))?;
-            self.raised
-                .extend(Raised::of(layer, &edits, applied.diagnostics));
-            bytes = applied.bytes;
+        let mut raised = Vec::new();
+        let Some(variant) = &self.variant else {
+            let entries: Vec<BinHash> = self.game_tree.objects.keys().copied().collect();
+            let bytes =
+                declarations.apply_chunk(&self.game, self.chunk_hash, &entries, &mut raised)?;
+            self.raised = raised;
+            return Ok(bytes);
+        };
+
+        let base = declarations.apply_chunk(
+            &variant.game,
+            variant.chunk_hash,
+            &variant.base_entries,
+            &mut raised,
+        )?;
+        let patch = declarations.apply_chunk(
+            &self.game,
+            self.chunk_hash,
+            &variant.variant_entries,
+            &mut raised,
+        )?;
+        let (bytes, laid) = lay_variant(&base, &patch)?;
+        self.raised = raised;
+        if let Some(variant) = &mut self.variant {
+            variant.laid = laid;
         }
         Ok(bytes)
     }
@@ -554,7 +810,7 @@ impl Declared {
         let BinFile::Prop(applied) = file else {
             return;
         };
-        let held: Vec<BinHash> = applied.objects.keys().copied().collect();
+        let applied_objects: Vec<BinHash> = applied.objects.keys().copied().collect();
         self.links = links::link_marks(
             &declarations.modules,
             self.chunk_hash,
@@ -564,10 +820,9 @@ impl Declared {
 
         let mut marks = Vec::new();
         let mut objects = Vec::new();
-        self.context.game.with_names(&mut |names| {
-            let names = RenderNames(names);
+        self.context.with_names(&mut |names| {
             for module in &declarations.modules {
-                for edit in edits_on(module, self.chunk_hash, &held) {
+                for edit in edits_on(module, self.chunk_hash, &applied_objects) {
                     let sets = edit
                         .objects
                         .iter()
@@ -591,7 +846,11 @@ impl Declared {
                         };
                         let before = self.game_tree.objects.get(&entry);
                         for property in properties {
-                            marks.extend(marks_of(entry, object, before, property, module, &names));
+                            marks.extend(
+                                valued_marks_of(entry, object, before, property, module, &names)
+                                    .into_iter()
+                                    .map(|(mark, _)| mark),
+                            );
                         }
                     }
                 }
@@ -599,6 +858,59 @@ impl Declared {
         });
         self.marks = marks;
         self.objects = objects;
+    }
+
+    /// Every layer's declarations on the rows of `applied`, in build order, with the value
+    /// each writes. A layer that does not read adds none.
+    fn layer_overrides(&self, applied: &Bin) -> Vec<LayerOverride> {
+        let Ok(root) = self.context.project.path().try_as_utf8("project directory") else {
+            return Vec::new();
+        };
+        let Ok(ignore) = self.context.project.ignore_filter() else {
+            return Vec::new();
+        };
+        let entries: Vec<BinHash> = applied.objects.keys().copied().collect();
+
+        let mut overrides = Vec::new();
+        self.context.with_names(&mut |names| {
+            for layer in &self.layers {
+                let Ok(Some(declarations)) = load_layer(root, layer, &ignore).declarations else {
+                    continue;
+                };
+                for module in &declarations.modules {
+                    for edit in edits_on(module, self.chunk_hash, &entries) {
+                        let sets = edit
+                            .objects
+                            .iter()
+                            .map(|(name, object)| (name, object.properties()));
+                        let named = edit
+                            .entries
+                            .iter()
+                            .map(|(name, properties)| (name, properties.as_slice()));
+                        for (name, properties) in sets.chain(named) {
+                            let entry = name.object_hash();
+                            let Some(object) = applied.objects.get(&entry) else {
+                                continue;
+                            };
+                            let game = self.game_tree.objects.get(&entry);
+
+                            for property in properties {
+                                overrides.extend(
+                                    valued_marks_of(entry, object, game, property, module, &names)
+                                        .into_iter()
+                                        .map(|(mark, value)| LayerOverride {
+                                            layer: layer.clone(),
+                                            mark,
+                                            value,
+                                        }),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        overrides
     }
 
     /// The objects of the game's copy the chosen layer removes.
@@ -610,7 +922,7 @@ impl Declared {
                 self.game_tree
                     .objects
                     .values()
-                    .find(|held| hex(held.path_hash) == object.entry)
+                    .find(|game_object| hex(game_object.path_hash) == object.entry)
             })
     }
 
@@ -620,7 +932,10 @@ impl Declared {
     /// Every edit joins the chosen module. A new module the first key makes takes the keys
     /// after it.
     fn write(&self, plan: &[ManifestEdit]) -> AppResult<Option<TextEdit>> {
-        let mut choice = self.module.to_module_choice()?;
+        let mut choice = match &self.variant {
+            Some(variant) => ModuleChoice::Target(variant.target.clone()),
+            None => self.module.to_module_choice()?,
+        };
         self.write_with(|manifest| {
             let mut module = None;
             for edit in plan {
@@ -658,17 +973,32 @@ impl Declared {
         }))
     }
 
-    /// Hold `edit` for an undo, which empties the redo stack. A new module the edit made
-    /// becomes the chosen one.
+    /// Hold `edit` for an undo, which empties the redo stack, or fold it into the open group's.
+    /// A new module the edit made becomes the chosen one.
     fn remember(&mut self, edit: TextEdit) {
         if let (DeclaredModuleChoice::New { .. }, Some(index)) = (&self.module, edit.module) {
             self.module = DeclaredModuleChoice::Index { index };
         }
+        self.redo.clear();
+
+        match &mut self.group {
+            Some(folded) => {
+                let before = folded.take().map(|first| first.before);
+                *folded = Some(match before {
+                    Some(before) => TextEdit { before, ..edit },
+                    None => edit,
+                });
+            }
+            None => self.hold(edit),
+        }
+    }
+
+    /// Push `edit` onto the undo stack, dropping the oldest past [`UNDO_DEPTH`].
+    fn hold(&mut self, edit: TextEdit) {
         if self.undo.len() == UNDO_DEPTH {
             self.undo.pop_front();
         }
         self.undo.push_back(edit);
-        self.redo.clear();
     }
 
     /// Replace the text `from` of `layer`'s manifest with `to`.
@@ -687,6 +1017,21 @@ impl Declared {
         manifest.write()?;
         Ok(())
     }
+}
+
+/// The declared variant `patch` laid over the declared base `base`, as the client lays a
+/// switched-on override, and its records with what laying them did.
+fn lay_variant(base: &[u8], patch: &[u8]) -> AppResult<(Vec<u8>, LaidVariant)> {
+    let unreadable =
+        |error: &dyn fmt::Display| AppError::Other(format!("The variant does not lay: {error}"));
+    let mut merged = Bin::from_reader(&mut Cursor::new(base)).map_err(|e| unreadable(&e))?;
+    let patch = BinOverride::from_reader(&mut Cursor::new(patch)).map_err(|e| unreadable(&e))?;
+
+    let records = patch.patches.clone();
+    let report = patch.apply(&mut merged);
+    let mut bytes = Cursor::new(Vec::new());
+    merged.to_writer(&mut bytes).map_err(|e| unreadable(&e))?;
+    Ok((bytes.into_inner(), LaidVariant { records, report }))
 }
 
 /// The game's copy of the entry a reference names, as the overlay reads it.
@@ -741,11 +1086,13 @@ fn object_change(
     applied: &Bin,
     game: &Bin,
 ) -> Option<DeclaredObjectMark> {
-    let held = applied.objects.contains_key(&entry);
+    let in_applied = applied.objects.contains_key(&entry);
     let change = match object {
-        ObjectEdit::Remove if !held && game.objects.contains_key(&entry) => ObjectChange::Removed,
+        ObjectEdit::Remove if !in_applied && game.objects.contains_key(&entry) => {
+            ObjectChange::Removed
+        }
         ObjectEdit::Remove => return None,
-        _ if held => ObjectChange::Created,
+        _ if in_applied => ObjectChange::Created,
         _ => return None,
     };
     Some(DeclaredObjectMark {
@@ -754,18 +1101,19 @@ fn object_change(
     })
 }
 
-/// The marks one property edit leaves on `object`, the applied copy of `entry`.
+/// The marks one property edit leaves on `object`, the applied copy of `entry`, each with
+/// the value the edit writes, as YAML.
 ///
 /// A set whose value is a block on a struct descends to the keys of the block, as the apply
 /// does.
-fn marks_of(
+fn valued_marks_of(
     entry: BinHash,
     object: &BinObject,
     game: Option<&BinObject>,
     property: &PropertyEdit,
     module: &Module,
     names: &RenderNames<'_>,
-) -> Vec<DeclaredMark> {
+) -> Vec<(DeclaredMark, Option<String>)> {
     let block = match &property.value {
         Value::Mapping(block)
             if property.sign == Sign::Set
@@ -793,13 +1141,13 @@ fn marks_of(
                 .ok()?;
                 Some(PropertyEdit { path, ..inner })
             })
-            .flat_map(|inner| marks_of(entry, object, game, &inner, module, names))
+            .flat_map(|inner| valued_marks_of(entry, object, game, &inner, module, names))
             .collect();
     }
 
-    vec![DeclaredMark {
+    let mark = DeclaredMark {
         entry: hex(entry),
-        path: wire_path(object, &property.path).unwrap_or_default(),
+        path: hash_path(object, &property.path).unwrap_or_default(),
         property: property.path.as_str().to_owned(),
         module: module.origin.module_index,
         module_name: module.name.as_ref().map(|name| name.as_str().to_owned()),
@@ -816,19 +1164,16 @@ fn marks_of(
             .and_then(|game| game.resolve(&property.path).ok())
             .and_then(|value| Value::render(value, names).ok())
             .and_then(|value| value.to_yaml().ok()),
-    }]
+    };
+    vec![(mark, property.value.to_yaml().ok())]
 }
 
-/// The wire path of the node `path` resolves to on `object`, or `None` where it reaches none.
-fn wire_path(object: &BinObject, path: &PropertyPath) -> Option<String> {
-    let mut wire = String::new();
+/// The hash path of the node `path` resolves to on `object`, or `None` where it reaches none.
+fn hash_path(object: &BinObject, path: &PropertyPath) -> Option<String> {
+    let mut hashes = HashPath::default();
     let mut walked: Option<PropertyPath> = None;
     for segment in path.segments() {
-        let name = segment.name_hash();
-        if !wire.is_empty() {
-            wire.push('.');
-        }
-        wire.push_str(&format!("{:08x}", *name));
+        hashes = hashes.field(segment.name_hash());
         let field = match &walked {
             Some(walked) => PropertyPath::new(format!("{}.{}", walked.as_str(), segment.name)),
             None => PropertyPath::new(segment.name),
@@ -842,20 +1187,20 @@ fn wire_path(object: &BinObject, path: &PropertyPath) -> Option<String> {
         let holder = object.resolve(&field).ok()?;
         let full = PropertyPath::new(format!("{}{subscript}", field.as_str())).ok()?;
         let reached = object.resolve(&full).ok()?;
-        match (subscript, holder) {
-            (Subscript::Index(index), _) => wire.push_str(&format!("[{index}]")),
+        hashes = match (subscript, holder) {
+            (Subscript::Index(index), _) => hashes.index(*index as usize),
             (Subscript::Key(_), PropertyValueEnum::Map(map)) => {
                 let at = map
                     .entries()
                     .iter()
                     .position(|(_, value)| std::ptr::eq(value, reached))?;
-                wire.push_str(&EntryKey::of(map.entries(), at).to_string());
+                hashes.key(&EntryKey::of(map.entries(), at))
             }
             _ => return None,
-        }
+        };
         walked = Some(full);
     }
-    Some(wire)
+    Some(hashes.into())
 }
 
 /// The value path `trace` walked, or `None` where a map key is of a kind no path spells.
@@ -884,36 +1229,26 @@ fn entry_name(entry: BinHash, names: &RenderNames<'_>) -> EntryName {
 }
 
 /// The manager's tables as a declaration's names.
+#[derive(Clone, Copy)]
 struct RenderNames<'a>(&'a dyn RowNames);
-
-impl RenderNames<'_> {
-    fn one(
-        hash: BinHash,
-        each: impl FnOnce(&[BinHash], &mut dyn FnMut(usize, &str)),
-    ) -> Option<Cow<'static, str>> {
-        let mut found = None;
-        each(&[hash], &mut |_, name| found = Some(name.to_owned()));
-        found.map(Cow::Owned)
-    }
-}
 
 impl FieldNames for RenderNames<'_> {
     fn field(&self, field: BinHash, _class: Option<BinHash>) -> Option<Cow<'_, str>> {
-        Self::one(field, |hashes, visit| self.0.for_each_field(hashes, visit))
+        self.0.field_name(field).map(Cow::Owned)
     }
 
     fn hash(&self, hash: BinHash) -> Option<Cow<'_, str>> {
-        Self::one(hash, |hashes, visit| self.0.for_each_value(hashes, visit))
+        self.0.value_name(hash).map(Cow::Owned)
     }
 }
 
 impl Names for RenderNames<'_> {
     fn class(&self, class: BinHash) -> Option<Cow<'_, str>> {
-        Self::one(class, |hashes, visit| self.0.for_each_class(hashes, visit))
+        self.0.class_name(class).map(Cow::Owned)
     }
 
     fn entry(&self, entry: BinHash) -> Option<Cow<'_, str>> {
-        Self::one(entry, |hashes, visit| self.0.for_each_entry(hashes, visit))
+        self.0.entry_name(entry).map(Cow::Owned)
     }
 
     fn file(&self, chunk: u64) -> Option<Cow<'_, str>> {
@@ -940,5 +1275,8 @@ mod diagnostics;
 mod edits;
 mod links;
 mod objects;
+mod project;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod variant_tests;

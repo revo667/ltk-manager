@@ -1,6 +1,6 @@
 import { useThree } from "@react-three/fiber";
 import { queryOptions, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { createContext, use, useEffect, useMemo, useState } from "react";
 import {
   type BufferGeometry,
   type Camera,
@@ -10,6 +10,7 @@ import {
   type WebGLRenderer,
 } from "three";
 
+import { useDisposable } from "@/hooks";
 import {
   api,
   type AppError,
@@ -83,7 +84,29 @@ export const particleQueries = {
       staleTime: Infinity,
       retry: false,
     }),
+  /**
+   * The material embedded at the property path `path` under the object `entry` of
+   * `document`, keyed under the material reads an edit refreshes.
+   */
+  embedded: (document: BinDocumentId, entry: string, path: string) =>
+    queryOptions<MaterialProgram | null, AppError>({
+      queryKey: ["material-program", "embedded", document, entry, path],
+      queryFn: async () =>
+        unwrapForQuery(
+          await api.bin.readEmbeddedMaterialProgram({ kind: "document", document }, entry, path, {
+            lowQuality: false,
+          }),
+        ),
+      staleTime: Infinity,
+      retry: false,
+    }),
 };
+
+/** Where a material sits inside an object rather than as one: the object and the property path. */
+export interface EmbeddedMaterial {
+  readonly entry: string;
+  readonly path: string;
+}
 
 /** A particle program material ready to draw, and what writes its engine buffers before a draw. */
 export interface ParticleProgram {
@@ -103,6 +126,15 @@ type ReadyPass = PassProgram & { readonly program: ReadyProgram };
 
 /** Program textures load without colour decoding. The game's shader decodes them. */
 const RAW_TEXTURES = { colorSpace: NoColorSpace } as const;
+
+/**
+ * The emitters under it draw with the hand-written materials whatever the shaders switch says.
+ *
+ * The Graph pane's and the inspector's preview canvases set it: a translated program drawn
+ * in a second WebGL context beside the viewport's fails its program queries and stops the
+ * canvas.
+ */
+export const HandDrawnContext = createContext(false);
 
 const NO_ASSETS = new Map();
 const NO_MATERIALS: readonly RawShaderMaterial[] = [];
@@ -127,16 +159,15 @@ export function useParticlePrograms(
   geometry: BufferGeometry,
   document: BinDocumentId | null,
 ): readonly ParticleProgram[] {
-  const shaders = usePreviewShaders();
+  const shaders = usePreviewShaders() && !use(HandDrawnContext);
   const custom = drawsCustom(emitter);
-  const environment = useMemo(() => new EngineEnvironment("uniform"), []);
-  useEffect(() => () => environment.dispose(), [environment]);
+  const environment = useDisposable(() => new EngineEnvironment("uniform"), []);
   useEffect(() => {
     environment.particle = particleBufferOf(emitter);
   }, [environment, emitter]);
 
   const read = useEngineRead(emitter, draw.path, document, shaders && !custom);
-  const engine = useMemo(() => {
+  const engine = useDisposable(() => {
     const textures = read === null ? null : particleTextures(emitter, samplers);
     if (read === null || textures === null) return null;
     return particleProgramMaterial(
@@ -149,7 +180,6 @@ export function useParticlePrograms(
       SCENE_DEPTH,
     );
   }, [read, emitter, samplers, draw, environment]);
-  useEffect(() => () => engine?.dispose(), [engine]);
 
   const passes = useCustomPasses(emitter, document, shaders && custom);
   const customMaterials = useMemo(
@@ -192,7 +222,7 @@ export function useAttachedPrograms(
   count: number,
   document: BinDocumentId | null,
 ): readonly SlotProgram[] {
-  const enabled = usePreviewShaders() && geometry !== null;
+  const enabled = usePreviewShaders() && !use(HandDrawnContext) && geometry !== null;
   const custom = drawsCustom(emitter);
   const read = useEngineRead(emitter, "attached", document, enabled && !custom);
   const passes = useCustomPasses(emitter, document, enabled && custom);
@@ -280,20 +310,53 @@ function useCustomPasses(
   enabled: boolean,
 ): readonly SubmeshProgram[] {
   const preview = enabled ? emitter.customMaterial : null;
-  const read = useQuery({
-    ...particleQueries.material(document, preview?.hash ?? null, preview?.source ?? null),
-    enabled: preview !== null,
-  }).data;
+  return useMaterialPasses(document, preview?.hash ?? null, preview?.source ?? null).passes;
+}
+
+/** A material's read and its passes ready to draw, per `particleQueries.material`. */
+export interface MaterialPasses {
+  /** The read, undefined while it runs, and null where it found no material. */
+  readonly program: MaterialProgram | null | undefined;
+  readonly passes: readonly SubmeshProgram[];
+  readonly failed: boolean;
+}
+
+/** The material `hash` read and translated as `particleQueries.material` reads it, with its textures. */
+export function useMaterialPasses(
+  document: BinDocumentId | null,
+  hash: string | null,
+  file: AssetRef | null,
+): MaterialPasses {
+  const query = useQuery({
+    ...particleQueries.material(document, hash, file),
+    enabled: hash !== null,
+  });
+  return { program: query.data, passes: usePassesOf(query.data), failed: query.error !== null };
+}
+
+/** `useMaterialPasses` for a material embedded in an object, and none for a null `at`. */
+export function useEmbeddedMaterialPasses(
+  document: BinDocumentId,
+  at: EmbeddedMaterial | null,
+): MaterialPasses {
+  const query = useQuery({
+    ...particleQueries.embedded(document, at?.entry ?? "", at?.path ?? ""),
+    enabled: at !== null,
+  });
+  return { program: query.data, passes: usePassesOf(query.data), failed: query.error !== null };
+}
+
+/** The passes of `read` with its textures bound, once they load. */
+function usePassesOf(read: MaterialProgram | null | undefined): readonly SubmeshProgram[] {
   const program = read ?? null;
   const assets = useMemo(
     () => (program === null ? NO_ASSETS : programTextureAssets([program])),
     [program],
   );
   const textures = useAssetTextures(assets, RAW_TEXTURES);
-
   return useMemo(() => {
-    const passes = programPasses(program, textures);
-    return passes.length === 0 ? NO_PASSES : passes;
+    const ready = programPasses(program, textures);
+    return ready.length === 0 ? NO_PASSES : ready;
   }, [program, textures]);
 }
 

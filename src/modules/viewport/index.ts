@@ -40,6 +40,7 @@ export {
   useFitCamera,
   useSeesBounds,
 } from "./camera/components/FitCamera";
+export { type Look, OrientationGizmo } from "./camera/components/OrientationGizmo";
 export { SceneCamera, type SceneCameraProps } from "./camera/components/SceneCamera";
 export { type CameraPose, lastCameraPose } from "./camera/state/cameraMemory";
 export { CameraPresetContext, useCameraPreset } from "./camera/state/presetContext";
@@ -75,6 +76,7 @@ export {
 export { type FallbackColors, type SubmeshBinding } from "./character/utils/submeshBinding";
 export { MaterialSubject, type MaterialSubjectProps } from "./hexshade/components/MaterialSubject";
 export { EngineEnvironment, type ParticleEmitter } from "./hexshade/engineEnvironment";
+export { glowMaterial } from "./hexshade/glowMaterial";
 export { blackCube, blackTexel, whiteTexel } from "./hexshade/neutralTextures";
 export { passTwin } from "./hexshade/passTwin";
 export {
@@ -85,10 +87,15 @@ export {
   previewSkeleton,
 } from "./hexshade/previewMeshes";
 export {
+  applyPassState,
+  bindProgramTexture,
+  bindProgramTextures,
+  createInlinedProgramMaterial,
   createProgramMaterial,
   type ReadyProgram,
   SCREEN_COPY,
   type SubmeshProgram,
+  writeProgramGlobals,
   writeProgramMember,
 } from "./hexshade/programMaterial";
 export { type HeldValue, scatter } from "./hexshade/programMaterials";
@@ -100,10 +107,11 @@ export {
 } from "./hexshade/programTextures";
 export { spliceVertexProgram, type VertexPrelude } from "./hexshade/vertexPrelude";
 export { Backdrop } from "./scene/components/Backdrop";
+export { FlatViewport, type FlatViewportProps } from "./scene/components/FlatViewport";
 export { type Placed, Placement, type PlacementMode } from "./scene/components/Placement";
 export { Stage } from "./scene/components/Stage";
 export { Viewport, type ViewportProps } from "./scene/components/Viewport";
-export { type SceneColors, useSceneColors } from "./scene/hooks/sceneColors";
+export { type SceneColors, useSceneColors, useTokenColor } from "./scene/hooks/sceneColors";
 export {
   type BackdropChoice,
   type BackdropFlags,
@@ -162,5 +170,7 @@ export {
   TONE_MAPPING,
   UNITS_PER_METRE,
 } from "./scene/utils/world";
-export { useAssetTextures } from "./shared/hooks/useAssetTextures";
+export { type TextureProgress, useAssetTextures } from "./shared/hooks/useAssetTextures";
+export { isClick, type ScreenPoint } from "./shared/utils/click";
 export { loadCubeTexture } from "./shared/utils/cubeTexture";
+export { createRetainedCache, type RetainedCache, useRetained } from "./shared/utils/retainedCache";

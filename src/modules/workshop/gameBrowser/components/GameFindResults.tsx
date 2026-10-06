@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 
-import { EmptyState } from "@/components";
+import { EmptyState, LoadingState } from "@/components";
 import { errorSummary } from "@/i18n";
 import { m } from "@/i18n";
 import type { GameFindHit } from "@/lib/tauri";
@@ -17,6 +17,8 @@ import {
 } from "../../state";
 import { useGameFind } from "../api/useGameFind";
 import { useSourcePreview, useSourceRowPreview } from "../hooks/useSourcePreview";
+import { useWadSource } from "../state/wadSource";
+import { sourceCopy } from "../utils/sourceCopy";
 import {
   buildSourceTree,
   flattenSourceTree,
@@ -25,7 +27,7 @@ import {
   type SourceEntry,
   toggledSourceDirTree,
 } from "../utils/sourceIndex";
-import { GameLoadingState, GameWadsErrorState, UnknownHashHint } from "./GameBrowserStates";
+import { GameWadsErrorState, UnknownHashHint } from "./GameBrowserStates";
 import { SourceTree } from "./SourceTree";
 
 /**
@@ -39,6 +41,7 @@ import { SourceTree } from "./SourceTree";
  * files live.
  */
 export function GameFindResults() {
+  const source = useWadSource();
   const pattern = useGameSearchPattern();
   const regex = useGameSearchRegex();
   const { data, error, isFetching } = useGameFind(pattern, regex);
@@ -69,7 +72,7 @@ export function GameFindResults() {
   );
 
   if (error && !patternError) return <GameWadsErrorState error={error} />;
-  if (!data && !patternError) return <GameLoadingState />;
+  if (!data && !patternError) return <LoadingState />;
 
   return (
     <>
@@ -83,7 +86,7 @@ export function GameFindResults() {
         <EmptyState
           size="sm"
           title={m.workshop_game_no_match_title()}
-          description={m.workshop_game_no_match_description()}
+          description={sourceCopy(source).noMatchDescription}
         />
       )}
       {data && data.hits.length > 0 && (
@@ -105,7 +108,7 @@ export function GameFindResults() {
             onPreview={previewFile}
             /* Per pattern, so a fresh search opens at its first hit rather than
                where the last one was read to. */
-            scrollKey={`game-find:${regex ? "re" : "text"}:${pattern}`}
+            scrollKey={`${source}-find:${regex ? "re" : "text"}:${pattern}`}
           />
         </div>
       )}

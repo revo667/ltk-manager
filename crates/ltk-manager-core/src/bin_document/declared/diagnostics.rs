@@ -9,19 +9,17 @@ use ltk_meta::Bin;
 use serde::Serialize;
 
 use super::super::hex;
-use super::wire_path;
+use super::hash_path;
 
 /// One diagnostic of the last apply, on the row it names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct DeclaredDiagnostic {
     /// The object's path hash, `0x` and eight hex digits. Empty where the diagnostic names no
     /// object of the chunk.
     pub entry: String,
-    /// The row's path on the wire. Empty where the key reaches no row, which lists the
+    /// The row's hash path. Empty where the key reaches no row, which lists the
     /// diagnostic under its object.
     pub path: String,
     /// The layer whose declaration raised it.
@@ -40,9 +38,7 @@ pub struct DeclaredDiagnostic {
 /// The category of a [`DeclaredDiagnostic`], as `ltk_game_data` names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum DeclaredDiagnosticKind {
     OverrideUnreadable,
     OverrideInvalid,
@@ -76,9 +72,7 @@ impl From<ApplyDiagnosticKind> for DeclaredDiagnosticKind {
 /// Why a property edit does not apply, as `ltk_game_data` names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum SkipReason {
     MissingObject,
     MissingProperty,
@@ -139,9 +133,7 @@ impl From<PropertySkipReason> for SkipReason {
 /// Why an object edit does not apply, as `ltk_game_data` names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum ObjectSkip {
     ObjectExists,
     SourceMissing,
@@ -193,7 +185,7 @@ impl Raised {
         let path = PropertyPath::new(Sign::of(&diagnostic.path).1).ok();
         let reaches = |name: &EntryName| -> Option<String> {
             let object = applied.objects.get(&name.object_hash())?;
-            wire_path(object, path.as_ref()?)
+            hash_path(object, path.as_ref()?)
         };
 
         /* A skipped key names its entry, and a skipped object edit its object. Any other

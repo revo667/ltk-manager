@@ -1,7 +1,7 @@
 import type { MaterialPreview, VfxSystem, VfxValue } from "@/lib/tauri";
 
 import { nameHash } from "../../../shared/utils/binHash";
-import { COLOR_LOOKUP, DRAG_MOTION, STENCIL_MODE } from "../model/enums";
+import { COLOR_LOOKUP, DRAG_MOTION, IMPORTANCE, STENCIL_MODE } from "../model/enums";
 import type {
   ChildSetModel,
   EmitterCull,
@@ -9,13 +9,14 @@ import type {
   SystemModel,
   UvLayer,
 } from "../model/model";
-import { emptySystem } from "../model/systemModel";
+import { emissionPeriod, emptySystem } from "../model/systemModel";
 import { readEmissionSurface } from "./readEmissionSurface";
 import {
   readBeam,
   readFields,
   readLegacySimple,
   readLinger,
+  readProjection,
   readShape,
   readTrail,
 } from "./readMotion";
@@ -74,14 +75,6 @@ const ANALYTIC_DRAG_MOTION = 0x100;
 /** `importance`'s schema default. */
 const IMPORTANCE_DEFAULT = 1;
 
-/**
- * The importance Very High effects quality never instantiates, the low-spec substitute.
- *
- * The preview draws at Very High, where this is the only tier the cull mask removes
- * (`VfxEmitter_Evaluation.md` section 9.1).
- */
-const LOW_SPEC_IMPORTANCE = 4;
-
 /** `colorblindVisibility` for an emitter that exists only on the colourblind palette. */
 const COLORBLIND_ONLY = 2;
 
@@ -101,6 +94,8 @@ const FIELD = {
   particleLifetime: nameHash("particleLifetime"),
   lifetime: nameHash("lifetime"),
   timeBeforeFirstEmission: nameHash("timeBeforeFirstEmission"),
+  period: nameHash("period"),
+  timeActiveDuringPeriod: nameHash("timeActiveDuringPeriod"),
   singleParticle: nameHash("isSingleParticle"),
   sharedRandom: nameHash("ParticlesShareRandomValue"),
   birthVelocity: nameHash("birthVelocity"),
@@ -279,6 +274,10 @@ function readEmitter(
     particleLifetime: curve(field(node, FIELD.particleLifetime), DEFAULT.particleLifetime),
     lifetime: number(field(node, FIELD.lifetime)),
     timeBeforeFirstEmission: number(field(node, FIELD.timeBeforeFirstEmission)) ?? 0,
+    period: emissionPeriod(
+      number(field(node, FIELD.period)),
+      number(field(node, FIELD.timeActiveDuringPeriod)),
+    ),
     singleParticle: flag(field(node, FIELD.singleParticle)),
     sharedRandom: flag(field(node, FIELD.sharedRandom)),
 
@@ -360,6 +359,7 @@ function readEmitter(
     mesh: readMesh(primitive),
     trail: readTrail(primitive),
     beam: readBeam(primitive),
+    projection: readProjection(primitive),
     childSet: readChildSet(field(node, FIELD.childSet), materials),
     fields: readFields(field(node, FIELD.fields)),
 
@@ -421,7 +421,8 @@ function readChild(
  */
 function cullOf(node: VfxValue & { type: "struct" }, simple: boolean): EmitterCull | null {
   const importance = number(field(node, FIELD.importance)) ?? IMPORTANCE_DEFAULT;
-  if (importance === LOW_SPEC_IMPORTANCE) return "importance";
+  /* The preview draws at Very High, which culls the low-spec tier alone. */
+  if (importance === IMPORTANCE.lowSpecOnly) return "importance";
 
   const palette = number(field(node, FIELD.colorblindVisibility)) ?? 0;
   if (!simple && palette === COLORBLIND_ONLY) return "colorblind";

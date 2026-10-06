@@ -64,8 +64,36 @@ describe("editorFile", () => {
       expect(parsed).toEqual({ kind: "ok", state });
     });
 
+    it("carries the League client's browser tabs across the file", () => {
+      const index = gameDocument("lcu");
+      const wads = gameWadsDocument("lcu");
+      const wad = gameWadDocument("rcp-fe-lol-loot/assets.wad", "lcu");
+      const preview = previewDocument(
+        { kind: "lcuChunk", wad: wad.wadName, pathHash: "0123456789abcdef" },
+        "plugins/rcp-fe-lol-loot/global/default/a.png",
+      );
+      const ids = [index.id, wads.id, wad.id, preview.id];
+      const layout = singleLeaf(ids, index.id);
+      const state: PersistedProjectEditor = {
+        ...twoDocumentState(),
+        documents: { [index.id]: index, [wads.id]: wads, [wad.id]: wad, [preview.id]: preview },
+        layout,
+        activeLeafId: layout.id,
+      };
+
+      expect(parseEditorFile(serializeEditorFile(state))).toEqual({ kind: "ok", state });
+    });
+
     it("carries the project's declarations choice across a reload", () => {
       const state = { ...twoDocumentState(), useDeclarations: false };
+
+      const parsed = parseEditorFile(serializeEditorFile(state));
+
+      expect(parsed).toEqual({ kind: "ok", state });
+    });
+
+    it("carries the layers left unmarked across a reload", () => {
+      const state = { ...twoDocumentState(), hiddenMarkLayers: ["chroma"] };
 
       const parsed = parseEditorFile(serializeEditorFile(state));
 
@@ -102,6 +130,16 @@ describe("editorFile", () => {
           abilities: [recipe, { ...recipe, id: "bad", release: -1 }],
         })?.abilities,
       ).toEqual([recipe]);
+    });
+
+    it("carries each system's timeline markers across the file", () => {
+      const markers = { "layer:base:a.bin:0x1a2b3c4d": [{ id: "m", time: 0.5, name: "impact" }] };
+      const state = { ...twoDocumentState(), markers };
+
+      expect(parseEditorFile(serializeEditorFile(state))).toEqual({ kind: "ok", state });
+      expect(
+        sanitizeEditorState({ ...state, markers: { broken: [{ id: "x", time: -1 }] } })?.markers,
+      ).toEqual({});
     });
 
     it("carries a pinned tab across the file", () => {

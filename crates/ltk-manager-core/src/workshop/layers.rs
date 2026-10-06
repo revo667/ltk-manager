@@ -1,19 +1,26 @@
 use super::{
     AddFilesReport, ProjectDir, Workshop, WorkshopError, WorkshopLayerInfo, WorkshopProject,
-    is_valid_project_name,
 };
 use crate::error::{AppError, AppResult};
+use crate::game_wads::mount_wad;
 use crate::hashtables::WadPathResolver;
 use crate::utils::fs::copy_dir_all;
 use camino::Utf8Path;
 use fs_err as fs;
 use indexmap::IndexMap;
 use ltk_mod_project::ModProjectLayer;
-use ltk_wad::{NamingPolicy, PathResolver, Wad, WadExtractor};
+use ltk_modpkg::Slug;
+use ltk_wad::{NamingPolicy, PathResolver, WadExtractor};
 use std::collections::HashMap;
-use std::io::BufReader;
 use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
+
+/// The directory name a rename gives a layer with this display name. `None` when the display
+/// name has no characters a slug keeps.
+#[must_use]
+pub fn layer_name_for(display_name: &str) -> Option<Slug> {
+    Slug::new(slug::slugify(display_name.trim())).ok()
+}
 
 impl ProjectDir {
     /// Create a new layer.
@@ -25,9 +32,10 @@ impl ProjectDir {
     ) -> AppResult<WorkshopProject> {
         let name = name.trim().to_string();
 
-        if !is_valid_project_name(&name) {
+        if Slug::new(&name).is_err() {
             return Err(AppError::ValidationFailed(
-                "Layer name must be lowercase alphanumeric with hyphens only".to_string(),
+                "Layer name must be lowercase letters, numbers, hyphens and underscores,                  and cannot start or end with a hyphen or an underscore"
+                    .to_string(),
             ));
         }
 
@@ -138,12 +146,11 @@ impl ProjectDir {
             ));
         }
 
-        let new_name = slug::slugify(&new_display_name);
-        if new_name.is_empty() {
-            return Err(AppError::ValidationFailed(
-                "Display name must produce a valid slug".to_string(),
-            ));
-        }
+        let new_name = layer_name_for(&new_display_name)
+            .ok_or_else(|| {
+                AppError::ValidationFailed("Display name must produce a valid slug".to_string())
+            })?
+            .into_string();
 
         let mut mod_project = self.config()?;
 
@@ -277,8 +284,7 @@ pub(super) fn extract_wad_into_dir(
 ) -> AppResult<()> {
     fs::create_dir_all(dst)?;
 
-    let file = fs::File::open(src)?;
-    let mut wad = Wad::mount(BufReader::new(file))?;
+    let mut wad = mount_wad(src)?;
 
     let mut extractor = WadExtractor::new(resolver)
         .with_naming_policy(NamingPolicy::Lossless)
@@ -338,7 +344,7 @@ fn resolve_in_layer(layer_dir: &Path, relative_path: &str) -> AppResult<PathBuf>
         return Err(reject());
     }
 
-    let parent = target.parent().ok_or_else(&reject)?;
+    let parent = target.parent().ok_or_else(reject)?;
     if !fs::canonicalize(parent)?.starts_with(fs::canonicalize(layer_dir)?) {
         return Err(reject());
     }

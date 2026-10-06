@@ -5,11 +5,18 @@ import { errorSummary, m } from "@/i18n";
 import { api, type AssetRef, type BinDocumentId } from "@/lib/tauri";
 import { type HistoryStep, useDocumentFlush, useDocumentHistory } from "@/modules/editor";
 
-import { assetKey } from "../../../preview/utils/assetRef";
 import { useOptionalProjectContext } from "../../../projects/state/ProjectContext";
-import { queueForSave, saveBinNow, useBinSave, useWorkshopEditorStore } from "../../../state";
+import { useSandbox } from "../../../sandbox/state/SandboxContext";
+import {
+  binSaveKey,
+  queueForSave,
+  saveBinNow,
+  useBinSave,
+  useWorkshopEditorStore,
+} from "../../../state";
 import { useInvalidateBinReads } from "../../tree/hooks/useBinEdit";
 import { announceReshape } from "../../tree/state/reshapes";
+import { historyLoan } from "../state/historyLoans";
 import { useDocumentCall } from "./useDocumentCall";
 
 /**
@@ -17,7 +24,8 @@ import { useDocumentCall } from "./useDocumentCall";
  *
  * "Save" and "Undo" in docs/ux/BIN_EDITOR.md. The dot follows `blocked` and `failed` alone,
  * a quit and `Ctrl+S` write the queued save, and the undo keys reach the tree from anywhere in
- * the group.
+ * the group. A history another document lent the tab steps first, and the tab's own once it
+ * holds nothing.
  */
 export function useBinTab(
   documentId: string,
@@ -25,7 +33,7 @@ export function useBinTab(
   asset: AssetRef,
   editable: boolean,
 ): void {
-  const key = assetKey(asset);
+  const key = binSaveKey(useSandbox(), asset);
   const save = useBinSave(key);
   const invalidate = useInvalidateBinReads();
   const call = useDocumentCall(document);
@@ -48,7 +56,13 @@ export function useBinTab(
       if (keepsKeystroke(target)) return false;
 
       const run = step === "undo" ? api.bin.undo : api.bin.redo;
-      void call((id) => run(id)).then(({ result, id }) => {
+      const own = () => call((id) => run(id));
+      const loan = historyLoan(document);
+      const stepped = loan === undefined ? own() : loan(step).then((took) => (took ? null : own()));
+      void stepped.then((sent) => {
+        if (sent === null) return;
+
+        const { result, id } = sent;
         if (!result.ok) {
           const title =
             step === "undo"
@@ -65,7 +79,7 @@ export function useBinTab(
       });
       return true;
     },
-    [call, invalidate, key, toast],
+    [call, document, invalidate, key, toast],
   );
   useDocumentHistory(documentId, step, editable);
 }

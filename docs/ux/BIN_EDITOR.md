@@ -4,6 +4,7 @@
 
 | Date       | Change                                                          |
 | ---------- | --------------------------------------------------------------- |
+| 2026-09-27 | Select an emitter by a click on its particles in the viewer     |
 | 2026-09-26 | Walk the rows by key, and keep a refused edit's text            |
 | 2026-09-24 | Pick an emitter's primitive, and sketch what it draws           |
 | 2026-09-24 | Edit a bin's dependencies as rows pinned over its objects       |
@@ -13,7 +14,6 @@
 | 2026-09-21 | Declare a game bin's container edits, and refuse what none says |
 | 2026-09-21 | Declare a game bin's leaf edit into a project layer             |
 | 2026-09-20 | Open a map's files on the map, and sort a file's objects        |
-| 2026-09-17 | Draw a patch bin's records under the objects they target        |
 
 Each edit of this document adds a row at the top. The table keeps the last ten rows.
 
@@ -635,6 +635,12 @@ alone, and one whose file writes no `constantValue` draws the strip alone: a col
 is its stops, and a row that waited for a constant the file never held drew nothing at all. The
 other three draw the constant in the field a scalar or a vector row draws.
 
+**A colour edits as a colour.** An editable colour constant, a float vector of three or four
+channels whose field name ends in `Color`, and a byte colour each draw a swatch with its hex and
+alpha. A click opens a picker with an alpha slider and each channel as an exact field, which keeps
+a channel past 1 or below 0 the picker cannot reach, and Save writes every channel at once. A byte
+colour keeps its channel boxes beside the swatch.
+
 ```
 |  birthColor    embed   ValueColor    [#] [=====gradient=====]   |
 |  rate          embed   ValueFloat    [ 1.00 ]                   |
@@ -709,12 +715,61 @@ pixel was clicked never changes what it offers.
 | Copy value                       | A row whose value reads as one string     |
 | Copy value hash                  | A row whose value carries a hash          |
 | Show in properties               | A cell of a class view                    |
+| Reset to default                 | A property row of a class view or a node  |
 
 Copy value takes the value as the row draws it: a string, a number, a `flag` as `true` or `false`,
 a colour as `#RRGGBBAA`, a vector or a matrix as its components joined by a comma, and a link as
 its path or its name. A container, a map, a struct and an optional read as no single string, so
 they carry no Copy value. Copy value hash is the hash behind such a link, whether or not a table
 names it.
+
+#### Reset to default
+
+Reset to default puts a property back to its class default. It is one undo step. The Graph pane offers it too, first in the menu of a right click on a field row inside a node.
+
+- a bin that can drop a property removes it, and the class view then draws the field as the
+  schema's default, the value the game reads for a field the file leaves out
+- on a declared document, a row a declaration of the chosen layer sets drops that declaration,
+  every signed key of its path in its module. The row then reads the game's value, or the
+  class default where the game has none
+- a declared document cannot remove a property from a game bin, so on a row no declaration
+  sets it writes the default instead: the latest schema's default, or the kind's own zero where the schema has none. The
+  zero is 0, `false`, an empty string, a zero hash, an identity matrix, or opaque white for a
+  colour
+- a value class (`ValueFloat`, `ValueVector3`, `ValueColor` and the rest) resets its constant
+  the same way and drops its curve
+- in a declared document, a list, a map, an embed or a pointer has no single default to write,
+  so the item is disabled with the reason as its title
+
+#### What changed
+
+Every row and node that differs from a baseline carries a dot, and the row menu offers the
+baseline's value back. Changes in the inspector's toolbar holds the switches: Mark changes, on
+by default, Changed only, and the baseline, the file as it was opened or the game's copy.
+
+```
+Changes v                         Rate           [ 12.0 ] *     filled dot: changed
+  [x] Mark changes                Birth color    [#ff8800] *    green dot: added
+  [ ] Changed only                Shape          ( 3 )  o       ring: a change inside
+  (o) Compare with the file as opened
+  ( ) Compare with the game's copy
+```
+
+- the file as opened is the bytes the document was read from. A save leaves it as it is, since
+  every edit saves on its own, so it keeps what this session changed. A reload reads it again
+- the game's copy is each object as the first game archive that declares it holds it. An
+  object no archive declares is added
+- a struct, and a list or a map of structs of one class, is compared field by field, so an edit
+  inside an emitter marks that field. Any other value is compared whole
+- a dot is amber for a changed value, green for an added one and red for a removed one. A ring
+  marks a holder, a node or an emitter with a change inside it, and a node carries its dot on its
+  top right corner
+- Revert to opened, or Revert to game, writes the baseline's value back as one undo step. A
+  property the baseline lacks is removed, and one only the baseline holds is written back
+- Changed only lists the changed properties alone in the inspector and fades every node of the
+  Graph pane without a change
+- a declared document reports no changes here, since its declarations already mark what it
+  changes and Reset to default drops them
 
 ### Preview lifetime
 
@@ -896,11 +951,14 @@ hashes and the paths its row group already sends, so neither shape costs a call 
 
 ### A project names its own chunks
 
-The shared tables are a crawl of the retail game, so a path a mod author invents is in none of
-them. A project's own content names those, and a bin opened out of a layer reads both: every
-file of every layer at its path inside its archive, and every table the project's manifest
-declares. The project answers first, and only a hash it does not name reaches the shared tables.
-A game bin opened in a project for declarations (ADR-0042) reads that project's names too.
+The shared tables are a crawl of the retail game, so a path or an object a mod author invents is
+in none of them. A project's own content names those, and a bin opened out of a layer reads
+both: every file of every layer at its path inside its archive, and every table the project's
+manifest declares, each under its category. A `game` table names chunk paths, a `binentries`
+table the objects the project's bins add, and a `binhashes` table the strings behind their
+`Hash` values. The project answers first, and only a hash it does not name reaches the shared
+tables. Classes and properties stay with the shared tables, and a table of a category the
+tooling does not know is skipped.
 
 The scan runs once with the parse and is held with the open document, so a file added while a
 document is open is named the next time it opens.
@@ -963,13 +1021,18 @@ and the card. It reads and does nothing else, per `DS-MENU-SCOPE`: it carries no
 name under it takes no click of its own, so a click there expands the row like a click anywhere
 else on it. The pointer reaches into the card to scroll the field list and to select a hash.
 
-| Shows      | From                                                                             |
-| ---------- | -------------------------------------------------------------------------------- |
-| Name, hash | The tables, and the hex where no table names it                                  |
-| Prose      | The wiki's documentation for the class, per [the wiki's prose](#the-wikis-prose) |
-| Declares   | How many objects of the install declare it, from the index                       |
-| Patch      | The patch the schema answered at, or that it has no line                         |
-| Meta wiki  | A link to the class's page, where its fields are written                         |
+| Shows     | From                                                                             |
+| --------- | -------------------------------------------------------------------------------- |
+| Name      | The tables, and the hex where no table names it                                  |
+| Bases     | The classes it derives from at the build, nearest first, each opening its card   |
+| Counts    | The fields it and its bases declare, and the install's objects of the class      |
+| Prose     | The wiki's documentation for the class, per [the wiki's prose](#the-wikis-prose) |
+| Patch     | The patch the schema answered at, or that it has no line                         |
+| Meta wiki | A link to the class's page, where its fields are written                         |
+
+The object count comes from the object index, and is left out while the index is absent or
+building. A card carries no hash: Copy class hash is on [the row menu](#the-row-menu), and a
+class no table names shows its hash as its name.
 
 The class name's actions are on [the row menu](#the-row-menu) where a row carries it, and on the
 object tab's kebab where no row does.
@@ -993,13 +1056,24 @@ A field name is the same control as a class name: a card on hover after the tool
 closed by leaving it. The name draws under a dotted underline while the pointer is on it, which
 marks the card without making the name a second click target inside the row.
 
-| Shows      | From                                                                             |
-| ---------- | -------------------------------------------------------------------------------- |
-| Name, hash | The tables, and the hex where no table names it                                  |
-| Declared   | The schema's kind for the field at this build                                    |
-| Prose      | The wiki's documentation for the field, per [the wiki's prose](#the-wikis-prose) |
-| Revisions  | The field's kinds across builds, as the schema's revisions hold them             |
-| Meta wiki  | A link to the field's section on the wiki page that documents it, if any         |
+| Shows       | From                                                                              |
+| ----------- | --------------------------------------------------------------------------------- |
+| Title       | The label the row shows, where it says other words than the field's name          |
+| Signature   | The field's name, then its kind and class after a colon: `rate: embed ValueFloat` |
+| Declared on | The base class that declares the field, where the row's class does not            |
+| Default     | The schema's constructor default, in the row's own notation                       |
+| Mismatch    | A warning naming the file's kind and the schema's, where the two differ           |
+| Type change | The type an earlier revision had and the patch it changed at, if it changed       |
+| Prose       | The wiki's documentation for the field, per [the wiki's prose](#the-wikis-prose)  |
+| Meta wiki   | A link to the field's section on the wiki page that documents it, if any          |
+
+The card's content scrolls under a cap and the footer with the wiki link stays in view, so long
+prose never cuts a section in half. The signature is colored as a bin preview colors it: the kind in the kind hue and the class
+in the class hue, per `DS-KIND-HUE`. The card's text is a step larger than a hover card's own.
+A class on the card opens its own class card on hover. A value family's default is its
+constant, the way its row draws it. A struct, a pointer and a container show no default, since
+their default is their class's own defaults. A field no table names shows its hash as its name,
+and Copy field hash is on the row menu.
 
 Every field name that opens this card - a tree row, a class view row, the VFX inspector's rows,
 the emitter table's column headers and the force rows - shows the same documentation.
@@ -1100,6 +1174,23 @@ A `Map`, a `MapSkin` and a `MapContainer` open in a shell of three panes: the dr
 outliner of its chunks, and the object's sections. The outliner lists each
 `MapPlaceableContainer` of the map's `.materials.bin` and what it holds. A row sends the camera
 to where its placeable stands, and an eye hides a chunk or one placeable from the scene.
+
+A search box over the outliner keeps the placeables whose name or class holds its text, and every
+placeable of a chunk whose own name does. A chip per kind the map holds keeps only that kind.
+Under a search each chunk with a match opens by itself and counts what it keeps of what it holds.
+A placeable an event shows carries a lightning mark, and the preview plays it only with Event
+effects on or while the reader has it selected. The tree is one tab stop: the arrows walk and fold it, Enter flies to the row, and
+Ctrl+F returns to the box.
+
+The Placeables switch in the preview marks every placeable the outliner lists with a dot in its
+kind's colour, drawn through the map at one size on the screen. The Box select tool takes the
+primary button: a drag selects the dots inside its box and a click the one under it, Shift adds
+and Ctrl flips, and the other buttons still move the camera. The outliner and the preview hold
+one selection. A click on a row selects it alone and flies to it, Shift and Ctrl edit the
+selection there too, and Ctrl+A selects every row listed. A bar over the tree counts the
+selection and frames, hides, shows or clears it. A pick opens the chunk of the placeable picked
+last and scrolls the outliner to it, and the inspector heads its sections with that placeable's
+own fields, read in the `.materials.bin`, with a button that opens its chunk's tab at the row.
 
 A `.mapgeo` and a `.materials.bin` open on the same map, because the map is what a reader of
 either file came for. The path says which map it is, since both files are the map's entry path
@@ -1302,6 +1393,12 @@ sets its speed and names it: an idle clip first, and the bind pose where the gra
 graph the skin's own file does not declare is read out of the files it links, which is where the
 engine finds it. The camera frames the character when it lands, and again on Frame the character.
 A clip no table names reads as its bare hash, dimmed, which is what a modder pastes elsewhere.
+
+**The backdrop menu stands the skin on a map.** It lists None and the install's maps by folder,
+and four switches under them: Particles, Event effects, Structures and props, and Sky. Particles
+plays the map's placed systems. Event effects adds the systems an event shows, such as the Hall
+of Legends banners, and stays off until Particles is on. Every switch but Event effects starts
+on, and each is kept with the preview's other display settings.
 
 **The inspector and the character point at each other.** The pointer on a material override
 dims every submesh but the one it dresses, and a click on the character dims the same way and
@@ -1527,7 +1624,9 @@ hold. Primitive holds `primitive` alone, out of Render, because the class it nam
 every other group draws onto, per [the primitive](#the-primitive). Which fields each holds is a table written by hand, so a field the schema adds falls to
 Other and is on screen the day it appears rather than landing in a group by accident. Birth is
 the value a particle starts with and every other group is what it does over its life, which is
-the line that puts `birthScale0` under Birth and `scale0` under Scale.
+the line that puts `birthScale0` under Birth and `scale0` under Scale. Texture holds the effects
+that change how the texture draws, alpha erosion, distortion and reflection, and Effects holds
+the rest.
 
 A card and a table are two readings of one list, and a control on the section switches them. The
 strip says what one emitter is. The table compares a field down every emitter of the system,
@@ -1556,7 +1655,7 @@ were.
 | VfxSystemDefinitionData  Ahri_Base_Q_mis > Orb [0]   [System|Properties] [Panes] |
 +------------------------------------------------------+---------------------------+
 | PREVIEW  [Ground][Midlane][Gizmo][Stats][Cam v][Fit] | INSPECTOR                 |
-|                                            [Burst v] | [Emission][Birth][Scale]  |
+|                                      [Ground Auto v] | [Emission][Birth][Scale]  |
 |                                                      | v EMISSION                |
 |                      (viewport)                      |   rate           1  ___/  |
 |                                                      |   lifetime       1 s      |
@@ -1568,8 +1667,9 @@ were.
 +------------------------------------------------------+---------------------------+
 ```
 
-**One row holds the object tab's header and the crumb.** The class, the crumb, the mode control,
-Show in file and Panes share it, and the preview takes the height of the row it saves.
+**One row holds the object tab's header and the crumb.** The sandbox, the class, the crumb, the
+mode control, Show in file and Panes share it, and the preview takes the height of the row it
+saves. The row starts with `Sandbox (<name>) >`, per [the sandbox](#the-sandbox).
 
 The crumb names system and emitter, and each segment is a target the inspector draws. The system's
 segment draws Identity, Audio and Other, which is where a shell keeps the sections a stack lists
@@ -1765,14 +1865,16 @@ v [*] Burst       [3] (o) S        [###]~~~               120
 lanes keep the row a separate transport row would take. Step back, play, step forward and restart
 come first, with play the one filled control. The time follows as `0.42 / 1.60 s`, the current time bright and the span muted. A
 hairline then sets off how the run plays: the Loop toggle and the speed. The view switches
-sit at the far end behind a second hairline: the Histogram toggle and the chance pin of
-[the random spread](#the-random-spread). Loop and Histogram are icon toggles lit while on, and
+sit at the far end behind a second hairline: Add marker, the Snapping toggle, the Histogram toggle and the dice button of
+[the random spread](#the-random-spread), which opens the chance pin in a popover and reads the
+pinned chance beside the dice, lit while one holds. Loop and Histogram are icon toggles lit while on, and
 their tooltips name them, with Loop's naming its key. Restart plays the run from zero.
 
-**Loop is on by default.** The Loop switch is the rig's loop, the same switch the rig's popover
-shows, and a system opens with it on. With Loop off, the run pauses at the end of its span, and
-Play starts it again from zero. Turning Loop on at the end plays the run from zero, and turning it
-off during a later pass keeps the time the playhead reads.
+**Loop switches the rig between Replay and Once.** A system that ends opens on Replay, so the
+switch is on. With Loop off, the run pauses at the end of its span, and Play starts it again from
+zero. Turning Loop on at the end plays the run from zero, and turning it off during a later pass
+keeps the time the playhead reads. A switch of Loop is a change of the rig, so the rig becomes the
+author's. Under Continuous the switch takes no press, since the run never starts over.
 
 The speed is a number typed to three places, `1.000` by default, between 0.05 and 2, with a pair
 of arrows on its right that nudge it by 0.1, by 0.01 under Alt and by 0.5 under Shift. The bracket keys walk it through 0.05, 0.1, 0.25, 0.5, 1, 1.5
@@ -1794,6 +1896,37 @@ tail runs on to the end of the linger. The live count stands at the lane's right
 `live` caption on the ruler's row. With the Histogram switch on, a histogram over the bar draws
 the emitter's live particles per step, filled in as the run plays. The switch is off by default,
 and the bar's own timing reads clear.
+
+**A bar edits by dragging.** On an emitter's own lane, a drag on the bar moves it whole and
+writes `timeBeforeFirstEmission`. Its left edge trims the first emission and keeps the end, so it
+writes the start and `lifetime` together, its right edge writes `lifetime`, and the end of the
+hatch writes `particleLinger`. Every lane has all three edges, a burst's and a very short bar's
+included, and the edge nearest the pointer wins, the end over the start on a tie. Handles show
+while the pointer is over the lane and the held one lights, the cursor says what a press takes,
+and the value reads beside the edge during the drag.
+
+- a dragged edge snaps, per the snapping paragraph below, and a line marks the snap
+- the preview plays the dragged timing as the drag goes, replayed to the playhead
+- the release writes the drag as one edit, one undo step, and Escape drops it
+- a press on the bar that never travels seeks, as the rest of the lane does
+- an endless bar's arrow drags too, which gives the emitter a `lifetime`
+- a child lane's bars stand for spawns and do not drag, and a simple emitter's linger is capped
+  to nothing, so its bar has no linger edge
+
+**A double click opens the exact times.** A double click on the bar opens a popover with the
+start delay, the lifetime, Emits until the system stops, the particle linger, Repeats in cycles
+with the period and its active part, and the single burst switch. Each field commits on its own.
+Emits until the system stops clears `lifetime`, which no drag can do.
+
+**Bursts and cycles are marked.** An `isSingleParticle` emitter's whole output is one burst,
+drawn as a diamond at its start, and its bar has no end edge. An emitter with a `period` draws a
+notch where each cycle opens and darkens the part of each cycle past `timeActiveDuringPeriod`,
+and the run emits in the lit parts alone.
+
+**An emitter node carries the lane's eye and solo.** Hide in the preview and Solo sit on each
+emitter node's header and read and write the lanes' own sets, so a node hidden, or left out by
+another's solo, fades on the canvas. The `disabled` flag, which writes the file, is the power
+button beside them.
 
 **Lanes run in draw order**: the ground layer first, then `pass`, the blend mode's rank,
 `miscRenderFlags` and the index, which is `compareDrawOrder`. A child system's emitters nest under
@@ -1832,6 +1965,30 @@ that edge, and a drag on the band moves the whole range. A double click inside t
 x, clears it. A run with no range loops as the Loop switch says. While Shift is down the ruler's
 cursor is a crosshair, and resting the pointer on the ruler names its gestures.
 
+**Markers name times on the ruler.** A marker is a flag at the top of the ruler with its name
+beside it, and a dashed line down the lanes. Add marker in the transport and `Ctrl+M` add one at
+the playhead, and the ruler's menu adds one where it opened. A second marker at the time of one is
+not added. A click on a flag seeks there, a drag moves it and snaps, and Escape drops the drag. A
+double click names it: Enter or leaving the field keeps the name, a blank one clears it, and
+Escape drops the edit. The menu on a flag renames or deletes it, and a delete raises a toast with
+Undo. The playhead's chip stands over a flag at its time.
+
+Markers are kept per system in the project's `.ltk/editor.json`, so they last across sessions and
+never reach the packed mod. A layer rename carries the markers of the layer's files to the new
+name. When a layer file or its system is gone from the project, its markers leave the file the
+next time the project's files are read. A file under an ignored directory keeps its markers,
+since the project's listing does not name its objects. A system opened outside a project has
+none.
+
+**Snapping.** A time a gesture moves snaps: a dragged bar edge, the playhead scrubbed on the
+ruler, a track or its flag, the loop's in and out as they are drawn or dragged, and a marker. It
+lands on a target within 6 px: 0, the end of the span, every emitter's bar edges, cycle notches
+and bursts, the loop's in and out, the markers, the playhead and the ruler's ticks, the labelled
+whole seconds among them. A target that is the time being moved is left out, and a scrub leaves
+out the minor ticks too, which would quantize it to their spacing. Between targets a time rounds
+to whole frames, 1/60 s, and Ctrl rounds to thousandths. Shift moves free of the targets, and the
+Snapping toggle in the transport, on by default, turns them off for every gesture.
+
 **The playhead is a flag.** Its chip on the ruler reads the time, and its line runs down every
 lane with a faint glow, so it reads over the bars and the histogram. A drag on the chip scrubs,
 as a drag on the open ruler does. A dashed line
@@ -1869,6 +2026,7 @@ option keeps Space.
 | F                       | Fit the camera                                     |
 | S, M                    | Solo or mute the selected emitter                  |
 | `[`, `]`                | The next speed detent down or up                   |
+| Ctrl+M                  | Add a marker at the playhead                       |
 | Esc                     | Restore a maximized pane                           |
 
 **The preview carries a mini transport while no timeline shows**: play, a scrub, the time, the
@@ -1927,17 +2085,65 @@ load, for at most four seconds, so a short effect plays from its first frame on 
 **The orbit.** The left button orbits, the right pans, the middle and the wheel dolly toward the
 pointer. A flat preset's wheel zooms in place of the dolly.
 
+**A click on a particle selects its emitter.** A left press released within four pixels of where
+it began picks the particle drawn under the pointer, the front one where several overlap, and
+selects its emitter as a click on that emitter's lane head does. The inspector and the timeline
+follow. A child's particle selects its child lane, and a deeper child selects the child lane it
+descends from. A texel of a quad's texture with no alpha picks nothing, a hidden, muted or culled
+emitter picks nothing, and a click on empty space leaves the selection as it is. A drag orbits,
+and a press on a gizmo's handle is the gizmo's.
+
 **The axis gizmo** sits in the pane's top left corner and turns with the camera: the corner of a
 cube, three arms on the viewport's own axes with a lettered head each, and a square face between
 every two. An arm, its head and the face across it wear that axis's channel colour. A head or a
 face stands the camera on its axis, picking Side, Top or Front. Picked again while the camera
 already stands there, it turns the camera to the axis's other end, on Orbit.
 
-**The rig pill** names its preset beside an icon of the motion. Its popover holds the motion, the
-loop, the stop, and the seed with its reroll. A system opens on Burst, which moves nothing and
-loops, and the popover's loop is the timeline's Loop switch.
+**The rig pill** names the carrier beside an icon of its motion, and where the rig came from:
+Auto, Custom, a template's name or the context it was opened from (ADR-0057). Its popover says the
+same in a line, with Reset to auto beside it for a rig that is not the system's own. Under it are
+the carrier (Ground, Flight and Orbit, and Bone while a skin's joint carries the run), the
+playback (Once, Replay and Continuous), the height, the motion's sliders and an orbit's
+Orientation, the stop, and the seed
+with its reroll.
 
-**The gizmo** draws the selected emitter's origin, its offset and its spawn shape as a wireframe.
+**The system picks its own rig.** A system with an emitter that has no `lifetime` plays
+Continuous, and any other Replays. A system with a trail Orbits, and any other stands on the
+Ground. Ground stands at zero, and Flight and Orbit fly at half a champion's height. A switch of
+carrier keeps the playback, the stop and a height the author tuned. An edit that changes the rig
+the system picks takes effect when the run next starts over, never under the author. A
+Continuous run lasts the minute a seek reaches and never starts over, so a stop shows the
+linger.
+
+**Orbit flies as a missile unless told otherwise.** A missile's effect is authored travelling
+along its own `Y`, so Orbit carries the system on the frame Flight does and the trail lies along
+the circle. Its Orientation picks Unit for a system a champion carries, such as a dash, which
+travels along its own `Z` as it does on the Ground.
+
+**Open effect carries the rig a view built.** The spell's Missile pane opens its projectile
+effect on the spell's own flight, and its hit effect on the ground. The skin preview's Open
+effect menu lists each idle effect, which opens Continuous on its joint, and each particle
+event of the clip playing, which opens on its joint and replays once per pass of the clip. A
+skin's effect opens with the skin and the clip in the character picker, the character posed
+from the event's frame. The pill names the view as the rig's source, and `Ctrl` opens the tab
+beside.
+
+**The gizmo** draws the selected emitter's origin and its offset as lines, and its spawn shape as
+a body in faint faces under crisp edges. It is the one gizmo of the editor: the Geometry node's
+Show shape switch opens its emitter and turns the gizmo on, pressed while the gizmo shows that
+emitter. Hovering any node of an emitter in the Graph pane draws that emitter's gizmo in a near
+white over the run, and choosing an emitter anywhere, a pick in the viewport included, selects
+its master node in the Graph pane and centers the view on it.
+
+**The handle menu** in the viewport's controls picks which of the open emitter's spatial values a
+drag edits: Offset (`translationOverride`), Turn (`rotationOverride`), Emitter position, the emit
+offset of a point or legacy shape, Shape size (a box's half-extents, a sphere's radius, a
+cylinder's radius and height), or Birth velocity. The velocity handle is the tip of a faint straight line, as far as the birth
+velocity alone carries a particle over its life. Beside it runs the path the engine flies one
+particle along, acceleration, drag and forces included, with a dot at each tenth of its life, so
+the spacing reads as its speed. A value animated over the emitter's life is listed disabled, since its
+curve edits it, as is a size or an offset the shape does not have. A drag previews through the
+run and pauses it, Escape cancels it, and the release writes the value as one edit.
 **Stats** draws the live particles, the live child systems and the frame's milliseconds in the
 bottom right corner, on a plate that reads over any ground. The count is of simulated particles,
 a muted emitter's included.
@@ -1963,7 +2169,12 @@ both. A section reads its curves as it scrolls into view, and a folded section r
 is bounded by what is on screen, per [what a layout reads](#what-a-layout-reads).
 
 ```
-INSPECTOR  Orb [0] / Birth v          Chance 0.55   Defaults ( )
+INSPECTOR  Orb [0] / Birth v          Chance 0.55
+----------------------------------------------------------------
+ +------------------------------------------------------------+
+ |                 emitter preview, 160px                     |
+ +------------------------------------------------------------+
+ [F][+][P]  [ Search emitter properties                      ]
 ----------------------------------------------------------------
  v EMISSION
      rate                    [5          ] /s
@@ -1983,6 +2194,23 @@ INSPECTOR  Orb [0] / Birth v          Chance 0.55   Defaults ( )
 |  a field the birth roll reaches   !  a field that rerolls every frame
 ```
 
+**An action bar leads the search row.** Its first switch, Show only defined properties (`F`), draws
+only the properties the file defines and drops every field drawn at its schema default. The switch
+is remembered across emitters and sessions. With it on and nothing defined, the pane says so.
+
+Its second switch, Add property (`+`), puts an add box in place of the search. The box lists the
+fields the emitter's class declares and the emitter does not define, matched by label, name, hash
+or group as the search matches them, and takes `name: kind` for a field no table names. A pick adds
+the field at its schema default, unfolds its section and scrolls to it, and the box clears for the
+next one. `Escape` clears the box, and on an empty box returns to the search. This is the way to
+define a field while only defined properties are shown.
+
+Its third switch, Show emitter preview (`P`), draws the open emitter's graph node preview over
+the properties, as wide as the panel: the same particle surface, trail swatch or live draw, the
+same strip under it, played on the run's own playhead. The backdrop switch sits in its corner. The
+switch is on by default and remembered. A child lane's emitter draws no preview, because the run
+plays the opened system and not the child's.
+
 **The crumb holds still and the header moves.** The crumb's group segment names the group last
 picked, so the menu's own trigger never changes label under the pointer, and the sticky header
 names the group on screen.
@@ -1993,7 +2221,9 @@ doc for the field. The name column fits the longest name the inspector draws, ca
 pane, and past the cap a name is cut in its middle, as a lane's is.
 
 **A value reads as what it means.** An enum reads its name, and a flags field reads its named bits,
-off the tables `model.ts` holds. A number carries its unit - `s`, `deg`, `units`, `/s` - and a
+off the tables `model.ts` holds. An enum edits from a select of its names, and a flags field from a
+menu with a switch per named bit, which stays open for the next and keeps any bit no name covers.
+Both show the number the file holds beside them. A number carries its unit - `s`, `deg`, `units`, `/s` - and a
 random range reads `min .. max`. Which unit a field carries is a table written by hand, as the
 groups are. A vector's axes are tinted x, y and z, in columns of one width down the pane. A path
 reads its file name whole and its folder dimmed, cut inside the folder where the column runs out.
@@ -2166,9 +2396,12 @@ properties switches the mode.
 
 The caption is the label chain, with the wire path dimmed beside it. The chain is what the
 reader clicked, which the surface it was clicked on names: an emitter and its index in the panel,
-and the property path in the tree. The path is what a bug report needs. One toolbar row under it
-carries every control: the channel chips, the `probabilityTables` chip, the chance slider and the
-tabs.
+and the property path in the tree. The path is what a bug report needs. The caption leads the one
+toolbar row, which carries every control: the channel chips, the Random chip, the chance slider and
+the tabs. The caption truncates as the pane narrows.
+
+A shell holds the curve in its curve pane. Aiming a curve opens that pane where the reader closed
+it, and brings it to the front of its panel where another pane covers it.
 
 A value mode control aims the dock from its Curve segment, and so does Show curve on the row menu
 of a value that has dynamics. In an editable inspector, choosing Curve on a constant value creates
@@ -2206,17 +2439,26 @@ of tables that each multiply by 1 draws nothing a reader needs to open.
 ### The tabs
 
 **Graph** plots the keys over [the window](#the-window-a-curve-is-drawn-over). A vector draws a
-line per channel, X red, Y green and Z blue as Riot draws them, with chips that mute one. The
+line per channel, X red, Y green and Z blue as Riot draws them, with chips that mute one. A
+scalar draws in the float socket's hue, which its value node carries in the Graph pane, and a
+random band has its least and most drawn as edges over a light fill, as the node's picture does. The
 value axis takes three to five round ticks over faint grid lines, a stronger line at 0 and the
 unit by the top tick. The time axis ticks at quarters.
 
 A click selects one key. Shift-click selects the range from the last key, and Ctrl-click or
 Command-click toggles one key in the selection. Dragging empty graph space draws a selection box
 over every channel. Delete removes the selected keys from the parallel time and value lists as one
-edit. Exact fields are shown for one selected key, while a multiple selection shows its count.
+edit. A key or a stop dragged past its neighbour swaps with it: the line draws in time order
+while the drag lasts, and the release rewrites every key between the old place and the new one as
+one edit, with the selection following the key. The graph and the Table select. One strip under them holds the selected key's exact fields,
+its time and a field per channel, and a multiple selection shows its count there. The strip is one
+line of the same height whether a key is selected or not, so a selection never takes room from the
+graph, and a pane too narrow for its fields narrows them. The gestures sit behind the info
+mark at the strip's end.
 
 A colour draws as a gradient editor instead: a bar of the stops, a marker per stop hanging off it
-at the stop's own time, and the keys themselves under them.
+at the stop's own time, and the keys themselves under them. A marker drags along the axis once the
+pointer has travelled a few pixels, so a click only selects it.
 
 ```
 +-----------------------------------------------------------------+
@@ -2261,6 +2503,33 @@ and its `#RRGGBBAA` ahead of the four numbers, so a key is read as a colour ther
 same table a colour's graph draws under its ramp, which is why a colour is offered no tab of it.
 A value with no keys is offered no Table either, because it has no rows.
 
+### The randomizer
+
+A value row authors its value in one of three modes, switched on the row: **Constant**, one
+value; **Random**, a value drawn once at birth; and **Curve**, a value over time. Random hides the
+tables. The row shows a Min and a Max, one field per channel each, and a random sign per channel,
+and nothing about chance or factors.
+
+```
+Initial Velocity   [- * ~]
+  Min  X [-1200]  Y [100]  Z [0]
+  Max  X [ -510]  Y [400]  Z [0]
+       X [+-]     Y [+-]   Z [+-]
+```
+
+- a particle rolls one chance and lands on the line from Min to Max, so the channels move
+  together, and the hint on Min and Max says so. It is the engine's own draw, not a box
+- random sign draws the ends or their negatives, the side picked by the same roll. A colour has
+  no sign
+- the randomizer owns the base: each channel's base is the end farther from 0, and its table
+  multiplies it from Min over base to Max over base, so a channel whose base was 0 still draws
+- a value reads as Random where its curve holds one level and it carries tables. A curve that
+  animates reads as Curve, and the dock draws its spread
+- Random from Constant gives the value a curve at its own level and a table per channel, both
+  ends on that level. Curve from Random clears every table slot to null, the schema's default
+- a one-line host, such as a graph node or an emitter table cell, keeps the row's chip instead
+  of the fields
+
 ### The random spread
 
 `probabilityTables` is one nullable slot per channel, and a table is the chance against a factor:
@@ -2285,20 +2554,42 @@ Z  0  fixed                  |  -----------|-----------
 
 - one lane per channel, on its own scale with round ticks and 0 marked where it falls inside, so
   Y at 10 gets the width X at 55 does
-- a label column on the left, as wide as the widest label: channel, result range with unit, shape
-- density as a filled step area in the channel's hue, a split's gap hatched
+- one row per channel, read left to right: the channel, the range's least, the lane, the range's
+  most with the unit, and the shape switch. A pane too narrow to give the lane room takes each channel on
+  two lines, the fields and then the lane across the whole width, a fixed channel's included, so
+  every row keeps one shape
+- a uniform or split draw as its bar or bars, a light fill inside solid edges as the Graph pane's
+  value node draws one, and a custom table as density in a filled step area over a faint outline
+  of its whole span, both in the channel's hue, a split's gap hatched. A density bin that draws at
+  all reaches at least an eighth of the peak, so a thin tail out to the range's end stays visible
 - a fixed or filler channel as a thin dim lane with one tick at its value
 - after the lane, the value at the pin and a keys button
 - lanes scroll when the dock is short, and a muted chip hides its lane
 
-Under [where editing is allowed](#where-editing-is-allowed), a block end drags min or max and a
-fixed channel's tick drags open into a range.
+**Editing.** Under [where editing is allowed](#where-editing-is-allowed), every edit writes the
+table and is one undo step:
+
+- the label's two fields are the least and the most the channel draws, in the value's unit where
+  the base holds still and as `×` a factor where it moves. A split's fields are its two sizes,
+  behind `±`, which both halves share
+- each end of a lane's block drags, or steps with the arrow keys, and a split's outer ends move
+  together, as do its inner ones. The number follows the handle while it is held, and the lane
+  leaves a quarter of room past the ends to drag into
+- three icons under the label switch the shape, their names on hover: fixed, uniform and split.
+  A fixed channel opens a quarter either side of its factor, and a split takes the sizes of the
+  range it came from. A custom table keeps its keys and names itself beside them
+- channels drawing one table over one base are linked, marked with a link icon, and an edit of
+  one writes each, so a uniform scale stays uniform. The toolbar's link button edits each channel
+  alone
+- a set of fixed tables still draws its lanes, so every channel offers its shapes
+- a curve writing no tables gets **Add random** on the toolbar, a fixed table per channel
 
 **A value that animates keeps its time plot, with a density edge.** A random channel carries a band
 from the curve at its least factor to the curve at its most, and a split carries two. A column on
 the plot's right edge shares the value axis and draws the density at one time: the cursor's, else
 the playhead's, drawn as a vertical line. A birth value samples at the emitter's life ratio, so
-its playhead is known. A per-particle curve has none and rests at 0. A readout row per channel
+its playhead is known. A per-particle curve samples at the life ratio of the particle the run
+follows, the one the emitter's surface shows, and rests at 0 while none lives. A readout row per channel
 under the plot reads that time: range, unit, shape, pin value and a keys button.
 
 ```
@@ -2318,14 +2609,15 @@ null beside a table reads `no table`, and lists of two lengths read as such, bot
 tone under a line saying the game crashes on the first and reads the second as 0.
 
 **The keys button opens a popover** of chance, factor and result, the factor range over it. A key
-outside 0 to 1 draws dim as `never rolled`.
+outside 0 to 1 draws dim as `never rolled`. It sits on a split or a custom channel, whose fields
+do not say every key, and its chance and factor are fields where the table can be written.
 
 **A colour with no keys draws one bar from chance 0 to 1,** every colour the roll gives, with the
 pin marked on it. A colour that animates draws its ramp at chance 0, at 1, and at the pin.
 
-**The chance can be pinned.** The toolbar's slider sets it, and so does a click or drag on any
-lane, which moves every lane's marker together, because one roll serves every channel. It pins
-every birth of the whole run, children included, and the viewport says so in its corner with a
+**The chance can be pinned.** Each birth draws its own chance until the Pin switch behind the dice button is
+on, and its slider then sets the chance. Nothing else sets it: a lane or a ramp only marks it,
+every lane together, because one roll serves every channel. It pins every birth of the whole run, children included, and the viewport says so in its corner with a
 cross that lets it go. The run keeps drawing its own rolls under a pin, so letting go returns the
 same run. The transport carries the same slider, per [the timeline](#the-timeline), because the
 pin belongs to the run rather than to any one reading of it, and
@@ -2360,54 +2652,83 @@ promises nothing it cannot do.
 
 ## Editing
 
+### The sandbox
+
+A document opens in a sandbox, the data source it reads from and writes to (ADR-0056). A tab
+opened in a project opens in the project's sandbox, which stacks the project's layers over the
+game in the order a build applies them. The game sandbox is the installed game alone.
+
+| Opened in | A layer file | A game chunk a layer ships | A game chunk no layer ships | A loose file |
+| --------- | ------------ | -------------------------- | --------------------------- | ------------ |
+| Project   | Editable     | The layer's file, editable | Declared. ADR-0042          | Read-only    |
+| Game      | Its project  | The game's copy, read-only | The game's copy, read-only  | Read-only    |
+
+A path resolves to the copy the build uses, so a game chunk a layer ships opens as that layer's
+file and its edits save to it. A layer file is always read in its own project, so every tab of
+it shares one tree and one save.
+
+**The Sandbox options** lead the header row of a bin tab. The button names the sandbox,
+`Sandbox (<name>)`, then where the next edit lands: the target layer's glyph and title, and the
+chosen module when one is chosen. A read-only tab shows a lock and no target. The hover card says
+what a sandbox is and where this tab's edits go. The options contain:
+
+- **Read from**: the project and the game, which switch the tab in place. The game opens the
+  install's copy of the same path, read-only, and is disabled for a file the install holds no
+  copy of, with that reason under it.
+- For a declared document, three rows that each name their current value and open their list
+  in a submenu, so the options stay short however many layers and modules a project holds:
+  - **Active layer**: the project's layers. Left out for a project of one layer.
+  - **Module**: Automatic, every module of the active layer, and **New module**, which adds
+    an empty module at the end and chooses it. A `target` module is listed disabled, with the
+    reason under it. The outline names and renames modules.
+  - **Mark changes from**: every layer, with how many rows its declarations change in this
+    file. A layer switched off leaves its rows unmarked, and the active layer always marks its
+    own. Left out for a project of one layer.
+
+  See [Game data declarations](#game-data-declarations).
+
+A link followed out of a tab opens in that tab's sandbox, so a link out of a declared document
+opens declared, and one out of a game tab opens in the game.
+
 ### Where editing is allowed
 
-The rule falls out of `AssetRef` and needs no new state.
-
-| Source                     | Mode      | Why                                                 |
-| -------------------------- | --------- | --------------------------------------------------- |
-| `Layer`                    | Editable  | The project's own file                              |
-| `GameChunk`                | Read-only | Inside the install, which the manager never writes  |
-| `GameChunk` with a project | Declared  | An edit writes the project's declarations. ADR-0042 |
-| The same, declarations off | Read-only | The project's declarations draw applied, no edit    |
-| `File`                     | Read-only | Anywhere on disk, and owned by nobody the app knows |
-
-A game chunk carries its project when it opens from that project's game tree. The same chunk
-opened from the Library carries none and stays read-only.
-
-The source is one of two gates. A `PTCH` file is read-only from either side of that table, for
-a reason of its own that the next section gives. The header of a read-only document names the
-gate it stands behind: the install, a file outside a project, or a patch layer.
+The sandbox is one gate, and the file is the other. A `PTCH` file is read-only in any sandbox,
+for a reason of its own that [A patch bin is read-only](#a-patch-bin-is-read-only) gives. The
+header of a read-only document names the gate it stands behind: the game sandbox, a file outside
+a project, a patch layer, or a project's declarations turned off.
 
 A read-only document draws the same blocks with the widgets disabled, and offers **Copy into
 layer**, which writes the chunk into the active project's layer and reopens it editable. That
 is the route a modder wants anyway, because a change to a game file is a change that has to
 live in a mod.
 
-### Declaring from a game bin
+### Game data declarations
 
 A declared document draws the game's copy of the chunk with the project's declarations
 applied: every layer in build order, through the function and the schema the overlay build
 uses. What the reader sees is what the build makes.
 
-| Part           | What it does                                                             |
-| -------------- | ------------------------------------------------------------------------ |
-| The layer chip | Names the layer an edit writes to, in the toolbar where the lock stands  |
-| The mark       | Stands on each row a declaration of the chosen layer touches             |
-| The hover      | Names the layer and spells the game's value as a declaration writes it   |
-| A leaf edit    | Writes one key under an `entries` module of the layer's `game_data.yaml` |
-| Undo and redo  | Restore the manifest text from before and after the edit                 |
+| Part                | What it does                                                             |
+| ------------------- | ------------------------------------------------------------------------ |
+| The Sandbox options | Name the layer an edit writes to and the module its new keys join        |
+| The mark            | Stands on each row a declaration of the chosen layer touches             |
+| The hover           | Names the layer and spells the game's value as a declaration writes it   |
+| A leaf edit         | Writes one key under an `entries` module of the layer's `game_data.yaml` |
+| Undo and redo       | Restore the manifest text from before and after the edit                 |
 
-The chip opens on the layer last used for the project, else `base`, and switches among the
-project's layers in build order. A declaration another layer holds draws applied and
-carries no mark.
+The options open on the layer last used for the project, else `base`, and switch among the
+project's layers in build order. A declaration another layer holds draws applied, and its row
+carries that layer's glyph. The hover lists each layer that declares the row, in build order,
+with the value it writes, and the game's value. The build keeps the last layer's. Mark changes
+from turns a layer's marks off, per project, in `.ltk/editor.json`.
 
 **Use game data declarations** is a per-project setting in `.ltk/editor.json`, flipped from
-the chip's menu or the command bar. A project that has not chosen reads it as on when a layer
-already holds a `game_data.yaml`, `.yml`, `.toml` or `.json`, and as off otherwise. Off, the
-document still draws the declarations applied with their marks, so the view matches the
-build, and takes no edit. The chip stays with a lock in place of the layer glyph, the module
-chip beside it is disabled, `+ Object` is gone, and the row menu drops the object edits,
+the command bar. It is not in the Sandbox options, which are per tab. A project that has not
+chosen reads it as on when a layer already holds a `game_data.yaml`, `.yml`, `.toml` or
+`.json`, and as off otherwise. Off, the document still draws the declarations applied with their
+marks, so the view matches the build, and takes no edit. The Sandbox button shows a lock in
+place of the target, the layer and module choices are disabled under a line saying declarations
+are off, `+ Object` is gone, and the row menu drops the object edits,
 **Paste reference**, **Merge reference** and **Move to module**. A strip under the toolbar
 offers **Copy into layer** and **Declare edits**, which turns the setting on.
 
@@ -2439,32 +2760,38 @@ whole value is set in their place and the signed keys of that path are dropped: 
 value in a list holding the value twice is one such case. An edit under a whole value the
 layer already sets joins that set. A row whose declaration sets a whole list or map says so
 on its mark, because a later change of the game's no longer reaches it. An edit that neither
-form reproduces is refused, and the manifest is left as it was.
+form reproduces is refused, and the manifest is left as it was. Where a later layer declares
+the value, the refusal names that layer, because the build keeps its value over the edit's.
 
 A map is compared by its entries in any order, because an addition lands at the end of one.
 
 An object is created and removed through an `objects` entry of a `target` module for the
 chunk (ADR-0049).
 
-| Action                  | Where                        | Declaration                                  |
-| ----------------------- | ---------------------------- | -------------------------------------------- |
-| Duplicate as new object | An object row's menu         | `<name>: {clone: <object>}`                  |
-| `+ Object`              | The toolbar, beside the chip | `<name>: {class: <class>}`                   |
-| Remove object           | An object row's menu         | `<object>: {remove: true}`, or drops a clone |
-| Restore object          | A removed object row's menu  | Drops the `remove: true`                     |
+| Action                  | Where                       | Declaration                                  |
+| ----------------------- | --------------------------- | -------------------------------------------- |
+| Duplicate as new object | An object row's menu        | `<name>: {clone: <object>}`                  |
+| `+ Object`              | The toolbar                 | `<name>: {class: <class>}`                   |
+| `+ Object`, a template  | The toolbar                 | `<name>: {class: <class>, set: <template>}`  |
+| Remove object           | An object row's menu        | `<object>: {remove: true}`, or drops a clone |
+| Restore object          | A removed object row's menu | Drops the `remove: true`                     |
 
 A new object is named on a line after the file's objects, never in a dialog. `+ Object`
 opens it on a class search: the classes the file holds first, then every class the schema
-knows. A duplicate opens it on the name. The name starts as `Mods/<mod>/<source or class>`,
-the prefix the game-data reference suggests, with the caret at its end. Enter declares the
-object, and Escape steps back to the class or closes the line. A name the chunk holds
+knows. A particle system then picks what it starts from: Blank, or a system template such as
+Explosion (ADR-0058). A duplicate opens it on the name. The name starts as
+`Mods/<mod>/<source, template or class>`, the prefix the game-data reference suggests, with the
+caret at its end. Enter declares the object, and Escape steps back to the template, to the class
+or closes the line. A template writes its whole value in the object's `set`, its
+`particleName` the name's last segment and its `particlePath` the name, as one undo step, and
+the system opens on the template's rig. A name the chunk holds
 already is refused on the line under the name, which stays open.
 
 Removing an object the layer created drops its creation, so no `remove: true` is written
 for it. An object the layer removes keeps its row, struck through with a `removed` mark: it
 opens nothing, takes no edit, and its menu offers Restore object and Copy path. An object
 the layer creates carries the layer's glyph on its row. A creation or a removal the apply
-skips draws its reason on the object's row, or beside the chip where the chunk holds no
+skips draws its reason on the object's row, or in the toolbar where the chunk holds no
 such object.
 
 Three edits are refused with the reason. A path through a field no table names has no
@@ -2480,8 +2807,8 @@ What the apply reports draws on the row it names, over every layer of the projec
 the chosen one alone. A skipped key draws a warning with its reason, the key as the manifest
 spells it and the layer holding it. A property typed from the game's copy, where the schema
 says nothing, draws as information. A key that reaches no row lists under its object, and a
-diagnostic that names no object of the chunk, a link or an override file, draws beside the
-layer chip.
+diagnostic that names no object of the chunk, a link or an override file, draws in the
+toolbar.
 
 The row menu carries the declaration actions.
 
@@ -2514,6 +2841,15 @@ row.
 
 One re-apply over the largest skin bin of the install (Viego, 3.7 MiB, 483 objects) takes
 65 ms in a release build.
+
+### A game bin a layer ships
+
+A game chunk that a layer of the project ships opens as that layer's file, which is the copy the
+build packs. Its edits save to the file, as any layer file's do (ADR-0040).
+
+The build then applies every layer's `game_data.yaml` over that file. A row that a declaration
+overrides shows the declaring layer's glyph. Its hover lists each layer that declares it in build
+order, the value each writes, and the file's own value. The build packs the last layer's value.
 
 ### A patch bin is read-only
 
@@ -2726,6 +3062,113 @@ brings them back.
 Each of these is an edit, with the undo of every other. A removed item or entry comes back at its
 index, a move goes back, and a key edit restores the key. The rows a reader expanded under a list
 follow an insert, a remove, a move and a key edit, so an expanded item stays the one expanded.
+
+### Duplicating, pasting and deleting an emitter
+
+An emitter of a system's `complexEmitterDefinitionData` or `simpleEmitterDefinitionData` is
+duplicated, copied, pasted and deleted whole, with every hash, class, link and nested struct
+under it.
+
+| Where                                     | Duplicate emitter | Copy emitter | Paste emitter                  | Delete emitter |
+| ----------------------------------------- | ----------------- | ------------ | ------------------------------ | -------------- |
+| The Graph menu on a master node           | Yes               | Yes          | After the node                 | Yes            |
+| The Graph menu on the canvas              |                   |              | At the end of the complex list |                |
+| The inspector's actions, on the open card | Yes               | Yes          | After the card                 | Yes            |
+| The Graph pane, one master node selected  | `Ctrl+D`          | `Ctrl+C`     | `Ctrl+V`, after it             | `Delete`       |
+| The Graph pane, no master node selected   |                   |              | `Ctrl+V`, at the end           |                |
+
+**A duplicate lands right after its source**, and a paste after the emitter it was asked on, in
+that emitter's list. Each, a delete included, is one `editProperty` edit of the list, so one undo step, and a
+declared document declares the list as any other list edit.
+
+**A copy is JSON text on the clipboard.** It carries `"format": "ltk-manager/bin-value"`, the
+class, and the value as `ltk_meta` serializes it, so a paste reads it back exactly in another
+system or another open document. Copy works on a read-only document, such as a game file, and a
+paste needs a document that takes edits. Where the webview refuses to read the clipboard, a
+paste takes the last copy made in the session.
+
+**The name is unique within the system.** An `emitterName` another emitter of the system's lists
+holds gains `_copy`, then `_copy2` and on, after any copy suffix it already carries: duplicating
+`Spark` gives `Spark_copy`, and duplicating `Spark_copy` gives `Spark_copy2`. A pasted name no
+other emitter holds stays. A child particle set names a system rather than an emitter, so
+nothing else is renamed.
+
+**A paste refuses what is not an emitter.** Clipboard text that is no copy, or a copy of another
+class, leaves the list as it was, and a toast names the reason as for every refused structural
+edit.
+
+### Adding an emitter from a template
+
+A VFX template is a tuned emitter or system the editor ships, stored as a copied emitter is
+(ADR-0058). Add from template sits beside Paste emitter in the Graph menu on a master node and on
+the canvas, and in the inspector's actions on the open card. The quick add lists the emitter
+templates too.
+
+**A template lands where a paste would**, after the emitter it was asked on, else at the end of
+the complex list, as one property edit and so one undo step. Its emitter keeps the template's
+English name, such as `Sparks`, and a name the system already holds gains a number: `Sparks2`,
+`Sparks3` and on.
+
+**A system template lands every emitter it holds**, such as Explosion's flash, fireball, debris,
+smoke, ring, heat and scorch, in the same single edit, each named apart. The run then plays on the
+template's rig, such as Missile's flight, unless the author or a context chose the rig in hand,
+and the rig pill names the template as its source.
+
+**A template names only assets the game ships**, under `assets/shared/particles/`, so it draws
+at once and the project gains no file. The plan and the list of templates are
+`docs/plans/vfx-templates.md`.
+
+### Editing a node's structure in the Graph pane
+
+A node under an emitter stands for a value of the file, so the Graph pane edits the value's
+place as well as its fields. Each gesture is one edit, so one undo step.
+
+| Gesture                                              | Edit                                                      |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| Forces, in the Effects header's plus menu            | A force of the kind picked, at its game defaults          |
+| Add item, under a list node's items or in its menu   | An item of the last item's class, at the list's end       |
+| Duplicate, or `Ctrl+D` on one node selected          | A copy of a list item, right after it                     |
+| Remove item or Remove force, or `Delete` on one node | A list or map item leaves its list                        |
+| Reset to default, or `Delete` on one field's node    | The field leaves its holder, which then reads the default |
+
+**Add field is a plus on a header.** Each group heading of an emitter node lists the group's
+unwritten fields, and the emitter's own header lists those of the groups it writes nothing of,
+a submenu per group. A Texture node's header lists the texture and render fields, and the texture's
+effects, alpha erosion, distortion and reflection, which the node draws as sections of their own
+under its rows rather than as nodes. A Geometry node's header lists the spawn shape, the primitive
+and the fields that orient it, and draws the shape and the primitive as sections. The Effects
+group always draws, so its menu offers the forces before the emitter holds any, and the fields
+leave out the force collection, which adding a force writes when it is missing.
+
+#### Adding from the keyboard
+
+**Tab opens the quick add.** With the Graph pane focused, Tab or Shift+A opens a search box at
+the pointer, and a double click on bare canvas opens one at the click. Over an emitter's node, or
+with one selected, it lists that emitter's unwritten fields under their groups, then the forces.
+It always lists New emitter, which appends a complex emitter named `Emitter1`, `Emitter2` and on,
+and the emitter and system templates, which land after the emitter it was opened over, else
+last.
+Typing narrows the list by an entry's name or its group, Enter adds the highlighted entry, and
+Escape or a press outside closes it. A field added this way shows at its default on its node,
+which unfolds, until an edit writes it.
+
+**An empty socket plugs in a node.** A value field that holds a constant has a hollow socket on
+its left edge. A drag out of it that ends on the canvas, or a click on it, opens the quick add
+with what plugs in: Curve, a flat curve at the constant's level, or Random range, both ends on
+the constant. The field then carries its curve and draws its value node.
+
+**A file drops from the content tree.** A file dragged out of the content tree onto a path field
+of a node writes its game path there, where the field takes that kind of file. Dropped on an
+emitter's node away from such a field, a texture writes the emitter's `texture`, and a mesh makes
+its primitive a `VfxPrimitiveMesh` holding it. Only a file under a `.wad.client` folder has a
+game path, so only such a file drags. The drag runs on pointer events rather than the webview's
+drag and drop, which the window's own file drop takes on Windows.
+
+**A keyed value reads at the playhead on the canvas.** A value node's curve or colour band carries
+a line at the run's time, with a dot per channel on a curve, and its header reads the value
+there, a colour as a swatch. A value drawn in its socket carries the line alone, so its row
+holds still. The time is the curve pane's: the emitter's life ratio for a birth value, and the life
+ratio of the particle the run follows for any other, with no line or reading while none lives.
 
 ### Validation
 

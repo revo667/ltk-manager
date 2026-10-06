@@ -3,6 +3,7 @@ import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type Group, Mesh, MeshLambertMaterial, NoColorSpace } from "three";
 
+import { useDisposable } from "@/hooks";
 import type { AssetRef, BinDocumentId, MaterialProgram, SkinModel } from "@/lib/tauri";
 import {
   AXIS_SIGN,
@@ -21,19 +22,25 @@ import {
   viewportQueries,
 } from "@/modules/viewport";
 
+import {
+  AtlasStill,
+  type AtlasStillKind,
+  type AtlasStillStatus,
+} from "../../bin/atlas/components/AtlasStill";
 import { useBinDocument } from "../../bin/documents/hooks/useBinDocument";
 import { materialQueries } from "../../bin/material/api/materialQueries";
 import { skinQueries } from "../../bin/skin/api/skinQueries";
 import { bindingOf, textureAssets } from "../../bin/skin/utils/skinScene";
 import { Passes } from "../../bin/vfx/rendering/components/Passes";
+import { useObjectPreviewKind } from "../hooks/useObjectPreviewKind";
 import { EMPTY_OUTCOME, FAILED_OUTCOME, type PreviewOutcome } from "../state/previewStills";
 import { fallbackTexture } from "../utils/materialFallback";
-import { objectPreviewKind } from "../utils/objectPreview";
 import type { ObjectRowNode } from "../utils/objectTree";
 import { PREVIEW_GROUND, PREVIEW_MIP_WIDTH } from "../utils/previewFrame";
 import { ParticleRead } from "./ParticlePreview";
 import { PreviewCapture } from "./PreviewCapture";
 import { PreviewSettled } from "./PreviewSettled";
+import { UiIconPreview } from "./UiIconPreview";
 
 /** How fast a hovered character turns, in radians per second. Matches the material turntable. */
 const TURN_RATE = 0.5;
@@ -53,7 +60,7 @@ interface SceneProps {
 export default function ObjectPreviewScene({ node, playing, onOutcome, onProgress }: SceneProps) {
   const declaration = node.declarations[0]!;
   const { state } = useBinDocument(declaration.asset, node.objectHash);
-  const kind = objectPreviewKind(node);
+  const kind = useObjectPreviewKind()(node);
 
   useEffect(() => {
     if (state.status === "open") onProgress();
@@ -76,6 +83,14 @@ export default function ObjectPreviewScene({ node, playing, onOutcome, onProgres
     return <MaterialRead {...read} />;
   }
 
+  if (kind === "ui") {
+    return <UiIconPreview {...read} />;
+  }
+
+  if (kind === "view" || kind === "element" || kind === "font") {
+    return <AtlasRead {...read} kind={kind} playing={playing} />;
+  }
+
   return <SkinRead {...read} playing={playing} />;
 }
 
@@ -83,6 +98,32 @@ interface ReadProps {
   document: BinDocumentId;
   entry: string;
   onOutcome: Report;
+}
+
+/** A UI view, element or font drawn by the Atlas renderer, copied once it has settled. */
+function AtlasRead({
+  document,
+  entry,
+  onOutcome,
+  kind,
+  playing,
+}: ReadProps & { kind: AtlasStillKind; playing: boolean }) {
+  const [status, setStatus] = useState<AtlasStillStatus>("pending");
+
+  return (
+    <>
+      <AtlasStill
+        document={document}
+        entry={entry}
+        kind={kind}
+        playing={playing}
+        onStatus={setStatus}
+      />
+      {status === "empty" && <PreviewSettled outcome={EMPTY_OUTCOME} onOutcome={onOutcome} />}
+      {status === "failed" && <PreviewSettled outcome={FAILED_OUTCOME} onOutcome={onOutcome} />}
+      <PreviewCapture ready={status === "ready"} onOutcome={onOutcome} />
+    </>
+  );
 }
 
 function SkinRead({ document, entry, onOutcome, playing }: ReadProps & { playing: boolean }) {
@@ -262,8 +303,8 @@ function TexturedSphere({ asset, onOutcome }: { asset: AssetRef; onOutcome: Repo
     report,
   });
   const map = textures.get(FALLBACK_TEXTURE) ?? null;
-  const geometry = useMemo(() => previewGeometry("sphere", false), []);
-  const material = useMemo(() => new MeshLambertMaterial(), []);
+  const geometry = useDisposable(() => previewGeometry("sphere", false), []);
+  const material = useDisposable(() => new MeshLambertMaterial(), []);
   const sphere = useMemo(() => {
     const mesh = new Mesh(geometry, material);
     mesh.scale.set(...AXIS_SIGN);
@@ -274,8 +315,6 @@ function TexturedSphere({ asset, onOutcome }: { asset: AssetRef; onOutcome: Repo
     material.map = map;
     material.needsUpdate = true;
   }, [material, map]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  useEffect(() => () => material.dispose(), [material]);
 
   useFrame((_, delta) => {
     sphere.rotation.y += delta * TURN_RATE;

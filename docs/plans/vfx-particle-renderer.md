@@ -157,6 +157,9 @@ Named behaviours are presets over that pair rather than cases in the evaluator. 
 looping run restarts on `runLength`, which for a path is the flight time, because a missile's system
 dies where the missile lands, and for everything else is the system's own span.
 
+ADR-0057 replaced the presets with a carrier and a playback that the system picks for itself,
+and added a Continuous playback that never starts over.
+
 **Where a run stands is read off the clock, never stored.** `phaseAt` is `time` for a rig that plays
 once and `time % runLength` for one that loops, so nothing the rig remembers about when the reader
 picked it can make a play and a seek disagree, which decision 2.6 does not allow. A rig that counted
@@ -170,8 +173,9 @@ decision 2.5 keeps it across an edit, so a drag along a slider moves what it is 
 
 The scrub spans `max(systemSpan, runLength)`, so a flight longer than the effect is reachable.
 
-`flightPath` centres its path on the origin at half a champion's height, so an effect authored about
-its own origin is on screen for the whole run and clears the ground plane. The path's direction is
+`flightPath` centres its path on the origin, so an effect authored about its own origin is on screen
+for the whole run. A rig that moves flies at half a champion's height, and one that stands still
+stands on the ground, as the skin, spell and map previews do (ADR-0057). The path's direction is
 not a control: the reader orbits the camera instead.
 
 **A moving origin alone draws no trail**, which is why `bindWeight` (`0xca406316`) joined the field
@@ -203,7 +207,7 @@ Primitive behaviour indexes by a number with no name of its own. The number is t
 | 4    | `CAMERATRAIL`         | `VfxPrimitiveCameraTrail`       | —                                                                       |
 | 5    | `ARBITRARYTRAIL`      | `VfxPrimitiveArbitraryTrail`    | —                                                                       |
 | 6    | `BEAM`                | `VfxPrimitiveBeam`              | Folds one further colour factor from the primitive sub-object           |
-| 7    | `PLANAR_PROJECTION`   | `VfxPrimitivePlanarProjection`  | —                                                                       |
+| 7    | `PLANAR_PROJECTION`   | `VfxPrimitivePlanarProjection`  | A decal per particle through `UNLIT_DECAL`, "Planar projection" in T8   |
 | 8    | `CAMERA_UNIT_QUAD`    | `VfxPrimitiveCameraUnitQuad`    | The camera quad's builder at half the factor, so it spans `scale0` once |
 | 9    | `CAMERA_SEGMENT_BEAM` | `VfxPrimitiveCameraSegmentBeam` | Folds one further colour factor. Excluded from direction orientation    |
 | 11   | `ATTACHED_MESH`       | `VfxPrimitiveAttachedMesh`      | `isDirectionOriented` applies. Orientation comes from the attachment    |
@@ -611,7 +615,7 @@ by a system whose look it fixes:
 | A mesh's fragment      | A mesh runs the quad's whole fragment pass: both uv layers, the palette, erosion, `LOCK_ALPHA` and the `falloff` uniform an untextured draw takes. The colour ramp stays a per-emitter uniform | `meshMaterial` and `fragmentTests` shared with the quad                |
 | A mesh's scale         | `isUniformScale` is read, and the first scale component serves all three axes                                                                                                                  | `SPREAD.setScalar(DRAWN.scale[0])` in `Meshes.tsx`                     |
 | A mesh's turn          | The one rotation channel is the first, about `X`, off `Ezreal_Base_R_mis` authoring `birthRotation0 (90, 0, 0)`                                                                                | `meshTurn` in `integrate.ts`                                           |
-| A path rig's frame     | A rig flies on its local `Y`: `X` right, `Y` along the flight, `Z` down, the one proper rotation. Shipped missiles author everything on `Y`                                                    | `flightInto` in `basis.ts`                                             |
+| A path rig's frame     | A rig flies on its local `Y`: `Y` along the flight, `Z` up and `X` left, the one proper rotation. Shipped missiles author everything on `Y`                                                    | `flightInto` in `basis.ts`                                             |
 | A path rig's run       | The system stops where it lands, so a run is the flight plus `lingerTail` and the scrub spans it                                                                                               | `landed` in `rig.ts`, and `scrubSpan` is gone                          |
 | An arbitrary quad's uv | The texture is sampled transposed, `u = 0.5 - corner.y` and `v = corner.x + 0.5`, read off three textures decoded from the WAD. A transpose mirrors, which no shipped texture could settle     | The arbitrary path of the quad vertex shader                           |
 | A mesh's handedness    | The viewport mirrors on `X`, so a mesh's vertices and normals mirror with it and every face rewinds, and the material culls unless `disableBackfaceCull` is written                            | `mirrorX` and `rewind` in `meshBuffer.ts`, `backfaceCull` on the model |
@@ -763,9 +767,12 @@ only evidence for it is what the shipped systems author against it.
   the art. Under the yaw the same quad stands 70 tall across the flight and reads as a sliver.
 - `leading_glow1` is the same kind and turns with it.
 
-So the frame goes back to `flightInto`: local `Y` along the flight, `X` to its right, `Z` down.
-The `90` degrees about `X` that separates it from a yaw is real, but it belongs to the object's
-frame rather than to an artist's `birthRotation0`, and an emitter that authors no rotation cannot
+So the frame goes back to `flightInto`: local `Y` along the flight, `Z` up and `X` to its left.
+`Xerath_Base_E_mis` settles the sign of `Z`: its `GroundGlow` is an unrotated arbitrary quad
+spawned by a point shape at `(0, 0, -100)`, which lies flat under the missile only when `-Z` is
+down, and floated above it while the frame put `Z` down.
+The turn that separates it from a yaw, a quarter about `X` and a half about `Y`, is real, but it
+belongs to the object's frame rather than to an artist's `birthRotation0`, and an emitter that authors no rotation cannot
 be supplying it.
 
 A census of `birthRotation0` over 243,307 mesh emitters closed it from the other side. Of the
@@ -2535,6 +2542,38 @@ every block is a plain dissolve, and the tail at `0.1` to `0.5` is a band burnin
 map samples at the base layer's own uv, a mesh at its own, under `erosionMapAddressMode` as
 the sampler receives it, unremapped. `erosionDriveSource` reaches no shader and is read by
 nothing here.
+
+**Planar projection.** `VfxPrimitivePlanarProjection` lays each particle on the ground as a
+decal. Read in 16.17.8057408, where both families reach one projector
+(`0x1412F8790`): the simple draw (`0x1412C4AC0`) and the complex batch's kind-7 branch
+(`0x1412F578D`). Per live particle the projector takes the ground position, a half-width and
+half-height, a turn in degrees, `COLOR_UV`, `MODULATE_COLOR` and a vector of the particle's
+height, `mYRange` and `mFading`. It queries the map triangles under the footprint's bounding box
+and redraws them with `Environment/UNLIT_DECAL_VS` and `UNLIT_DECAL_PS`, which
+`VfxEmitter_SelectShaderPermutation` picks for kind 7 on every pass, distortion included.
+
+| Input            | Simple emitter            | Complex emitter                                                |
+| ---------------- | ------------------------- | -------------------------------------------------------------- |
+| Half-extents     | scale times `scaleBias`   | `scale.x` by `scale.z`, `scale.x` twice under `isUniformScale` |
+| Turn, degrees    | the rotation stream       | `deg(atan2(-m00, m02))` wrapped, less 270                      |
+| `MODULATE_COLOR` | white                     | the particle's colour                                          |
+| `COLOR_UV`       | the colour lookup streams | the colour lookup                                              |
+
+The uv matrix is `T(-x, 0, -z) . RotY(turn) . S(1/2w, 1, 1/2h) . T(0.5, 0, 0.5)` under the row
+vector convention, and the vertex shader flips `v`. The complex turn undoes the particle's own
+yaw, so the texture lies along the particle's `X` and `Z`. The vertex shader fades by height:
+with `d = |surface.y - particle.y|` the decal is whole while `d <= mYRange` and scales its alpha
+by `1 - (d - mYRange) / mFading` past it. The `.troy` loader stores `p-projection-y-range` at
+`+0` and `p-projection-fading` at `+4` of the block, which is the order the projector reads. The
+pixel shader is the texel times the ramp at `COLOR_UV` times `MODULATE_COLOR` times the fog of
+war, with no vertex colour and none of the emitter's uv transform, cell or flipbook.
+`colorModulate` is read by no draw.
+
+`Projections.tsx` draws the footprint itself as one quad at `GROUND_LEVEL`, because the
+preview's ground is flat, with `OVERLAY` as its depth offset where the emitter writes none. Four
+things are left out: the fog of war, the `MULT_PASS`, `ALPHA_EROSION` and `PALETTIZE_TEXTURES`
+permutations, terrain, and what a wrapping texture draws past the footprint over a whole map
+triangle. The decal has no game-shader route.
 
 ### T9 — child particle sets
 

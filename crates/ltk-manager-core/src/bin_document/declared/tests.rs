@@ -7,9 +7,10 @@ use ltk_hash::Hash as _;
 use ltk_meta::property::values;
 
 use super::*;
-use crate::bin_document::{BinDocuments, LeafValue, ReadOnly};
+use crate::bin_document::{BinDocumentId, BinDocuments, HistoryStep, LeafValue, ReadOnly};
 use crate::meta_schema;
 use crate::preview::AssetRef;
+use crate::sandbox::{Opening, Sandbox, SandboxRef, layer_chunk_hash};
 
 pub(super) const SKIN: &str = "Characters/Teemo/Skins/Skin0";
 const CHUNK: &str = "data/characters/teemo/skins/skin0.bin";
@@ -323,6 +324,62 @@ fn a_declaration_of_another_layer_applies_with_no_mark() {
 }
 
 #[test]
+fn every_layers_declarations_are_listed_in_build_order_with_their_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = project(dir.path());
+    fs::write(
+        dir.path().join("content/base/game_data.yaml"),
+        format!("version: 1\nmodules:\n  - entries:\n      {SKIN}:\n        skinMeshProperties.selfIllumination: 0.37\n"),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("content/chroma/game_data.yaml"),
+        format!("version: 1\nmodules:\n  - entries:\n      {SKIN}:\n        skinMeshProperties.selfIllumination: 0.5\n"),
+    )
+    .unwrap();
+
+    let declarations = declared(project).declared_overrides();
+
+    let listed: Vec<(&str, &str, Option<&str>)> = declarations
+        .iter()
+        .map(|declaration| {
+            (
+                declaration.layer.as_str(),
+                declaration.mark.path.as_str(),
+                declaration.value.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("base", glow_path().as_str(), Some("0.37")),
+            ("chroma", glow_path().as_str(), Some("0.5")),
+        ]
+    );
+    assert_eq!(declarations[0].mark.game.as_deref(), Some("0.0"));
+}
+
+#[test]
+fn an_edit_a_later_layer_overrides_is_refused_naming_that_layer() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = project(dir.path());
+    fs::write(
+        dir.path().join("content/chroma/game_data.yaml"),
+        format!("version: 1\nmodules:\n  - entries:\n      {SKIN}:\n        skinMeshProperties.selfIllumination: 0.5\n"),
+    )
+    .unwrap();
+    let mut document = declared(project);
+
+    assert_matches!(
+        document.set_leaf(h(SKIN), &glow_path(), LeafValue::Float { value: 0.37 }),
+        Err(BinDocumentError::Overridden { layer, .. }) if layer == "chroma"
+    );
+    assert!(!dir.path().join("content/base/game_data.yaml").exists());
+    assert!((glow(&document) - 0.5).abs() < f32::EPSILON);
+}
+
+#[test]
 fn an_edit_lands_in_the_chosen_layer() {
     let dir = tempfile::tempdir().unwrap();
     let mut document = declared(project(dir.path()));
@@ -342,6 +399,30 @@ fn an_edit_lands_in_the_chosen_layer() {
 
     assert!(manifest(dir.path(), "chroma").contains("championSkinName: Jade"));
     assert!(!dir.path().join("content/base/game_data.yaml").exists());
+}
+
+#[test]
+fn a_field_only_the_schema_names_is_spelled_by_its_schema_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let context = DeclareContext {
+        project: project(dir.path()),
+        schema: PatchSchema::new(meta_schema::shared(None), None),
+        game: Game::naming(&[SKIN]),
+    };
+    let mut document =
+        BinDocument::declare(game_bin(), ltk_game_data::path_hash(CHUNK), context).unwrap();
+
+    document
+        .set_leaf(
+            h(SKIN),
+            &format!("{:08x}", *h("championSkinName")),
+            LeafValue::String {
+                value: "Jade".to_owned(),
+            },
+        )
+        .unwrap();
+
+    assert!(manifest(dir.path(), "base").contains("championSkinName: Jade"));
 }
 
 #[test]
@@ -386,27 +467,50 @@ fn an_edit_no_declaration_expresses_is_refused() {
     );
 }
 
-fn teemo_chunk(project: Option<String>) -> AssetRef {
+fn teemo_chunk() -> AssetRef {
     AssetRef::GameChunk {
         wad: "Champions/Teemo.wad.client".to_owned(),
         path_hash: format!("{:016x}", ltk_game_data::path_hash(CHUNK)),
-        project,
     }
+}
+
+fn in_project(dir: &Path) -> SandboxRef {
+    SandboxRef::Project {
+        project: dir.display().to_string(),
+    }
+}
+
+/// Open the Teemo chunk in `dir`'s project sandbox as a declared document of `store`.
+fn open_declared(store: &BinDocuments, dir: &Path) -> BinDocumentId {
+    let project_dir = ProjectDir::open(dir).unwrap();
+    store
+        .open_declared(
+            &in_project(dir),
+            teemo_chunk(),
+            ltk_game_data::path_hash(CHUNK),
+            || {
+                let context = declared(project_dir).declared.take().unwrap().context;
+                Ok((game_bin(), context))
+            },
+        )
+        .unwrap()
 }
 
 #[test]
 fn a_declared_game_chunk_takes_edits_only_while_declaring_and_a_bare_one_never() {
     let dir = tempfile::tempdir().unwrap();
     let mut document = declared(project(dir.path()));
-    let inside = teemo_chunk(Some(dir.path().display().to_string()));
 
-    assert_eq!(document.read_only(&inside), Some(ReadOnly::DeclarationsOff));
+    assert_eq!(
+        document.read_only(&teemo_chunk()),
+        Some(ReadOnly::DeclarationsOff)
+    );
 
     document.set_declaring(Declaring::On).unwrap();
-    assert_eq!(document.read_only(&inside), None);
+    assert_eq!(document.read_only(&teemo_chunk()), None);
 
     let mut bare = BinDocument::parse(game_bin()).unwrap();
-    assert_eq!(bare.read_only(&teemo_chunk(None)), Some(ReadOnly::Install));
+    assert_eq!(bare.read_only(&teemo_chunk()), None);
     assert_matches!(
         bare.set_declaring(Declaring::On),
         Err(BinDocumentError::Declaring(_))
@@ -414,9 +518,162 @@ fn a_declared_game_chunk_takes_edits_only_while_declaring_and_a_bare_one_never()
 }
 
 #[test]
-fn the_store_refuses_every_declaring_edit_while_declarations_are_off() {
+fn the_game_sandbox_refuses_every_edit_and_every_save() {
+    let store = BinDocuments::new(std::num::NonZeroUsize::new(2).unwrap());
+    let id = store
+        .open(&SandboxRef::Game, teemo_chunk(), || Ok(game_bin()))
+        .unwrap();
+
+    assert_matches!(
+        store.edit(id, |open| open.set_leaf(
+            h(SKIN),
+            &glow_path(),
+            LeafValue::Float { value: 0.5 }
+        )),
+        Err(BinDocumentError::ReadOnly(ReadOnly::GameSandbox))
+    );
+    assert_matches!(
+        store.save(id),
+        Err(AppError::BinDocument(BinDocumentError::ReadOnly(
+            ReadOnly::GameSandbox
+        )))
+    );
+    assert_eq!(store.read_only(id).unwrap(), Some(ReadOnly::GameSandbox));
+    assert_eq!(store.sandbox_of(id), Some(SandboxRef::Game));
+}
+
+/// Acceptance test 3 of docs/plans/sandbox.md, in the store: one chunk opened in two
+/// sandboxes is two documents.
+#[test]
+fn a_chunk_open_in_the_project_and_in_the_game_is_two_documents() {
+    let dir = tempfile::tempdir().unwrap();
+    project(dir.path());
+    fs::write(
+        dir.path().join("content/base/game_data.yaml"),
+        format!("version: 1\nmodules:\n  - entries:\n      {SKIN}:\n        skinMeshProperties.selfIllumination: 0.37\n"),
+    )
+    .unwrap();
+    let store = BinDocuments::new(std::num::NonZeroUsize::new(4).unwrap());
+
+    let declared = open_declared(&store, dir.path());
+    let game = store
+        .open(&SandboxRef::Game, teemo_chunk(), || Ok(game_bin()))
+        .unwrap();
+
+    store
+        .read(declared, |document| {
+            assert!((glow(document) - 0.37).abs() < f32::EPSILON);
+            Ok(())
+        })
+        .unwrap();
+    store
+        .read(game, |document| {
+            assert!(glow(document).abs() < f32::EPSILON);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(store.sandbox_of(declared), Some(in_project(dir.path())));
+    assert_eq!(store.sandbox_of(game), Some(SandboxRef::Game));
+}
+
+/// Acceptance test 4 of docs/plans/sandbox.md: a game bin that a layer ships opens as the
+/// layer file, and each row a declaration overrides has a mark.
+#[test]
+fn a_layer_file_marks_each_row_a_declaration_overrides() {
     let dir = tempfile::tempdir().unwrap();
     let project_dir = project(dir.path());
+    let shipped = dir
+        .path()
+        .join("content/chroma/Teemo.wad.client")
+        .join(CHUNK);
+    fs::create_dir_all(shipped.parent().unwrap()).unwrap();
+    fs::write(&shipped, game_bin()).unwrap();
+    fs::write(
+        dir.path().join("content/base/game_data.yaml"),
+        format!("version: 1\nmodules:\n  - entries:\n      {SKIN}:\n        skinMeshProperties.selfIllumination: 0.37\n"),
+    )
+    .unwrap();
+
+    let Opening::File(file) = Sandbox::open(in_project(dir.path()))
+        .opening(teemo_chunk())
+        .unwrap()
+    else {
+        panic!("a shipped chunk opens as a file");
+    };
+    assert_matches!(&file, AssetRef::Layer { layer, .. } if layer == "chroma");
+
+    let document = BinDocument::parse(game_bin()).unwrap();
+    let names = Game::naming(&[SKIN, "skinMeshProperties", "selfIllumination"]);
+    let overrides = document.overrides(
+        layer_chunk_hash(&file).unwrap(),
+        &project_dir,
+        names.as_ref(),
+    );
+
+    assert_eq!(
+        overrides,
+        [LayerOverride {
+            layer: "base".to_owned(),
+            mark: DeclaredMark {
+                entry: hex(h(SKIN)),
+                path: glow_path(),
+                property: "skinMeshProperties.selfIllumination".to_owned(),
+                module: 0,
+                module_name: None,
+                sign: DeclaredSign::Set,
+                whole: false,
+                reference: None,
+                game: Some("0.0".to_owned()),
+            },
+            value: Some("0.37".to_owned()),
+        }]
+    );
+}
+
+/// Acceptance test 6 of docs/plans/sandbox.md, in the store: every id stays open across a
+/// layer rename.
+#[test]
+fn a_layer_rename_keeps_every_open_document_and_the_declared_target() {
+    let dir = tempfile::tempdir().unwrap();
+    project(dir.path());
+    let file = dir.path().join("content/chroma/Teemo.wad.client/a.bin");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, game_bin()).unwrap();
+    let owner = dir.path().display().to_string();
+    let layer_file = |layer: &str| AssetRef::Layer {
+        project: owner.clone(),
+        layer: layer.to_owned(),
+        path: "Teemo.wad.client/a.bin".to_owned(),
+    };
+    let store = BinDocuments::new(std::num::NonZeroUsize::new(4).unwrap());
+    let open = store
+        .open(&in_project(dir.path()), layer_file("chroma"), || {
+            Ok(game_bin())
+        })
+        .unwrap();
+    let declared = open_declared(&store, dir.path());
+    store
+        .declare_into(declared, "chroma", DeclaredModuleChoice::Auto)
+        .unwrap();
+
+    store.rename_layer(&owner, "chroma", &ltk_modpkg::Slug::new("jade").unwrap());
+
+    assert_eq!(store.asset_of(open), Some(layer_file("jade")));
+    let reopened = store
+        .open(&in_project(dir.path()), layer_file("jade"), || {
+            panic!("the renamed tree was parsed again")
+        })
+        .unwrap();
+    assert_eq!(store.asset_of(reopened), Some(layer_file("jade")));
+    let state = store.declared_state(declared).unwrap().unwrap();
+    assert_eq!(state.layer, "jade");
+    assert_eq!(state.layers, ["base", "jade"]);
+}
+
+#[test]
+fn the_store_refuses_every_declaring_edit_while_declarations_are_off() {
+    let dir = tempfile::tempdir().unwrap();
+    project(dir.path());
     fs::write(
         dir.path().join("content/base/game_data.yaml"),
         format!("version: 1\nmodules:\n  - entries:\n      {SKIN}:\n        skinMeshProperties.selfIllumination: 0.37\n"),
@@ -424,53 +681,55 @@ fn the_store_refuses_every_declaring_edit_while_declarations_are_off() {
     .unwrap();
     let before = manifest(dir.path(), "base");
     let store = BinDocuments::new(std::num::NonZeroUsize::new(2).unwrap());
-    let id = store
-        .open_declared(
-            teemo_chunk(Some(dir.path().display().to_string())),
-            ltk_game_data::path_hash(CHUNK),
-            || {
-                let context = declared(project_dir).declared.take().unwrap().context;
-                Ok((game_bin(), context))
-            },
-        )
-        .unwrap();
+    let id = open_declared(&store, dir.path());
 
     assert_eq!(
         store.read_only(id).unwrap(),
         Some(ReadOnly::DeclarationsOff)
     );
     assert_matches!(
-        store.patch(id, h(SKIN), &glow_path(), LeafValue::Float { value: 0.5 }),
+        store.edit(id, |open| open.set_leaf(
+            h(SKIN),
+            &glow_path(),
+            LeafValue::Float { value: 0.5 }
+        )),
         Err(BinDocumentError::ReadOnly(ReadOnly::DeclarationsOff))
     );
     assert_matches!(
-        store.declare_reference(id, h(SKIN), &glow_path(), "0x1:a", false),
+        store.edit(id, |open| open.declare_reference(
+            h(SKIN),
+            &glow_path(),
+            "0x1:a",
+            false
+        )),
         Err(BinDocumentError::ReadOnly(ReadOnly::DeclarationsOff))
     );
     assert_matches!(
-        store.undo(id),
+        store.step(id, HistoryStep::Undo),
         Err(BinDocumentError::ReadOnly(ReadOnly::DeclarationsOff))
     );
     assert_matches!(
-        store.declared_module_action(id, "base", &ModuleAction::Remove { module: 0 }),
+        store.edit(id, |open| open.declared_module_action(
+            "base",
+            &ModuleAction::Remove { module: 0 }
+        )),
         Err(BinDocumentError::ReadOnly(ReadOnly::DeclarationsOff))
     );
     assert_matches!(
-        store.create_object(
-            id,
+        store.edit(id, |open| open.create_object(
             "Mods/jade-teemo/Glow",
             &NewObject::Clone {
                 source: hex(h(SKIN)),
-            },
-        ),
+            }
+        )),
         Err(BinDocumentError::ReadOnly(ReadOnly::DeclarationsOff))
     );
     assert_matches!(
-        store.remove_object(id, h(SKIN)),
+        store.edit(id, |open| open.remove_object(h(SKIN))),
         Err(BinDocumentError::ReadOnly(ReadOnly::DeclarationsOff))
     );
     assert_matches!(
-        store.restore_object(id, h(SKIN)),
+        store.edit(id, |open| open.restore_object(h(SKIN))),
         Err(BinDocumentError::ReadOnly(ReadOnly::DeclarationsOff))
     );
     assert_eq!(manifest(dir.path(), "base"), before);
@@ -484,7 +743,9 @@ fn the_store_refuses_every_declaring_edit_while_declarations_are_off() {
 
     assert_eq!(store.set_declaring(id, Declaring::On).unwrap(), None);
     store
-        .patch(id, h(SKIN), &glow_path(), LeafValue::Float { value: 0.5 })
+        .edit(id, |open| {
+            open.set_leaf(h(SKIN), &glow_path(), LeafValue::Float { value: 0.5 })
+        })
         .unwrap();
     assert_ne!(manifest(dir.path(), "base"), before);
 }
@@ -714,4 +975,72 @@ fn a_key_moved_between_modules_keeps_the_view_and_undoes() {
     assert!(document.undo().unwrap());
     assert_eq!(manifest(dir.path(), "base"), text);
     assert_eq!(document.declared_state().unwrap().modules.len(), 2);
+}
+
+#[test]
+fn a_dropped_declaration_leaves_the_game_value_and_undoes() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = project(dir.path());
+    let text = two_modules(dir.path());
+    let mut document = declared(project);
+    assert!((glow(&document) - 0.5).abs() < f32::EPSILON);
+
+    let state = document
+        .declared_module_action(
+            "base",
+            &ModuleAction::DropKeys {
+                module: 0,
+                entry: SKIN.to_owned(),
+                path: "skinMeshProperties.selfIllumination".to_owned(),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        manifest(dir.path(), "base"),
+        "version: 1
+modules:
+  - name: Later
+    entries:
+      Characters/Other:
+        q: 1
+"
+    );
+    assert!(glow(&document).abs() < f32::EPSILON);
+    assert!(state.marks.is_empty());
+
+    assert!(document.undo().unwrap());
+    assert_eq!(manifest(dir.path(), "base"), text);
+    assert!((glow(&document) - 0.5).abs() < f32::EPSILON);
+}
+
+#[test]
+fn a_layer_created_after_the_document_opened_takes_its_declarations() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut document = declared(project(dir.path()));
+    let config = serde_json::json!({
+        "name": "jade-teemo",
+        "display_name": "Jade Teemo",
+        "version": "1.0.0",
+        "description": "",
+        "authors": [],
+        "layers": [
+            { "name": "base", "priority": 0 },
+            { "name": "chroma", "priority": 1 },
+            { "name": "gold", "priority": 2 },
+        ],
+    });
+    fs::write(dir.path().join("mod.config.json"), config.to_string()).unwrap();
+    fs::create_dir_all(dir.path().join("content/gold")).unwrap();
+
+    let state = document
+        .declare_into("gold", DeclaredModuleChoice::Auto)
+        .unwrap();
+
+    assert_eq!(state.layer, "gold");
+    assert_eq!(state.layers, ["base", "chroma", "gold"]);
+    assert_matches!(
+        document.declare_into("missing", DeclaredModuleChoice::Auto),
+        Err(BinDocumentError::Declaring(_))
+    );
 }

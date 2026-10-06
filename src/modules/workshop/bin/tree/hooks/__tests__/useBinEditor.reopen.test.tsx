@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { BinDocumentId } from "@/lib/tauri";
 import { editCall, landed, sentEdit } from "@/test/binEdit";
+import { commandNames } from "@/test/commandNames";
 import { mockInvoke } from "@/test/mocks/tauri";
 
-import { assetKey } from "../../../../preview/utils/assetRef";
-import { forgetBinSave, isQueuedThrough } from "../../../../state";
+import { GAME_SANDBOX } from "../../../../sandbox/utils/sandboxRef";
+import { binSaveKey, forgetBinSave, isQueuedThrough } from "../../../../state";
 import { registerReopen } from "../../../documents/hooks/useDocumentCall";
 import { ASSET, DOCUMENT, NO_FOCUS, providers } from "../../components/__tests__/binEditFixtures";
 import type { AddSuggestion } from "../../utils/addProperty";
@@ -27,14 +28,15 @@ beforeEach(() => {
 
 afterEach(() => {
   unregister();
-  forgetBinSave(assetKey(ASSET));
+  forgetBinSave(binSaveKey(GAME_SANDBOX, ASSET));
   vi.useRealTimers();
 });
 
 /** A backend that has evicted `DOCUMENT` and answers every edit on `FRESH`. */
 function evicted() {
   mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-    if (command === "bin_edit" && args?.document === DOCUMENT) return Promise.resolve(NOT_OPEN);
+    if (command === commandNames.bin.binEdit && args?.document === DOCUMENT)
+      return Promise.resolve(NOT_OPEN);
     if (sentEdit(command, args, "dependency")) return landed({ kind: "index", index: 2 });
     if (sentEdit(command, args, "addProperty")) return landed();
     return Promise.resolve({ ok: true, value: null });
@@ -63,7 +65,7 @@ describe("useBinEditor on an evicted document", () => {
         edit: { kind: "insert", index: null, text: "DATA/Characters/Teemo/Teemo.bin" },
       }),
     );
-    expect(isQueuedThrough(assetKey(ASSET), FRESH)).toBe(true);
+    expect(isQueuedThrough(binSaveKey(GAME_SANDBOX, ASSET), FRESH)).toBe(true);
   });
 
   it("reopens and sends an added property again on the fresh id", async () => {
@@ -87,13 +89,13 @@ describe("useBinEditor on an evicted document", () => {
 
     expect(reopen).toHaveBeenCalledOnce();
     expect(mockInvoke).toHaveBeenLastCalledWith(
-      "bin_edit",
+      commandNames.bin.binEdit,
       expect.objectContaining({
         document: FRESH,
         edit: expect.objectContaining({ kind: "addProperty" }),
       }),
     );
-    expect(isQueuedThrough(assetKey(ASSET), FRESH)).toBe(true);
+    expect(isQueuedThrough(binSaveKey(GAME_SANDBOX, ASSET), FRESH)).toBe(true);
   });
 
   it("keeps the refusal where no reopen is registered", async () => {
@@ -108,6 +110,6 @@ describe("useBinEditor on an evicted document", () => {
     });
 
     expect(added).toEqual(NOT_OPEN);
-    expect(isQueuedThrough(assetKey(ASSET), DOCUMENT)).toBe(false);
+    expect(isQueuedThrough(binSaveKey(GAME_SANDBOX, ASSET), DOCUMENT)).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import {
+  AppWindowIcon,
   CubeIcon,
   EyeSlashIcon,
   FileArchiveIcon,
@@ -56,7 +57,7 @@ import type { ProjectCommand } from "../utils/types";
 import { useGlobalCommands } from "./useGlobalCommands";
 import { useGroupCommands } from "./useGroupCommands";
 
-const GLYPH = "h-4 w-4";
+const GLYPH = "size-4";
 
 /**
  * Every action the bar can run under a project, composed out of the modules'
@@ -115,9 +116,9 @@ export function useProjectCommands(): readonly ProjectCommand[] {
         group: "Project",
         keywords: ["export", "build", "modpkg", "fantome"],
         icon: <PackageIcon weight="bold" className={GLYPH} />,
-        enabled: layerCount > 0,
-        disabledReason: "No layers",
-        run: actions.handleOpenPackDialog,
+        enabled: layerCount > 0 && !actions.isPacking,
+        disabledReason: actions.isPacking ? "Already packing" : "No layers",
+        run: actions.handlePack,
       },
       {
         id: "project.reveal",
@@ -169,6 +170,22 @@ export function useProjectCommands(): readonly ProjectCommand[] {
         keywords: ["archives", "browse"],
         icon: <FileArchiveIcon className={GLYPH} />,
         run: () => openDocument(gameWadsDocument()),
+      },
+      {
+        id: "go.lcu",
+        title: m.workshop_command_lcu_open_action(),
+        group: "Go to",
+        keywords: ["browse", "league client", "client", "assets"],
+        icon: <AppWindowIcon className={GLYPH} />,
+        run: () => openDocument(gameDocument("lcu")),
+      },
+      {
+        id: "go.lcuWads",
+        title: m.workshop_command_lcu_wads_open_action(),
+        group: "Go to",
+        keywords: ["archives", "browse", "league client", "client"],
+        icon: <FileArchiveIcon className={GLYPH} />,
+        run: () => openDocument(gameWadsDocument("lcu")),
       },
       {
         id: "go.objects",

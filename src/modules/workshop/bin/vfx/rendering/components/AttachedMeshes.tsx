@@ -25,11 +25,12 @@ import {
 } from "../../engine/simulation/particleRead";
 import { type SlotProgram, useAttachedPrograms } from "../hooks/useParticlePrograms";
 import type { EmitterSamplers } from "../hooks/useVfxTextures";
+import { usePickTargets } from "../state/pick";
 import { useWireTwin, WIRE_ORDER } from "../state/wire";
 import { fragmentTests, premultiplyInto } from "../utils/blend";
 import { colorLookupInto } from "../utils/colorLookup";
 import { distorts } from "../utils/drawKind";
-import { bucketRange, bucketsOf } from "../utils/emitterBuckets";
+import { bucketRange, bucketsOf, renderStamp } from "../utils/emitterBuckets";
 import { DISTORTION_LAYER, PARTICLE_LAYER } from "../utils/frame";
 import { attachedMaterial } from "../utils/materials";
 import { sourcesScrollInto } from "../utils/palette";
@@ -144,6 +145,17 @@ export function AttachedMeshes({
     [twins],
   );
 
+  const targets = useMemo(
+    () =>
+      slots.map((slot, at) => ({
+        solid: { current: slot.mesh },
+        twin: { current: twins[at] ?? null },
+        material: slot.material,
+      })),
+    [slots, twins],
+  );
+  usePickTargets(targets);
+
   const programs = useAttachedPrograms(
     emitter,
     samplers,
@@ -177,7 +189,7 @@ export function AttachedMeshes({
   }, [slots, twins, rank, emitter]);
 
   useFrame((state) => {
-    const stamp = state.gl.info.render.frame;
+    const stamp = renderStamp(state.gl);
     let used = 0;
     if (!hidden && !emitter.disabled) {
       for (const source of sources) {

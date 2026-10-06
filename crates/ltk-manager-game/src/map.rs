@@ -12,8 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use ltk_hash::{BinHash, Hash as _};
 use ltk_manager_core::bin_document::{AssetLookup, BinDocument, RowNames};
-use ltk_manager_core::material::{MaterialPreview, resolve_material};
 use ltk_manager_core::preview::AssetRef;
+
+use crate::material::{MaterialPreview, resolve_material};
 
 mod characters;
 mod component;
@@ -52,9 +53,7 @@ const GEOMETRY_SUFFIX: &str = ".mapgeo";
 /// has.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct MapPath(String);
 
 impl MapPath {
@@ -102,9 +101,7 @@ impl fmt::Display for MapPath {
 /// Where the two files of one map live, each none where nothing holds it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct MapFiles {
     /// The `.mapgeo`, which the scheme answers as one buffer.
     pub geometry: Option<AssetRef>,
@@ -115,9 +112,7 @@ pub struct MapFiles {
 /// One map's materials, one per path asked for and in that order, and its lighting and screen effects.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct MapModel {
     /// Null where the map's own bin declares no object at that path, which a backdrop
     /// draws flat rather than not at all.

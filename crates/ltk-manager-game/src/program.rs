@@ -11,13 +11,14 @@ use hexshade::{
 use ltk_hash::{BinHash, WadHash};
 use ltk_manager_core::bin_document::{AssetLookup, BinDocument, RowNames};
 use ltk_manager_core::error::AppResult;
-use ltk_manager_core::material::MaterialWarning;
-use ltk_manager_core::material::pass::{
-    Define, DefineSource, MaterialKind, PassState, PassTexture, ResolvedPass, SamplerState,
-    TextureSource, resolve_passes,
-};
 use ltk_manager_core::preview::AssetRef;
 use serde::{Deserialize, Serialize};
+
+use crate::material::MaterialWarning;
+use crate::material::pass::{
+    Define, DefineSource, MaterialKind, PassState, PassTexture, ResolvedMaterial, ResolvedPass,
+    SamplerState, TextureSource, resolve_embedded_passes, resolve_passes,
+};
 
 /// The defines a studio adds to every pass, off the engine's global list. The pass wins
 /// on a conflict.
@@ -47,9 +48,7 @@ pub const LIT_UBER_EMISSIVE: &str = "EMISSIVE_MAP";
 /// The `particle_shaders` example finds each file in an installed shader cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum ParticleShader {
     /// `quad_vs` and `quad_ps`, for every emitter without a mesh.
     Quad,
@@ -167,9 +166,7 @@ const ATTACHED_MESH_VS: &str = "ASSETS/Shaders/HLSL/SkinnedMesh/PARTICLE_VS.vs";
 /// in a preview, so none of the three is here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum ParticleDefine {
     /// `alphaRef` is not zero.
     AlphaTest,
@@ -229,9 +226,7 @@ impl ParticleDefine {
 /// What the studio adds to a pass's define list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct ProgramOptions {
     /// `LOW_QUALITY_MODE`, the game's own low setting.
     pub low_quality: bool,
@@ -240,9 +235,7 @@ pub struct ProgramOptions {
 /// One material with a program per pass, as the viewport binds it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct MaterialProgram {
     /// The material's path hash, `0x` and eight hex digits.
     pub hash: String,
@@ -261,9 +254,7 @@ pub struct MaterialProgram {
 /// One pass with its shader, or with why it has none.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct PassProgram {
     pub pass: ResolvedPass,
     pub program: ProgramRead,
@@ -276,9 +267,7 @@ pub struct PassProgram {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum ProgramRead {
     Ready {
         /// The define list the permutation was picked by, `NAME=VALUE` sorted by name,
@@ -332,33 +321,68 @@ pub fn read_programs(
             let material = resolve_passes(document, *entry, names, assets, shaders)
                 .inspect_err(|e| tracing::debug!(?entry, "Passed over a material: {e}"))
                 .ok()?;
-            let passes = material
-                .passes
-                .into_iter()
-                .enumerate()
-                .map(|(index, pass)| {
-                    let program = program_of(&pass, material.kind, options, &mut cache);
-                    if let ProgramRead::Failed { reason } = &program {
-                        tracing::warn!(
-                            material = %material.hash,
-                            pass = index,
-                            shader = ?pass.shader,
-                            "No program for the pass: {reason}"
-                        );
-                    }
-                    PassProgram { pass, program }
-                })
-                .collect();
-            Some(MaterialProgram {
-                hash: material.hash,
-                name: material.name,
-                animated: material.animated,
-                kind: material.kind,
-                passes,
-                warnings: material.warnings,
-            })
+            Some(material_program(material, options, &mut cache))
         })
         .collect()
+}
+
+/// The program of the material embedded at the property path `path` under `entry`, and none
+/// where the path reaches no struct.
+///
+/// `read` answers asset bytes as [`read_programs`] reads them.
+pub fn read_embedded_program(
+    resolution: Resolution<'_>,
+    entry: BinHash,
+    path: &str,
+    options: ProgramOptions,
+    translations: &TranslationCache,
+    read: &mut dyn FnMut(&AssetRef) -> AppResult<Vec<u8>>,
+) -> Option<MaterialProgram> {
+    let Resolution {
+        document,
+        names,
+        assets,
+        shaders,
+    } = resolution;
+    let material = resolve_embedded_passes(document, entry, path, names, assets, shaders)
+        .inspect_err(|e| tracing::debug!(?entry, path, "Passed over a material: {e}"))
+        .ok()?;
+    let mut source = AssetChunks { assets, read };
+    let mut cache = ShaderCache::new(&mut source, translations);
+    Some(material_program(material, options, &mut cache))
+}
+
+/// `material` with a program for each of its passes, a failed one logged.
+fn material_program(
+    material: ResolvedMaterial,
+    options: ProgramOptions,
+    cache: &mut ShaderCache<'_>,
+) -> MaterialProgram {
+    let passes = material
+        .passes
+        .into_iter()
+        .enumerate()
+        .map(|(index, pass)| {
+            let program = program_of(&pass, material.kind, options, cache);
+            if let ProgramRead::Failed { reason } = &program {
+                tracing::warn!(
+                    material = %material.hash,
+                    pass = index,
+                    shader = ?pass.shader,
+                    "No program for the pass: {reason}"
+                );
+            }
+            PassProgram { pass, program }
+        })
+        .collect();
+    MaterialProgram {
+        hash: material.hash,
+        name: material.name,
+        animated: material.animated,
+        kind: material.kind,
+        passes,
+        warnings: material.warnings,
+    }
 }
 
 /// The pass the engine draws a skinned submesh with where its skin names no material,
@@ -457,9 +481,11 @@ fn particle_pass(shader: ParticleShader, defines: &[ParticleDefine]) -> Resolved
 
 /// The shader cache's chunks as the resolution locates them, by hash first, since the
 /// bundle chunks have no name any table carries, and by path where a table names it.
-struct AssetChunks<'a> {
-    assets: &'a dyn AssetLookup,
-    read: &'a mut dyn FnMut(&AssetRef) -> AppResult<Vec<u8>>,
+pub struct AssetChunks<'a> {
+    /// Where each chunk of the cache lives.
+    pub assets: &'a dyn AssetLookup,
+    /// The bytes of a located chunk.
+    pub read: &'a mut dyn FnMut(&AssetRef) -> AppResult<Vec<u8>>,
 }
 
 impl ShaderSource for AssetChunks<'_> {
@@ -514,9 +540,16 @@ fn translated(
     options: ProgramOptions,
     cache: &mut ShaderCache<'_>,
 ) -> ProgramRead {
-    let defines = define_list(pass, kind, options);
+    program_read(cache, shader, &define_list(pass, kind, options))
+}
 
-    match cache.program(shader, &defines) {
+/// The program `cache` builds of `shader` under `defines`, or why it could not.
+pub fn program_read(
+    cache: &mut ShaderCache<'_>,
+    shader: ShaderPath<'_>,
+    defines: &Defines,
+) -> ProgramRead {
+    match cache.program(shader, defines) {
         Ok(program) => ProgramRead::Ready {
             defines: defines.to_entries(),
             vertex: Box::new(program.vertex),

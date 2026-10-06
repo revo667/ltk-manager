@@ -6,10 +6,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ContentTree, GameSearchResult, WorkshopProject } from "@/lib/tauri";
+import { commandNames } from "@/test/commandNames";
 import { mockInvoke } from "@/test/mocks/tauri";
 import { createTestQueryClient } from "@/test/utils";
 
 import { ProjectProvider } from "../../../../projects/state/ProjectContext";
+import { RouteSandboxProvider } from "../../../../sandbox/state/SandboxContext";
 import type { PathField } from "../../utils/pathField";
 import { PathInput } from "../PathInput";
 
@@ -36,12 +38,12 @@ const TREE: ContentTree = {
     {
       name: "base",
       fileCount: 1,
-      totalSizeBytes: 0n,
+      totalSizeBytes: 0,
       ignoredDirectories: [],
       entries: [
         {
           relativePath: "Ahri.wad.client/ASSETS/Mod/glow_ring.dds",
-          sizeBytes: 64n,
+          sizeBytes: 64,
           kind: "texture_dds",
           objects: [],
           ignoredBy: null,
@@ -77,15 +79,17 @@ function mount(value = "", field = TEXTURE) {
   render(
     <QueryClientProvider client={createTestQueryClient()}>
       <ProjectProvider project={PROJECT}>
-        <PathInput
-          value={value}
-          field={field}
-          aria-label="Edit value"
-          invalid={false}
-          autoFocus={false}
-          onCommit={onCommit}
-          onEnter={onEnter}
-        />
+        <RouteSandboxProvider project={PROJECT.path}>
+          <PathInput
+            value={value}
+            field={field}
+            aria-label="Edit value"
+            invalid={false}
+            autoFocus={false}
+            onCommit={onCommit}
+            onEnter={onEnter}
+          />
+        </RouteSandboxProvider>
       </ProjectProvider>
     </QueryClientProvider>,
   );
@@ -97,9 +101,11 @@ afterEach(cleanup);
 beforeEach(() => {
   mockInvoke.mockReset();
   mockInvoke.mockImplementation((command: string) => {
-    if (command === "get_project_content_tree") return Promise.resolve({ ok: true, value: TREE });
-    if (command === "search_game_paths") return Promise.resolve({ ok: true, value: SEARCH });
-    if (command === "read_game_dir") {
+    if (command === commandNames.workshop.getProjectContentTree)
+      return Promise.resolve({ ok: true, value: TREE });
+    if (command === commandNames.game.searchGameIndex)
+      return Promise.resolve({ ok: true, value: SEARCH });
+    if (command === commandNames.game.readGameDir) {
       return Promise.resolve({
         ok: true,
         value: {
@@ -108,7 +114,7 @@ beforeEach(() => {
             {
               pathHash: "00bb00bb00bb00bb",
               path: "assets/characters/ahri/ahri_w.dds",
-              sizeBytes: 64n,
+              sizeBytes: 64,
               wad: "Champions/Ahri.wad.client",
             },
           ],
@@ -128,9 +134,9 @@ describe("PathInput", () => {
     expect(await screen.findByRole("option", { name: /glow_ring\.dds/ })).toBeInTheDocument();
     expect(await screen.findByRole("option", { name: /glow_trail\.dds/ })).toBeInTheDocument();
     expect(screen.getByText("2 more, keep typing")).toBeInTheDocument();
-    expect(mockInvoke).toHaveBeenCalledWith("search_game_paths", {
+    expect(mockInvoke).toHaveBeenCalledWith(commandNames.game.searchGameIndex, {
       query: "glow",
-      preference: { extensions: ["dds", "tex"], archive: null },
+      search: { kind: "pathField", preference: { extensions: ["dds", "tex"], archive: null } },
     });
   });
 
@@ -183,6 +189,9 @@ describe("PathInput", () => {
 
     expect(await screen.findByText("Same folder")).toBeInTheDocument();
     expect(await screen.findByRole("option", { name: /ahri_w\.dds/ })).toBeInTheDocument();
-    expect(mockInvoke).toHaveBeenCalledWith("read_game_dir", { path: "assets/characters/ahri" });
+    expect(mockInvoke).toHaveBeenCalledWith(commandNames.game.readGameDir, {
+      path: "assets/characters/ahri",
+      source: "game",
+    });
   });
 });

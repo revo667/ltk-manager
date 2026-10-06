@@ -22,9 +22,7 @@ use crate::error::{AppError, AppResult};
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum ModuleAction {
     /// Add a module holding `name`, or none, and no entry at the end of `modules`.
     Create { name: Option<String> },
@@ -41,6 +39,13 @@ pub enum ModuleAction {
         entry: String,
         path: Option<String>,
         to: usize,
+    },
+    /// Drop every signed key of the property path `path` on `entry`, a name or a `0x` hash,
+    /// from the `entries` module at `module`.
+    DropKeys {
+        module: usize,
+        entry: String,
+        path: String,
     },
 }
 
@@ -98,6 +103,15 @@ impl ProjectDir {
                     .transpose()
                     .map_err(|error| invalid(&error))?;
                 manifest.move_keys(*module, entry.object_hash(), path.as_ref(), *to)?;
+            }
+            ModuleAction::DropKeys {
+                module,
+                entry,
+                path,
+            } => {
+                let entry = EntryName::try_from(entry.as_str()).map_err(|error| invalid(&error))?;
+                let path = PropertyPath::new(path).map_err(|error| invalid(&error))?;
+                manifest.drop_keys(*module, entry.object_hash(), &path)?;
             }
         }
 

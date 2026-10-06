@@ -5,13 +5,19 @@ import {
   type AppError,
   type AssetRef,
   type BinDocumentId,
+  type BinEdit,
   type BinRow,
+  type NewProperty,
   type ValueEdit,
 } from "@/lib/tauri";
 
-import { assetKey } from "../../../preview/utils/assetRef";
-import { clearRefusedBy, markRefused, queueForSave } from "../../../state";
-import { type Reopen, useDocumentCall } from "../../documents/hooks/useDocumentCall";
+import { useSandbox } from "../../../sandbox/state/SandboxContext";
+import { binSaveKey, clearRefusedBy, markRefused, queueForSave } from "../../../state";
+import {
+  type DocumentCall,
+  type Reopen,
+  useDocumentCall,
+} from "../../documents/hooks/useDocumentCall";
 import { rowKey } from "../utils/binRows";
 import type { TypedLeaf } from "../utils/leafText";
 
@@ -24,11 +30,19 @@ export interface LeafEdit {
   readonly mark?: (at: string, error: AppError | null) => void;
   readonly editProperty?: (holder: BinRow, field: string, edits: ValueEdit[]) => Promise<boolean>;
   readonly removeItem?: (row: BinRow) => Promise<boolean>;
+  /** Drop the property `row` from its holder, which then reads its class default. */
+  readonly removeProperty?: (row: BinRow) => Promise<boolean>;
+  /** Add `property` to the struct `holder` at its default, marking a refusal on the holder. */
+  readonly addProperty?: (holder: BinRow, property: NewProperty) => Promise<boolean>;
   readonly setPointer?: (
     holder: BinRow,
     field: string,
     className: string | null,
   ) => Promise<boolean>;
+  /** Send one call on the document, once more on a fresh id where the store closed it. */
+  readonly send?: DocumentCall;
+  /** Queue the save of an edit that landed on `id`, and read the document again. */
+  readonly landed?: (id: BinDocumentId) => void;
 }
 
 /** Leaf edits for layouts without tree navigation or structural actions. */
@@ -55,7 +69,7 @@ export function useLeafEdit(
   reopen?: Reopen,
 ) {
   const [refused, setRefused] = useState<ReadonlyMap<string, AppError>>(new Map());
-  const key = assetKey(asset);
+  const key = binSaveKey(useSandbox(), asset);
   const owner = useId();
   const send = useDocumentCall(document, reopen);
 
@@ -93,6 +107,21 @@ export function useLeafEdit(
     [invalidate, key],
   );
 
+  /** Send `edit`, mark its outcome under the row key `at`, and queue the save where it landed. */
+  const apply = useCallback(
+    async (at: string, edit: BinEdit, blocking = false) => {
+      const { result, id } = await send((id) => api.bin.edit(id, edit));
+      mark(at, result.ok ? null : result.error, blocking);
+      if (!result.ok) {
+        return false;
+      }
+
+      landed(id);
+      return true;
+    },
+    [landed, mark, send],
+  );
+
   const commit = useCallback(
     async (row: BinRow, typed: TypedLeaf) => {
       const at = rowKey(row);
@@ -101,73 +130,60 @@ export function useLeafEdit(
         return false;
       }
 
-      const { result, id } = await send((id) =>
-        api.bin.edit(id, { kind: "patch", entry: row.entry, path: row.path, value: typed.leaf }),
+      return apply(
+        at,
+        { kind: "patch", entry: row.entry, path: row.path, value: typed.leaf },
+        true,
       );
-      mark(at, result.ok ? null : result.error);
-      if (!result.ok) {
-        return false;
-      }
-
-      landed(id);
-      return true;
     },
-    [landed, mark, send],
+    [apply, mark],
   );
 
   const editProperty = useCallback(
-    async (holder: BinRow, field: string, edits: ValueEdit[]) => {
-      const { result, id } = await send((id) =>
-        api.bin.edit(id, {
-          kind: "editProperty",
-          entry: holder.entry,
-          holder: holder.path,
-          field,
-          edits,
-        }),
-      );
-      mark(rowKey(holder), result.ok ? null : result.error, false);
-      if (!result.ok) {
-        return false;
-      }
-
-      landed(id);
-      return true;
-    },
-    [landed, mark, send],
+    (holder: BinRow, field: string, edits: ValueEdit[]) =>
+      apply(rowKey(holder), {
+        kind: "editProperty",
+        entry: holder.entry,
+        holder: holder.path,
+        field,
+        edits,
+      }),
+    [apply],
   );
 
   const removeItem = useCallback(
-    async (row: BinRow) => {
-      const { result, id } = await send((id) =>
-        api.bin.edit(id, { kind: "removeItem", entry: row.entry, path: row.path }),
-      );
-      mark(rowKey(row), result.ok ? null : result.error, false);
-      if (!result.ok) {
-        return false;
-      }
+    (row: BinRow) => apply(rowKey(row), { kind: "removeItem", entry: row.entry, path: row.path }),
+    [apply],
+  );
 
-      landed(id);
-      return true;
-    },
-    [landed, mark, send],
+  const removeProperty = useCallback(
+    (row: BinRow) =>
+      apply(rowKey(row), { kind: "removeProperty", entry: row.entry, path: row.path }),
+    [apply],
+  );
+
+  const addProperty = useCallback(
+    (holder: BinRow, property: NewProperty) =>
+      apply(rowKey(holder), {
+        kind: "addProperty",
+        entry: holder.entry,
+        path: holder.path,
+        property,
+      }),
+    [apply],
   );
 
   const setPointer = useCallback(
-    async (holder: BinRow, field: string, className: string | null) => {
+    (holder: BinRow, field: string, className: string | null) => {
       const path = [holder.path, field.slice(2)].filter(Boolean).join(".");
-      const { result, id } = await send((id) =>
-        api.bin.edit(id, { kind: "setPointer", entry: holder.entry, path, className }),
-      );
-      mark(`${holder.entry}:${path}`, result.ok ? null : result.error, false);
-      if (!result.ok) {
-        return false;
-      }
-
-      landed(id);
-      return true;
+      return apply(`${holder.entry}:${path}`, {
+        kind: "setPointer",
+        entry: holder.entry,
+        path,
+        className,
+      });
     },
-    [landed, mark, send],
+    [apply],
   );
 
   return {
@@ -179,6 +195,8 @@ export function useLeafEdit(
     send,
     editProperty,
     removeItem,
+    removeProperty,
+    addProperty,
     setPointer,
   };
 }

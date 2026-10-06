@@ -4,13 +4,14 @@ import {
   facingAt,
   FIRST_RIG,
   flightTime,
+  fliesAsMissile,
   landed,
   originAt,
   phaseAt,
   type Point,
   type RigModel,
   type Joints,
-  runLength,
+  runSpan,
   targetAt,
 } from "../model/rig";
 import {
@@ -317,7 +318,7 @@ export function createDriver(
 
   /** The lanes sized for the emitters drawn and the run they are drawn over. */
   function relane(): void {
-    lanes.resize(system.emitters.length, runLength(rig.motion, span, tail));
+    lanes.resize(system.emitters.length, runSpan(rig, span, tail));
   }
 
   /** The run at `now` as a value, deep copied. */
@@ -377,14 +378,14 @@ export function createDriver(
   /**
    * The rig's own turn at `reached`, into the yaw and the orientation beside it.
    *
-   * A path stands in for a missile's own game object, whose travel is its local `Y`,
-   * where a unit's system is the look-at yaw of question 11. A bone takes its joint's whole
-   * turn, as a system attached to a bone does.
+   * A path, and a missile-oriented orbit, stand in for a missile's own game object,
+   * whose travel is its local `Y`, where a unit's system is the look-at yaw of question 11.
+   * A bone takes its joint's whole turn, as a system attached to a bone does.
    */
   function orientInto(reached: number): void {
     const motion = rig.motion;
     if (motion.kind === "bone") motion.anchor.basisInto(reached, yaw);
-    else if (motion.kind === "path") flightInto(facingAt(motion, reached), yaw);
+    else if (fliesAsMissile(motion)) flightInto(facingAt(motion, reached), yaw);
     else yawInto(facingAt(motion, reached), yaw);
     multiplyInto(world.basis, yaw, orientation);
   }

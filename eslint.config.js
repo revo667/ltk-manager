@@ -9,7 +9,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 /** Output no rule can ask an author to change. */
-const GENERATED = ["src/lib/bindings/**", "src/lib/bindings.gen.ts", "src/routeTree.gen.ts"];
+const GENERATED = ["src/lib/bindings.ts", "src/lib/ipc/**", "src/routeTree.gen.ts"];
 
 /** Every directory under `src/modules`, so each can be told apart from the rest. */
 const MODULES = [
@@ -186,6 +186,9 @@ export default tseslint.config(
               "^[a-z0-9_./:-]+$",
               // Punctuation bracketing a value the code interpolates, never a sentence.
               "^[\\s(){}\\[\\]<>,.:;/|·–—-]+$",
+              // A CSS value that reads a custom property, or a bare length.
+              ".*var\\(--.*",
+              "^[\\d.]+(px|%|em|rem)?( [\\d.]+(px|%|em|rem)?)*$",
             ],
           },
         },
@@ -232,6 +235,8 @@ export default tseslint.config(
       "src/modules/workshop/bin/vfx/**/*.tsx",
       "src/modules/workshop/bin/map/components/MapCharacters.tsx",
       "src/modules/workshop/bin/map/components/MapFocus.tsx",
+      "src/modules/workshop/bin/map/components/MapMarkers.tsx",
+      "src/modules/workshop/bin/map/components/MapParticles.tsx",
       "src/modules/workshop/bin/spells/components/MissileViewport.tsx",
       "src/modules/workshop/bin/spells/components/AbilityPreview.tsx",
       "src/modules/workshop/bin/spells/components/AbilityScene.tsx",

@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { type ComponentRef, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowHelper, Group, Matrix4, Vector3 } from "three";
 
+import { useDisposable } from "@/hooks";
 import { AXIS_SIGN, useSceneColors } from "@/modules/viewport";
 
 import type { LeafEdit } from "../../tree/hooks/useLeafEdit";
@@ -28,17 +29,19 @@ interface Props {
   force: AuthoredForce;
   handle: string | null;
   edit: LeafEdit | null;
+  /** Told of each press on a handle, which a viewport pick yields to. */
+  onGrab?: () => void;
 }
 
 /** Force extents and direction, with a single undoable constant edit per drag. */
-export function ForceGizmo({ system, emitter, force, handle, edit }: Props) {
+export function ForceGizmo({ system, emitter, force, handle, edit, onGrab }: Props) {
   const { driver, playing, setPlaying } = useVfxRun();
   const controls = useThree((state) => state.controls);
   const colors = useSceneColors();
   const object = useMemo(() => new Group(), []);
   const sphere = useRef<Group>(null);
   const ring = useRef<Group>(null);
-  const arrow = useMemo(() => new ArrowHelper(), []);
+  const arrow = useDisposable(() => new ArrowHelper(), []);
   const transform = useRef<ComponentRef<typeof TransformControls>>(null);
   const placement = useRef({
     origin: new Vector3(),
@@ -128,8 +131,6 @@ export function ForceGizmo({ system, emitter, force, handle, edit }: Props) {
       restoreRef.current();
     };
   }, [system, force.key, handle]);
-
-  useEffect(() => () => arrow.dispose(), [arrow]);
 
   useFrame(() => {
     if (drag.current !== null) {
@@ -284,6 +285,7 @@ export function ForceGizmo({ system, emitter, force, handle, edit }: Props) {
           showY={property.name !== "radius"}
           showZ={property.name !== "radius"}
           onMouseDown={() => {
+            onGrab?.();
             if (
               drag.current !== null ||
               Math.abs(placement.current.direction.determinant()) < 1e-8

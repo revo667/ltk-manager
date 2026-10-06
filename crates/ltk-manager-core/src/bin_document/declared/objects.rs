@@ -6,14 +6,18 @@
 
 use ltk_declarations::{ObjectEdit as ManifestObjectEdit, ObjectOperation};
 use ltk_game_data::{ClassName, EntryName, Names as _, Target};
-use ltk_hash::BinHash;
+use ltk_hash::{BinHash, Hash as _};
+use ltk_meta::property::values;
 use ltk_meta::{BinObject, PropertyValueEnum};
 use serde::{Deserialize, Serialize};
 
-use super::super::edit::bin_hash;
+use super::super::edit::{Edit, bin_hash};
+use super::super::properties::field_path;
 use super::super::{BinDocument, BinDocumentError, ClassChoice, EditRejection, hex};
-use super::{RenderNames, declaring, entry_name, not_declared};
+use super::{RenderNames, declaring, entry_name, not_declared, read_entry};
+use crate::error::AppError;
 use crate::meta_schema::SchemaAt;
+use crate::vfx::vfx_system_template;
 
 /// Where a new object of a declared document starts.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -22,12 +26,16 @@ use crate::meta_schema::SchemaAt;
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum NewObject {
     /// A copy of an object the document holds: `clone`.
     Clone {
+        /// The object copied, `0x` and eight hex digits.
+        source: String,
+    },
+    /// A copy of an object another chunk of the game declares: its class, and a `set` of each
+    /// of its properties.
+    Copy {
         /// The object copied, `0x` and eight hex digits.
         source: String,
     },
@@ -36,14 +44,18 @@ pub enum NewObject {
         /// The class, as a name or `0x` and eight hex digits.
         class: String,
     },
+    /// A particle system of the VFX template catalog: `class` and a `set` of its value.
+    /// ADR-0058.
+    Template {
+        /// The template's catalog id.
+        template: String,
+    },
 }
 
 /// What a declaration of the chosen layer does to one object of the chunk.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub struct DeclaredObjectMark {
     /// The object's path hash, `0x` and eight hex digits.
     pub entry: String,
@@ -53,9 +65,7 @@ pub struct DeclaredObjectMark {
 /// Whether a declaration creates an object or removes one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum ObjectChange {
     /// A `clone` or a `class` the applied copy holds.
     Created,
@@ -96,6 +106,7 @@ impl BinDocument {
             return Err(rejected(EditRejection::ObjectExists));
         }
 
+        let mut filling = None;
         let (operation, expected) = match origin {
             NewObject::Clone { source } => {
                 let source = bin_hash(source).map_err(rejected)?;
@@ -108,6 +119,16 @@ impl BinDocument {
                 let expected = clone_as(held, &spelled, &name);
                 (ObjectOperation::Clone(spelled), expected)
             }
+            NewObject::Copy { source } => {
+                let source = bin_hash(source).map_err(rejected)?;
+                let held = self.game_object(source)?;
+                let spelled = self.spelled(|names| entry_name(source, names))?;
+                let copy = clone_as(&held, &spelled, &name);
+                let class = self.spelled(|names| class_name(copy.class_hash, names))?;
+                let expected = BinObject::new(entry, copy.class_hash);
+                filling = Some(copy.properties.into_iter().collect());
+                (ObjectOperation::Construct(class), expected)
+            }
             NewObject::Class { class: typed } => {
                 let class = bin_hash(typed).map_err(rejected)?;
                 /* A typed name is the spelling the author chose. A hash is spelled by the
@@ -119,13 +140,61 @@ impl BinDocument {
                 let expected = BinObject::new(entry, spelled.class_hash());
                 (ObjectOperation::Construct(spelled), expected)
             }
+            NewObject::Template { template } => {
+                let value = vfx_system_template(template).ok_or_else(|| {
+                    BinDocumentError::NodeNotFound {
+                        address: template.clone(),
+                    }
+                })?;
+                let spelled = self.spelled(|names| class_name(value.class_hash, names))?;
+                let expected = BinObject::new(entry, value.class_hash);
+                filling = Some(own_named(value, &name));
+                (ObjectOperation::Construct(spelled), expected)
+            }
         };
 
         let plan = self.object_edit(name, operation)?;
-        self.declare_object(&[plan], entry, |document| {
-            document.object_at(entry) == Some(&expected)
-        })?;
+        let landed = |document: &Self| document.object_at(entry) == Some(&expected);
+        match filling {
+            None => self.declare_object(&[plan], entry, landed)?,
+            // The creation and every key it is filled with undo as one step.
+            Some(properties) => self.declared_group(|document| {
+                document.declare_object(&[plan], entry, landed)?;
+                document.declare_properties(entry, properties)
+            })?,
+        }
         Ok(entry)
+    }
+
+    /// The game's copy of the object `entry`, from whichever chunk declares it.
+    fn game_object(&self, entry: BinHash) -> Result<BinObject, BinDocumentError> {
+        let declared = self.declared.as_ref().ok_or_else(not_declared)?;
+        let name = EntryName::try_from(hex(entry).as_str()).map_err(|_| {
+            BinDocumentError::EditRejected {
+                address: hex(entry),
+                rejection: EditRejection::MalformedHash,
+            }
+        })?;
+        read_entry(declared.context.game.as_ref(), &name)
+            .map_err(|error| declaring(AppError::Other(error.to_string())))?
+            .ok_or_else(|| BinDocumentError::NodeNotFound {
+                address: hex(entry),
+            })
+    }
+
+    fn declare_properties(
+        &mut self,
+        entry: BinHash,
+        properties: Vec<(BinHash, PropertyValueEnum)>,
+    ) -> Result<(), BinDocumentError> {
+        for (field, value) in properties {
+            self.insert_property(entry, "", field, None, value)?;
+            self.record(Edit::RemoveProperty {
+                entry,
+                path: field_path("", field),
+            })?;
+        }
+        Ok(())
     }
 
     /// Declare the removal of the object `entry` in the chosen layer.
@@ -221,8 +290,8 @@ impl BinDocument {
     fn spelled<T>(&self, spell: impl Fn(&RenderNames<'_>) -> T) -> Result<T, BinDocumentError> {
         let declared = self.declared.as_ref().ok_or_else(not_declared)?;
         let mut spelled = None;
-        declared.context.game.with_names(&mut |names| {
-            spelled = Some(spell(&RenderNames(names)));
+        declared.context.with_names(&mut |names| {
+            spelled = Some(spell(&names));
         });
         spelled.ok_or_else(not_declared)
     }
@@ -321,6 +390,33 @@ fn class_name(class: BinHash, names: &RenderNames<'_>) -> ClassName {
         .unwrap_or_else(|| {
             ClassName::try_from(hex(class).as_str()).expect("a spelled hash is a class name")
         })
+}
+
+/// The properties of a system template made under `name`, its `particleName` the name's last
+/// segment and its `particlePath` the name, as a clone rewrites its own path.
+fn own_named(system: values::Struct, name: &EntryName) -> Vec<(BinHash, PropertyValueEnum)> {
+    let path = name.as_str();
+    let leaf = path.rsplit('/').next().unwrap_or(path);
+    let particle_name = BinHash::hash_str("particleName");
+    let particle_path = BinHash::hash_str("particlePath");
+
+    system
+        .properties
+        .into_iter()
+        .map(|(field, value)| {
+            let own = if field == particle_name {
+                Some(leaf)
+            } else if field == particle_path {
+                Some(path)
+            } else {
+                None
+            };
+            match own {
+                Some(text) => (field, values::String::from(text).into()),
+                None => (field, value),
+            }
+        })
+        .collect()
 }
 
 /// The object a clone of `object`, spelled `source`, makes under `name`. league-mod

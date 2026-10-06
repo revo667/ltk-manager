@@ -25,9 +25,7 @@ use crate::workshop::WorkshopError;
 /// the error value is gone. The Tauri shell maps it to its own `ErrorCode`, and
 /// a CLI could map the same names to exit codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, strum::Display)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 #[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -67,9 +65,7 @@ pub enum ErrorKind {
 /// so records and IPC responses carry this while the detail stays in the
 /// message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OverlayErrorCategory {
     /// The game installation cannot be used. Point the user at their game dir.
@@ -285,6 +281,32 @@ impl From<ltk_mod_project::ModProjectError> for AppError {
             ModProjectError::Json { source, .. } => AppError::Serialization(source),
             other => AppError::Other(other.to_string()),
         }
+    }
+}
+
+impl From<ltk_fantome::FantomeExtractError> for AppError {
+    fn from(error: ltk_fantome::FantomeExtractError) -> Self {
+        AppError::Fantome(error.to_string())
+    }
+}
+
+/// `error` as an [`AppError::Io`] of the same kind, its message led by the step that failed.
+pub(crate) fn io_context(error: std::io::Error, what: impl std::fmt::Display) -> AppError {
+    AppError::Io(std::io::Error::new(
+        error.kind(),
+        format!("{what}: {error}"),
+    ))
+}
+
+/// An I/O result whose error names the step that failed.
+pub(crate) trait IoContext<T> {
+    /// The error through [`io_context`].
+    fn context(self, what: impl std::fmt::Display) -> AppResult<T>;
+}
+
+impl<T> IoContext<T> for std::io::Result<T> {
+    fn context(self, what: impl std::fmt::Display) -> AppResult<T> {
+        self.map_err(|error| io_context(error, what))
     }
 }
 

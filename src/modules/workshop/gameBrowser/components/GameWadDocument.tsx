@@ -1,14 +1,14 @@
 import { DownloadSimpleIcon, StackPlusIcon } from "@phosphor-icons/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
-import { type BreadcrumbItem, Button, EmptyState } from "@/components";
+import { type BreadcrumbItem, Button, EmptyState, LoadingState } from "@/components";
 import { m } from "@/i18n";
-import type { AppError, AssetRef, GameWadSummary } from "@/lib/tauri";
-import { DocumentToolbar, type EditorDocumentProps, useFindBox } from "@/modules/editor";
+import type { AppError, GameWadSummary, WadSource } from "@/lib/tauri";
+import { DocumentToolbar, type EditorDocumentProps } from "@/modules/editor";
 import { useExplorerThumbnails, useExplorerTileSize, useExplorerView } from "@/stores";
 import { formatBytes } from "@/utils";
 
-import type { ContentDocumentOf } from "../../documents/utils/contentDocument";
+import { type ContentDocumentOf, documentSource } from "../../documents/utils/contentDocument";
 import {
   ExplorerSortScope,
   useExplorerSort,
@@ -32,11 +32,11 @@ import {
   selectionTargets,
   sortItems,
   sortTree,
-  useExplorerKeys,
   useExplorerNav,
   useExplorerSelectionApi,
 } from "../../explorer";
 import { CollapseAllButton } from "../../shared/components/CollapseAllButton";
+import { DocumentFrame } from "../../shared/components/DocumentFrame";
 import {
   useExplorerFilter,
   useExplorerScope,
@@ -50,7 +50,10 @@ import { useGameWadEntries } from "../api/useGameWadEntries";
 import { useGameWads } from "../api/useGameWads";
 import { type ExtractHow, useExtractActions } from "../extraction/hooks/useExtractActions";
 import { archiveTarget, entryTarget } from "../extraction/utils/extractTargets";
+import { useExplorerShell } from "../hooks/useExplorerShell";
 import { useSourcePreview, useSourceRowPreview } from "../hooks/useSourcePreview";
+import { useWadSource, WadSourceProvider } from "../state/wadSource";
+import { fileNodeOf, isPresent, itemAsset, menuNodeOf } from "../utils/explorerItems";
 import {
   buildSourceTree,
   flattenSourceTree,
@@ -60,27 +63,30 @@ import {
   toggledSourceDirTree,
   type SourceDirNode,
   type SourceEntry,
-  type SourceFileNode,
-  type SourceTreeNode,
-  UNKNOWN_DIR,
   wadBasename,
 } from "../utils/sourceIndex";
-import { GameLoadingState, GameWadsErrorState, UnknownHashHint } from "./GameBrowserStates";
+import { GameWadsErrorState, UnknownHashHint } from "./GameBrowserStates";
 import { SourceTree } from "./SourceTree";
 import { SourceTreeContextMenu } from "./SourceTreeContextMenu";
 
 /** One archive's explorer, kept apart from the whole install's and from another archive's. */
-function explorerIdOf(wadName: string): string {
-  return `game-wad:${wadName}`;
+function archiveExplorerId(source: WadSource, wadName: string): string {
+  return `${source}-wad:${wadName}`;
 }
 
-/** One game archive's files, without the archive level the tab already names. */
-export function GameWadDocument({
-  document,
-  active,
-}: EditorDocumentProps<ContentDocumentOf<"game-wad">>) {
+/** One archive's files, without the archive level the tab already names. */
+export function GameWadDocument(props: EditorDocumentProps<ContentDocumentOf<"game-wad">>) {
+  return (
+    <WadSourceProvider source={documentSource(props.document)}>
+      <ArchiveDocument {...props} />
+    </WadSourceProvider>
+  );
+}
+
+function ArchiveDocument({ document, active }: EditorDocumentProps<ContentDocumentOf<"game-wad">>) {
+  const source = useWadSource();
   const wadName = document.wadName;
-  const explorerId = explorerIdOf(wadName);
+  const explorerId = archiveExplorerId(source, wadName);
 
   const wads = useGameWads();
   const summary = findArchive(wads.data, wadName);
@@ -93,23 +99,14 @@ export function GameWadDocument({
      already known and a listing costs no read. */
   const listings = useMemo(() => listingsOf(entries ?? []), [entries]);
 
-  const nav = useExplorerNav(explorerId, document.id);
-  const [typing, setTyping] = useState(false);
-  const boxRef = useFindBox(document.id);
-
-  const handleKeyDown = useExplorerKeys({
-    onUp: nav.goUp,
-    onType: () => setTyping(true),
-    boxRef,
-  });
+  const { nav, typing, setTyping, boxRef, handleKeyDown } = useExplorerShell(
+    explorerId,
+    document.id,
+  );
 
   return (
     <ExplorerSortScope documentId={document.id}>
-      <div
-        data-ui="GameWadDocument"
-        className="flex min-h-0 flex-1 flex-col bg-surface-950"
-        onKeyDown={handleKeyDown}
-      >
+      <DocumentFrame data-ui="GameWadDocument" onKeyDown={handleKeyDown}>
         <DocumentToolbar active={active}>
           <ArchiveBar
             explorerId={explorerId}
@@ -132,7 +129,7 @@ export function GameWadDocument({
           error={error}
           nav={nav}
         />
-      </div>
+      </DocumentFrame>
     </ExplorerSortScope>
   );
 }
@@ -288,7 +285,7 @@ function ArchiveActions({ summary }: { summary: GameWadSummary | undefined }) {
         <Button
           variant="ghost"
           size="xs"
-          left={<StackPlusIcon className="h-4 w-4" />}
+          left={<StackPlusIcon className="size-4" />}
           disabled={busy}
           onClick={() => run("copy", targets, subject)}
         >
@@ -299,7 +296,7 @@ function ArchiveActions({ summary }: { summary: GameWadSummary | undefined }) {
         <Button
           variant="ghost"
           size="xs"
-          left={<DownloadSimpleIcon className="h-4 w-4" />}
+          left={<DownloadSimpleIcon className="size-4" />}
           disabled={busy}
           onClick={() => run("quick", targets, subject)}
         >
@@ -309,7 +306,7 @@ function ArchiveActions({ summary }: { summary: GameWadSummary | undefined }) {
       <Button
         variant="ghost"
         size="xs"
-        left={<DownloadSimpleIcon className="h-4 w-4" />}
+        left={<DownloadSimpleIcon className="size-4" />}
         onClick={() => run("dialog", targets, subject)}
       >
         {m.workshop_archive_extract_action()}
@@ -333,7 +330,7 @@ function ArchiveBody(props: ArchiveBodyProps) {
   const view = useExplorerView();
 
   if (props.error) return <GameWadsErrorState error={props.error} />;
-  if (props.pending) return <GameLoadingState />;
+  if (props.pending) return <LoadingState />;
   if (!props.summary) {
     return (
       <EmptyState
@@ -413,7 +410,7 @@ function ArchiveTree({ explorerId, wadName, summary, entries, listings }: Archiv
       onPreview={previewFile}
       selection={selection}
       selectionTargets={targets}
-      scrollKey={`game-wad:${wadName}`}
+      scrollKey={explorerId}
     />
   );
 }
@@ -426,6 +423,7 @@ function ArchiveItems({
   listings,
   nav,
 }: ArchiveBodyProps & { view: "grid" | "details" }) {
+  const source = useWadSource();
   const openFile = useSourcePreview();
   const previewFile = useSourceRowPreview();
   const filter = useExplorerFilter(explorerId);
@@ -500,45 +498,11 @@ function ArchiveItems({
     onOpen: handleOpen,
     onPreview: handlePreview,
     onUp: nav.goUp,
-    assetOf: chunkAsset,
+    assetOf: (item: ExplorerItem) => itemAsset(source, item),
     renderMenu,
     onRun: runSelection,
   };
 
   if (view === "details") return <ExplorerDetails {...shared} />;
   return <ExplorerGrid {...shared} size={tileSize} showFacts={tileSize >= 128} />;
-}
-
-/** A chunk names the archive it came from, which is the route back to its bytes. */
-function chunkAsset(item: ExplorerItem): AssetRef | null {
-  if (item.kind === "dir") return null;
-  return { kind: "gameChunk", wad: item.entry.wad, pathHash: item.entry.pathHash };
-}
-
-function fileNodeOf(item: ExplorerFileItem): SourceFileNode {
-  return { type: "file", id: item.id, name: item.name, entry: item.entry };
-}
-
-/**
- * The tile the menu opened on, as the node that menu reads.
- *
- * A directory tile carries no children here, and the menu never walks any: it
- * offers the ways out, and those act on the selection the right click aimed.
- */
-function menuNodeOf(item: ExplorerItem | null): SourceTreeNode | null {
-  if (item === null) return null;
-  if (item.kind === "file") return fileNodeOf(item);
-  return {
-    type: "dir",
-    id: item.id,
-    path: item.id,
-    name: item.name,
-    unknown: item.id === UNKNOWN_DIR,
-    fileCount: item.fileCount,
-    children: [],
-  };
-}
-
-function isPresent<T>(value: T | null): value is T {
-  return value !== null;
 }

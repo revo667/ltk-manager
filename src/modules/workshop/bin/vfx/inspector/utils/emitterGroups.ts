@@ -20,6 +20,13 @@ export type EmitterGroup =
   | "effects"
   | "other";
 
+/** The effects that change how the texture draws, which Texture holds rather than Effects. */
+export const TEXTURE_EFFECT_FIELDS = [
+  "alphaErosionDefinition",
+  "distortionDefinition",
+  "reflectionDefinition",
+] as const;
+
 /**
  * The fields of each group, by the name the emitter declares them under.
  *
@@ -144,6 +151,7 @@ export const GROUP_FIELDS: Record<Exclude<EmitterGroup, "other">, readonly strin
     "particleUVRotateRate",
     "particleUVScrollRate",
     "emitterUvScrollRate",
+    ...TEXTURE_EFFECT_FIELDS,
   ],
   render: [
     "blendMode",
@@ -166,14 +174,7 @@ export const GROUP_FIELDS: Record<Exclude<EmitterGroup, "other">, readonly strin
     "LegacySimple",
   ],
   material: ["Material", "CustomMaterial", "materialOverrideDefinitions", "materialDrivers"],
-  effects: [
-    "Audio",
-    "alphaErosionDefinition",
-    "distortionDefinition",
-    "reflectionDefinition",
-    "childParticleSetDefinition",
-    "fieldCollectionDefinition",
-  ],
+  effects: ["Audio", "childParticleSetDefinition", "fieldCollectionDefinition"],
 };
 
 /** The word a chip and the panel's heading carry. */
@@ -223,6 +224,11 @@ const BY_FIELD: ReadonlyMap<string, EmitterGroup> = new Map(
     fields.map((field) => [nameHash(field), group as EmitterGroup] as const),
   ),
 );
+
+/** The group a field of the emitter falls in, by its hash, and Other for an unlisted one. */
+export function fieldGroup(hash: string): EmitterGroup {
+  return BY_FIELD.get(hash) ?? "other";
+}
 
 const FIELD_ORDER: ReadonlyMap<string, number> = new Map(
   Object.values(GROUP_FIELDS)

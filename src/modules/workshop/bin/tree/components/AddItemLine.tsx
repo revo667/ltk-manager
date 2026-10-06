@@ -237,27 +237,26 @@ function ClassField({ line, edit, autoFocus, error, send, onType }: FieldProps) 
           setText("");
         }}
       />
-      <Combobox.Portal>
-        <Combobox.Positioner side="bottom" align="start" sideOffset={2}>
-          <Combobox.Popup className="max-h-64 min-w-80 py-0.5">
-            <Combobox.List>
-              {(suggestion: ClassSuggestion) => (
-                <Combobox.Item
-                  key={
-                    suggestion.kind === "choice"
-                      ? suggestion.choice.hash
-                      : `typed:${suggestion.text}`
-                  }
-                  value={suggestion}
-                  className="gap-2 px-2 py-1 font-mono text-mono-row"
-                >
-                  <ClassText suggestion={suggestion} />
-                </Combobox.Item>
-              )}
-            </Combobox.List>
-          </Combobox.Popup>
-        </Combobox.Positioner>
-      </Combobox.Portal>
+      <Combobox.Content
+        side="bottom"
+        align="start"
+        sideOffset={2}
+        className="max-h-64 min-w-80 py-0.5"
+      >
+        <Combobox.List>
+          {(suggestion: ClassSuggestion) => (
+            <Combobox.Item
+              key={
+                suggestion.kind === "choice" ? suggestion.choice.hash : `typed:${suggestion.text}`
+              }
+              value={suggestion}
+              className="gap-2 px-2 py-1 font-mono text-mono-row"
+            >
+              <ClassText suggestion={suggestion} />
+            </Combobox.Item>
+          )}
+        </Combobox.List>
+      </Combobox.Content>
     </Combobox.Root>
   );
 }
@@ -274,7 +273,7 @@ export function ClassText({ suggestion }: { suggestion: ClassSuggestion }) {
 
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2">
-      <span className={twMerge("truncate text-surface-100", unnamed && "text-surface-300")}>
+      <span className={twMerge("truncate text-surface-100", unnamed && "text-surface-400")}>
         {classLabel(suggestion)}
       </span>
       {note !== null && <span className="ml-auto shrink-0 text-meta text-surface-400">{note}</span>}

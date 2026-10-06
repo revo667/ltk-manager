@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ContextMenu, ToastProvider } from "@/components";
 import type { BinRow, DeclaredMark, RowDeclaration } from "@/lib/tauri";
 import { editCall, isEdit, landed } from "@/test/binEdit";
+import { commandNames } from "@/test/commandNames";
 import { mockInvoke } from "@/test/mocks/tauri";
 import { createTestQueryClient } from "@/test/utils";
 
@@ -47,6 +48,7 @@ function Menu({ declares, row = ROW, editable = true }: MenuProps) {
     ? {
         layer: "base",
         marks: NO_MARKS,
+        within: new Set<string>(),
         diagnostics: new Map(),
         objects: new Map(),
         links: new Map(),
@@ -67,13 +69,9 @@ function Menu({ declares, row = ROW, editable = true }: MenuProps) {
       <ContextMenu.Trigger>
         <span>the row</span>
       </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Positioner>
-          <ContextMenu.Popup>
-            <DeclarationMenuItems row={row} />
-          </ContextMenu.Popup>
-        </ContextMenu.Positioner>
-      </ContextMenu.Portal>
+      <ContextMenu.Content>
+        <DeclarationMenuItems row={row} />
+      </ContextMenu.Content>
     </ContextMenu.Root>,
   );
 }
@@ -99,7 +97,8 @@ beforeEach(() => {
   writeText.mockClear();
   mockInvoke.mockReset();
   mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-    if (command === "bin_row_declaration") return Promise.resolve({ ok: true, value: spelled });
+    if (command === commandNames.bin.binRowDeclaration)
+      return Promise.resolve({ ok: true, value: spelled });
     if (isEdit(command, args, "declareReference")) return landed();
     return Promise.reject(new Error(`unexpected command ${command}`));
   });
@@ -210,7 +209,7 @@ describe("the declaration actions of a row", () => {
         "2 fields or entries no declaration can spell are left as the game has them",
       ),
     ).toBeInTheDocument();
-    expect(mockInvoke).toHaveBeenCalledWith("bin_row_declaration", {
+    expect(mockInvoke).toHaveBeenCalledWith(commandNames.bin.binRowDeclaration, {
       document: DOCUMENT,
       entry: ROW.entry,
       path: "",

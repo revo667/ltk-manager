@@ -54,6 +54,8 @@ export interface TransportProps {
   /** Whether the run starts over at its end, drawn as a toggle when `onLoopingChange` is given. */
   looping?: boolean;
   onLoopingChange?: (looping: boolean) => void;
+  /** The loop switch is drawn but takes no press, for a run that never starts over. */
+  loopDisabled?: boolean;
   /** `mini` is play, the scrub and the time alone, "The timeline" in docs/ux/BIN_EDITOR.md. */
   variant?: "full" | "mini";
   /**
@@ -85,6 +87,7 @@ export function Transport({
   onStep,
   looping = false,
   onLoopingChange,
+  loopDisabled = false,
   variant = "full",
   playhead,
   children,
@@ -102,7 +105,7 @@ export function Transport({
       <div className="flex shrink-0 items-center gap-0.5">
         {steps && (
           <StepButton label={m.workshop_bin_preview_step_back_action()} onClick={() => onStep(-1)}>
-            <CaretLineLeftIcon weight="bold" className="h-4 w-4" />
+            <CaretLineLeftIcon weight="bold" className="size-4" />
           </StepButton>
         )}
         <PlayButton playing={playing} onPlayingChange={onPlayingChange} />
@@ -111,12 +114,12 @@ export function Transport({
             label={m.workshop_bin_preview_step_forward_action()}
             onClick={() => onStep(1)}
           >
-            <CaretLineRightIcon weight="bold" className="h-4 w-4" />
+            <CaretLineRightIcon weight="bold" className="size-4" />
           </StepButton>
         )}
         {!mini && onRestart && (
           <StepButton label={m.workshop_bin_preview_restart_action()} onClick={onRestart}>
-            <ArrowCounterClockwiseIcon weight="bold" className="h-4 w-4" />
+            <ArrowCounterClockwiseIcon weight="bold" className="size-4" />
           </StepButton>
         )}
       </div>
@@ -126,7 +129,9 @@ export function Transport({
       {(loops || !mini) && <Separator orientation="vertical" className="mx-1 h-4" />}
 
       <div className="flex shrink-0 items-center gap-1.5">
-        {loops && <LoopToggle looping={looping} onLoopingChange={onLoopingChange} />}
+        {loops && (
+          <LoopToggle looping={looping} disabled={loopDisabled} onLoopingChange={onLoopingChange} />
+        )}
         {!mini && <SpeedField speed={speed} onSpeedChange={onSpeedChange} />}
       </div>
 
@@ -147,40 +152,40 @@ function PlayButton({
   const Glyph = playing ? PauseIcon : PlayIcon;
 
   return (
-    <Tooltip content={hint}>
-      <IconButton
-        variant="filled"
-        size="xs"
-        compact
-        aria-label={label}
-        icon={<Glyph weight="fill" className="h-4 w-4" />}
-        onClick={() => onPlayingChange(!playing)}
-      />
-    </Tooltip>
+    <IconButton
+      variant="filled"
+      aria-label={label}
+      icon={<Glyph weight="fill" className="size-4" />}
+      onClick={() => onPlayingChange(!playing)}
+      tooltip={hint}
+    />
   );
 }
 
 /** The loop switch, lit while the run starts over at its end. */
 function LoopToggle({
   looping,
+  disabled,
   onLoopingChange,
 }: {
   looping: boolean;
+  disabled: boolean;
   onLoopingChange: (looping: boolean) => void;
 }) {
+  const hint = disabled
+    ? m.workshop_bin_preview_loop_continuous_hint()
+    : m.workshop_bin_preview_loop_hint();
+
   return (
-    <Tooltip content={m.workshop_bin_preview_loop_hint()}>
-      <IconButton
-        variant="ghost"
-        size="xs"
-        compact
-        aria-label={m.workshop_bin_preview_loop_label()}
-        aria-pressed={looping}
-        className="text-surface-400 aria-pressed:bg-accent-500/15 aria-pressed:text-accent-300"
-        icon={<RepeatIcon weight="bold" className="h-4 w-4" />}
-        onClick={() => onLoopingChange(!looping)}
-      />
-    </Tooltip>
+    <IconButton
+      aria-label={m.workshop_bin_preview_loop_label()}
+      pressed={looping}
+      disabled={disabled}
+      className="text-surface-400"
+      icon={<RepeatIcon />}
+      onClick={() => onLoopingChange(!looping)}
+      tooltip={hint}
+    />
   );
 }
 
@@ -190,7 +195,7 @@ function SpeedField({ speed, onSpeedChange }: Pick<TransportProps, "speed" | "on
     <span className="flex shrink-0 items-center gap-1">
       <Tooltip content={m.workshop_bin_preview_speed_label()}>
         <span className="flex shrink-0">
-          <GaugeIcon aria-hidden className="h-3.5 w-3.5 text-surface-400" />
+          <GaugeIcon aria-hidden className="size-3.5 text-surface-400" />
         </span>
       </Tooltip>
       <StepperField

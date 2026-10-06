@@ -3,11 +3,15 @@ import {
   ArrowsOutSimpleIcon,
   CaretRightIcon,
   CubeIcon,
+  AppWindowIcon,
   FolderIcon,
   type Icon,
+  ImageSquareIcon,
+  TextAaIcon,
   PersonSimpleIcon,
   SparkleIcon,
   SphereIcon,
+  SquaresFourIcon,
   SpinnerGapIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
@@ -19,9 +23,10 @@ import { twMerge } from "@/utils";
 
 import { fitName, type NameType } from "../../explorer/utils/tileName";
 import { clickIntent } from "../../state";
+import { useObjectPreviewKind } from "../hooks/useObjectPreviewKind";
 import { useOpenObjectNode } from "../hooks/useOpenObjectNode";
 import type { PreviewOutcome } from "../state/previewStills";
-import { type ObjectPreviewKind, objectPreviewKind } from "../utils/objectPreview";
+import type { ObjectPreviewKind } from "../utils/objectPreview";
 import type { ObjectPrefixNode, ObjectRowNode } from "../utils/objectTree";
 
 /** Lines an object's name wraps to before it is cut, leaving room for its class line. */
@@ -31,6 +36,10 @@ const KIND_GLYPH: Record<ObjectPreviewKind, Icon> = {
   vfx: SparkleIcon,
   skin: PersonSimpleIcon,
   material: SphereIcon,
+  ui: ImageSquareIcon,
+  view: AppWindowIcon,
+  element: SquaresFourIcon,
+  font: TextAaIcon,
 };
 
 interface ObjectTileProps {
@@ -220,38 +229,35 @@ function ExpandButton({ index, expanded, onExpand }: ExpandButtonProps) {
   const Glyph = expanded ? ArrowsInSimpleIcon : ArrowsOutSimpleIcon;
 
   return (
-    <Tooltip content={hint}>
-      <IconButton
-        variant="ghost"
-        size="xs"
-        compact
-        tabIndex={-1}
-        aria-label={label}
-        aria-pressed={expanded}
-        onPointerDown={() => {
-          openAtPress.current = expanded;
-        }}
-        onClick={(event) => {
-          const wasOpen = event.detail === 0 ? expanded : openAtPress.current;
-          onExpand(wasOpen ? null : index);
-        }}
-        className={twMerge(
-          "pointer-events-auto rounded-sm bg-scrim text-surface-200 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-scrim hover:text-surface-50",
-          expanded && "text-accent-300 opacity-100",
-        )}
-        icon={<Glyph weight="bold" className="size-3.5" />}
-      />
-    </Tooltip>
+    <IconButton
+      tabIndex={-1}
+      aria-label={label}
+      aria-pressed={expanded}
+      onPointerDown={() => {
+        openAtPress.current = expanded;
+      }}
+      onClick={(event) => {
+        const wasOpen = event.detail === 0 ? expanded : openAtPress.current;
+        onExpand(wasOpen ? null : index);
+      }}
+      className={twMerge(
+        "pointer-events-auto rounded-sm bg-scrim text-surface-200 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-scrim hover:text-surface-50",
+        expanded && "text-accent-300 opacity-100",
+      )}
+      icon={<Glyph weight="bold" className="size-3.5" />}
+      tooltip={hint}
+    />
   );
 }
 
 function TileGlyph({ node }: { node: ObjectPrefixNode | ObjectRowNode }) {
+  const kindOf = useObjectPreviewKind();
   if (node.type === "prefix") {
     /* DS-KIND-HUE */
     return <FolderIcon weight="fill" className="h-2/5 w-2/5 text-folder-text" />;
   }
 
-  const kind = objectPreviewKind(node);
+  const kind = kindOf(node);
   const Glyph = kind === null ? CubeIcon : KIND_GLYPH[kind];
   return <Glyph weight="duotone" className="h-2/5 w-2/5 text-bin-class-text/70" />;
 }

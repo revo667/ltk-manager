@@ -17,6 +17,7 @@ import type { OpenIntent } from "../../../palette/utils/types";
 /* The leaf rather than the preview barrel, which pulls the document that routes here. */
 import { BinPreview } from "../../../preview/components/BinPreview";
 import { CollapseAllButton } from "../../../shared/components/CollapseAllButton";
+import { DocumentFrame } from "../../../shared/components/DocumentFrame";
 import {
   useAimCurve,
   useLendOpenBin,
@@ -41,6 +42,7 @@ import { useBinTab } from "../hooks/useBinTab";
 import { useDeclaredState } from "../hooks/useDeclared";
 import { BinEditState } from "./BinEditState";
 import { DeclarationsOffNotice } from "./DeclarationsOffNotice";
+import { SandboxOptions } from "./SandboxOptions";
 
 interface BinDocumentProps {
   /** The editor's id for the tab, which a reveal request names. */
@@ -184,9 +186,12 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
   );
 
   return (
-    <div data-ui="BinDocument" className="flex min-h-0 flex-1 flex-col bg-surface-950">
+    <DocumentFrame data-ui="BinDocument">
       <NewObjectContext value={declares ? newObject : null}>
         <DocumentToolbar active={active}>
+          <span className="flex shrink-0 items-center text-row select-none">
+            <SandboxOptions documentId={documentId} handle={handle} />
+          </span>
           <BinFacts
             document={handle.document}
             header={handle.header}
@@ -227,7 +232,7 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
           />
         </CurveDockContext>
       </NewObjectContext>
-    </div>
+    </DocumentFrame>
   );
 }
 
@@ -308,13 +313,15 @@ function Deleted({ document, objects }: DeletedProps) {
       >
         {label}
       </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner side="bottom" align="start" sideOffset={8}>
-          <Popover.Popup aria-label={label} className="max-w-md p-2 text-meta">
-            <DeletedLinks document={document} objects={objects} />
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
+      <Popover.Content
+        side="bottom"
+        align="start"
+        sideOffset={8}
+        aria-label={label}
+        className="max-w-md p-2 text-meta"
+      >
+        <DeletedLinks document={document} objects={objects} />
+      </Popover.Content>
     </Popover.Root>
   );
 }

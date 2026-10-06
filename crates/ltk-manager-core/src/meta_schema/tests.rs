@@ -142,6 +142,50 @@ fn class_cards_include_inherited_constructor_fields() {
 }
 
 #[test]
+fn a_class_card_names_its_bases_nearest_first() {
+    let schema = derived_schema();
+    let card = schema.class_schema(DERIVED, Some(AFTER_RETYPE)).unwrap();
+
+    assert_eq!(card.bases, [float_text_icon_data()]);
+}
+
+#[test]
+fn an_inherited_field_names_the_base_that_declares_it() {
+    let schema = derived_schema();
+    let derived = schema.class_schema(DERIVED, Some(AFTER_RETYPE)).unwrap();
+    let own = schema
+        .class_schema(FLOAT_TEXT_ICON_DATA, Some(AFTER_RETYPE))
+        .unwrap();
+
+    assert_eq!(
+        field(&derived, "mOffset").owner,
+        Some(float_text_icon_data())
+    );
+    assert_eq!(field(&own, "mOffset").owner, None);
+}
+
+#[test]
+fn a_revision_names_the_patch_that_shipped_its_first_build() {
+    let card = schema()
+        .class_schema(FLOAT_TEXT_ICON_DATA, Some(AFTER_RETYPE))
+        .unwrap();
+    let patches: Vec<_> = field(&card, "mIconFileName")
+        .revisions
+        .iter()
+        .map(|revision| revision.patch.as_deref())
+        .collect();
+
+    assert_eq!(patches, [None, Some("16.17")]);
+}
+
+fn float_text_icon_data() -> ClassRef {
+    ClassRef {
+        hash: FLOAT_TEXT_ICON_DATA.into(),
+        name: Some("FloatTextIconData".to_owned()),
+    }
+}
+
+#[test]
 fn a_lineage_runs_from_the_class_to_its_bases() {
     let schema = derived_schema();
 
@@ -215,11 +259,13 @@ fn a_class_answers_its_fields_named_first_with_their_types_at_a_build() {
             FieldRevision {
                 from: 5_229_820,
                 to: Some(8_049_184),
+                patch: None,
                 shape: Some(KindShape::bare(PropertyKind::String)),
             },
             FieldRevision {
                 from: 8_104_348,
                 to: None,
+                patch: Some("16.17".to_owned()),
                 shape: Some(KindShape::bare(PropertyKind::WadChunkLink)),
             },
         ]
@@ -246,6 +292,7 @@ fn a_class_answers_its_fields_named_first_with_their_types_at_a_build() {
         vec![FieldRevision {
             from: 5_229_820,
             to: None,
+            patch: None,
             shape: None,
         }]
     );
@@ -895,5 +942,31 @@ fn the_shared_schema_reopens_for_another_build() {
             &held.schema(Some(GameBuild::new(13, 15, 5_229_820)))
         ),
         "a different install is a different choice of database"
+    );
+}
+
+/// The hash tables lag the game, and a class or field they leave unnamed takes the
+/// database's name.
+#[test]
+fn schema_names_name_what_the_tables_leave_unnamed() {
+    use ltk_hash::Hash as _;
+
+    use crate::bin_document::RowNames as _;
+
+    let schema = MetaSchema::shipped();
+    let names = SchemaNames::new(&(), &schema);
+    let class = BinHash::hash_str("VfxFloatDynamicProperty");
+    let field = BinHash::hash_str("EmissionRate");
+    let mut named = Vec::new();
+
+    names.for_each_class(&[class], &mut |at, name| named.push((at, name.to_owned())));
+    names.for_each_field(&[field], &mut |at, name| named.push((at, name.to_owned())));
+
+    assert_eq!(
+        named,
+        [
+            (0, "VfxFloatDynamicProperty".to_owned()),
+            (0, "EmissionRate".to_owned()),
+        ]
     );
 }

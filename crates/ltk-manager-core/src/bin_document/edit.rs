@@ -78,10 +78,14 @@ pub(super) enum Edit {
     },
     /// Set the header's dependency list to `paths`.
     Dependencies { paths: Vec<String> },
+    /// Apply `edits` in order, as one step.
+    Group { edits: Vec<Edit> },
 }
 
 /// Which way a step through an edit history goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
 pub enum HistoryStep {
     /// Revert the latest edit.
     Undo,
@@ -98,9 +102,7 @@ pub enum HistoryStep {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum Reshape {
     /// Values or properties changed and no row moved.
     InPlace,
@@ -166,7 +168,8 @@ impl Reshape {
             | Edit::Leaf { .. }
             | Edit::InsertProperty { .. }
             | Edit::SetPointer { .. }
-            | Edit::Dependencies { .. } => Self::InPlace,
+            | Edit::Dependencies { .. }
+            | Edit::Group { .. } => Self::InPlace,
         }
     }
 
@@ -193,9 +196,7 @@ impl Reshape {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum LeafValue {
     /// A `Bool` or a `BitBool`.
     Bool {
@@ -246,9 +247,7 @@ pub enum LeafValue {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum EditRejection {
     /// The node holds no value an edit sets: a container, a struct or an absent optional.
     NotALeaf,
@@ -304,6 +303,10 @@ pub enum EditRejection {
     Untypable,
     /// The chunk holds an object of that name.
     ObjectExists,
+    /// The text is no value a copy put on the clipboard.
+    NotACopy,
+    /// The holder takes no item of the copied value's class.
+    ForeignClass,
 }
 
 impl fmt::Display for EditRejection {
@@ -335,6 +338,8 @@ impl fmt::Display for EditRejection {
             Self::Undeclarable => f.write_str("no declaration expresses the edit"),
             Self::Untypable => f.write_str("the schema types no such property at this build"),
             Self::ObjectExists => f.write_str("the chunk holds an object of that name"),
+            Self::NotACopy => f.write_str("the text is no copied value"),
+            Self::ForeignClass => f.write_str("the holder takes no item of that class"),
         }
     }
 }
@@ -342,42 +347,47 @@ impl fmt::Display for EditRejection {
 /// Why a document takes no edit. "Where editing is allowed" in docs/ux/BIN_EDITOR.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
-#[cfg_attr(feature = "ts", ts(export))]
 pub enum ReadOnly {
-    /// A chunk of the installed game.
-    Install,
     /// A file outside every project.
     Loose,
     /// A `PTCH` layer. No edit writes a patch record.
     Patch,
     /// A game chunk inside a project whose game data declarations are off. ADR-0042.
     DeclarationsOff,
+    /// A document in the game sandbox, which is the installed game alone. ADR-0056.
+    GameSandbox,
 }
 
 impl fmt::Display for ReadOnly {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Install => "a file of the installed game",
             Self::Loose => "a file outside every project",
             Self::Patch => "a patch layer",
             Self::DeclarationsOff => "a game file of a project with declarations off",
+            Self::GameSandbox => "a file of the game sandbox",
         })
     }
 }
 
 impl BinDocument {
-    /// The gate `asset` stands behind, or `None` where the document takes edits.
+    /// The file's own gate for `asset`, or `None` where the file takes edits.
+    ///
+    /// [`BinDocuments::read_only`](super::BinDocuments::read_only) adds the game sandbox's
+    /// gate. ADR-0056.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a League client chunk, which the bin store refuses before asking.
     #[must_use]
     pub fn read_only(&self, asset: &AssetRef) -> Option<ReadOnly> {
         match (asset, &self.file) {
             (AssetRef::GameChunk { .. }, _) => match self.declaring() {
-                Some(Declaring::On) => None,
                 Some(Declaring::Off) => Some(ReadOnly::DeclarationsOff),
-                None => Some(ReadOnly::Install),
+                Some(Declaring::On) | None => None,
             },
             (AssetRef::File { .. }, _) => Some(ReadOnly::Loose),
+            (AssetRef::LcuChunk { .. }, _) => unreachable!("the bin store holds no client chunk"),
             (AssetRef::Layer { .. }, BinFile::Override(_)) => Some(ReadOnly::Patch),
             (AssetRef::Layer { .. }, BinFile::Prop(_)) => None,
         }
@@ -397,7 +407,7 @@ impl BinDocument {
 
     /// Set the leaf at `path` under `entry` to `value`, answering the value it held.
     ///
-    /// `path` is the wire form of ADR-0027. A present optional that draws its value on
+    /// `path` is the hash path of ADR-0027. A present optional that draws its value on
     /// its own row sets that value.
     ///
     /// The edit joins the undo stack and empties the redo stack.
@@ -494,7 +504,7 @@ impl BinDocument {
 
     /// Apply `edit` and mark its object touched, answering the edit that reverts it. Both
     /// stacks are left alone.
-    fn apply(&mut self, edit: Edit) -> Result<Edit, BinDocumentError> {
+    pub(super) fn apply(&mut self, edit: Edit) -> Result<Edit, BinDocumentError> {
         match edit {
             Edit::ReplaceProperty { entry, path, value } => self.swap_property(entry, &path, value),
             Edit::Leaf { entry, path, value } => {
@@ -531,6 +541,15 @@ impl BinDocument {
             Edit::SetKey { entry, path, key } => self.swap_key(entry, &path, key),
             Edit::SetPointer { entry, path, value } => self.swap_pointer(entry, &path, value),
             Edit::Dependencies { paths } => self.swap_dependencies(paths),
+            Edit::Group { edits } => {
+                let mut inverses = Vec::with_capacity(edits.len());
+                for edit in edits {
+                    inverses.push(self.apply(edit)?);
+                }
+
+                inverses.reverse();
+                Ok(Edit::Group { edits: inverses })
+            }
         }
     }
 
@@ -707,7 +726,7 @@ pub(super) fn set(leaf: ValueMut<'_>, value: LeafValue) -> Result<LeafValue, Edi
             Ok(vector(mem::replace(&mut leaf.value, next).to_array()))
         }
         (ValueMut::Matrix44(leaf), V::Matrix { values }) => {
-            /* Row-major on the wire, as the row projection writes a matrix. */
+            /* Row-major, as the row projection writes a matrix. */
             let next = Mat4::from_cols_array(&components(&values)?).transpose();
             let held = mem::replace(&mut leaf.value, next);
             Ok(V::Matrix {

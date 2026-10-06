@@ -75,8 +75,8 @@ fn a_construction_declares_an_object_of_the_class_holding_no_property() {
         Some(&BinObject::new(h(COPY), class))
     );
     assert!(
-        manifest(dir.path(), "base").contains(&format!("        class: '{}'\n", hex(class))),
-        "a class no table names is spelled by its hash"
+        manifest(dir.path(), "base").contains("        class: SkinCharacterDataProperties\n"),
+        "a class only the schema names is spelled by the schema's name"
     );
 }
 
@@ -292,4 +292,144 @@ fn an_object_edit_that_does_not_apply_is_reported() {
     assert_eq!(skipped[0].entry, hex(h(SKIN)));
     assert_eq!(skipped[1].object, Some(ObjectSkip::RemovalUnmatched));
     assert_eq!(skipped[1].entry, "");
+}
+
+const EXPLOSION: &str = "Mods/jade-teemo/Particles/Explosion";
+
+fn template(id: &str) -> NewObject {
+    NewObject::Template {
+        template: id.to_owned(),
+    }
+}
+
+fn text_of(object: &BinObject, field: &str) -> String {
+    match &object.properties[&h(field)] {
+        PropertyValueEnum::String(text) => text.value.clone(),
+        other => panic!("{field} is no string: {other:?}"),
+    }
+}
+
+#[test]
+fn a_template_declares_a_system_of_its_value_under_its_own_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut document = declared(project(dir.path()));
+
+    let created = document
+        .create_object(EXPLOSION, &template("explosion"))
+        .unwrap();
+
+    let object = document.object_at(created).unwrap();
+    assert_eq!(object.class_hash, h("VfxSystemDefinitionData"));
+    assert_eq!(text_of(object, "particleName"), "Explosion");
+    assert_eq!(text_of(object, "particlePath"), EXPLOSION);
+    assert_matches!(
+        &object.properties[&h("complexEmitterDefinitionData")],
+        PropertyValueEnum::Container(list) if list.len() == 7
+    );
+    let text = manifest(dir.path(), "base");
+    assert!(text.contains("class: VfxSystemDefinitionData"), "{text}");
+    assert!(text.contains("complexEmitterDefinitionData"), "{text}");
+}
+
+#[test]
+fn a_template_is_one_undo_step() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut document = declared(project(dir.path()));
+    let created = document
+        .create_object(EXPLOSION, &template("aura"))
+        .unwrap();
+
+    assert!(document.undo().unwrap());
+
+    assert!(document.object_at(created).is_none());
+    assert!(!document.undo().unwrap());
+}
+
+#[test]
+fn a_template_no_catalog_holds_is_refused_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut document = declared(project(dir.path()));
+
+    assert_matches!(
+        document.create_object(EXPLOSION, &template("glow")),
+        Err(BinDocumentError::NodeNotFound { .. })
+    );
+    assert!(!has_manifest(dir.path(), "base"));
+}
+
+const FONT: &str = "UX/Fonts/Body";
+
+/// A declared document whose game declares `FONT` in a chunk of its own.
+fn declared_beside_a_font(dir: &Path) -> BinDocument {
+    let font = BinObject::builder(h(FONT), h("GameFontDescription"))
+        .property(h("name"), values::String::new("Body".to_owned()))
+        .property(
+            h("typeData"),
+            values::ObjectLink::new(h("UX/Fonts/Types/Body")),
+        )
+        .build();
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    ltk_meta::Bin::builder()
+        .object(font)
+        .build()
+        .to_writer(&mut bytes)
+        .unwrap();
+
+    let context = super::super::DeclareContext {
+        project: project(dir),
+        schema: crate::meta_schema::PatchSchema::new(crate::meta_schema::shared(None), None),
+        game: Game::declaring(
+            &[SKIN, FONT, "GameFontDescription", "name", "typeData"],
+            std::collections::HashMap::from([(h(FONT), bytes.into_inner())]),
+        ),
+    };
+    BinDocument::declare(
+        super::super::tests::game_bin(),
+        ltk_game_data::path_hash(CHUNK),
+        context,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_copy_declares_an_object_another_chunk_holds_and_undoes_as_one_step() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut document = declared_beside_a_font(dir.path());
+
+    let created = document
+        .create_object(
+            COPY,
+            &NewObject::Copy {
+                source: hex(h(FONT)),
+            },
+        )
+        .unwrap();
+
+    let copy = document.object_at(created).unwrap();
+    assert_eq!(copy.class_hash, h("GameFontDescription"));
+    assert_eq!(
+        copy.properties.get(&h("typeData")),
+        Some(&values::ObjectLink::new(h("UX/Fonts/Types/Body")).into())
+    );
+    assert!(manifest(dir.path(), "base").contains("class: GameFontDescription"));
+
+    assert!(document.undo().unwrap());
+    assert!(document.object_at(created).is_none());
+    assert!(!document.undo().unwrap());
+}
+
+#[test]
+fn a_copy_of_an_object_the_game_declares_nowhere_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut document = declared(project(dir.path()));
+
+    let outcome = document.create_object(
+        COPY,
+        &NewObject::Copy {
+            source: hex(h(FONT)),
+        },
+    );
+
+    assert_matches!(outcome, Err(BinDocumentError::NodeNotFound { .. }));
+    assert!(!has_manifest(dir.path(), "base"));
 }

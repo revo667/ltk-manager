@@ -18,7 +18,8 @@ import type {
   WorkshopProject,
 } from "@/lib/tauri";
 import { useWorkshopLayoutStore } from "@/stores";
-import { editCall, isEdit } from "@/test/binEdit";
+import { editCall, isEdit, landed } from "@/test/binEdit";
+import { commandNames } from "@/test/commandNames";
 import { mockInvoke } from "@/test/mocks/tauri";
 import { createTestQueryClient } from "@/test/utils";
 
@@ -29,6 +30,7 @@ import { forgetBinSave } from "../../../../state";
 import { CurveDockContext, type CurveTarget } from "../../../curves/state/curveTarget";
 import { READ_ROW_CAP } from "../../../documents/hooks/useBinRead";
 import { nameHash } from "../../../shared/utils/binHash";
+import { useInspectorViewStore } from "../../../vfx/inspector/state/inspectorView";
 import { emitterLabel } from "../../../vfx/inspector/utils/emitterLabels";
 import { vfxLayout } from "../../utils/classLayouts";
 import { ClassView } from "../ClassView";
@@ -456,16 +458,19 @@ beforeEach(() => {
   useWorkshopEditorStore.setState({ byProject: {} });
   /* Defaults is app-wide and persisted, so a case that turns it on would turn it on for the next. */
   useWorkshopLayoutStore.setState({ inspectorDefaults: false, openSections: {} });
+  useInspectorViewStore.setState({ definedOnly: false });
   mockInvoke.mockReset();
   mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-    if (command === "bin_read") {
+    if (command === commandNames.bin.binRead) {
       const paths = (args?.paths ?? []) as string[];
       const pages = args?.entry === CHILD_ENTRY ? CHILD_PAGES : PAGES;
       return Promise.resolve({ ok: true, value: paths.map((path) => pages[path] ?? page([])) });
     }
-    if (command === "class_schema") return Promise.resolve({ ok: true, value: SCHEMA });
-    if (command === "locate_game_files") return Promise.resolve({ ok: true, value: {} });
-    if (command === "declared_objects") {
+    if (command === commandNames.bin.classSchema)
+      return Promise.resolve({ ok: true, value: SCHEMA });
+    if (command === commandNames.preview.locateFilesNear)
+      return Promise.resolve({ ok: true, value: {} });
+    if (command === commandNames.objects.declaredObjects) {
       const hashes = (args?.objectHashes ?? []) as string[];
       const objects = Object.fromEntries(
         hashes.filter((hash) => hash in DECLARED).map((hash) => [hash, DECLARED[hash]]),
@@ -501,14 +506,14 @@ async function showCards(user: UserEvent) {
 /** Every path the projected read has asked for, in the order it asked. */
 function asked(): string[] {
   return mockInvoke.mock.calls
-    .filter(([command]) => command === "bin_read")
+    .filter(([command]) => command === commandNames.bin.binRead)
     .flatMap(([, args]) => (args as { paths: string[] }).paths);
 }
 
 /** Every object hash the link checks have asked the index about, in the order asked. */
 function declaredAsked(): string[] {
   return mockInvoke.mock.calls
-    .filter(([command]) => command === "declared_objects")
+    .filter(([command]) => command === commandNames.objects.declaredObjects)
     .flatMap(([, args]) => (args as { objectHashes: string[] }).objectHashes);
 }
 
@@ -521,6 +526,11 @@ function rect(top: number, height: number): DOMRect {
 /** A group's own fold button, which is the only control naming it that expands. */
 function section(group: string, open = true): HTMLElement {
   return screen.getByRole("button", { name: group, expanded: open });
+}
+
+/** A group's fold button, awaited, since a default-only group waits on the class schema. */
+function findSection(group: string, open = true): Promise<HTMLElement> {
+  return screen.findByRole("button", { name: group, expanded: open });
 }
 
 /** A card's group chip, which neither folds a section nor sits in the jump bar. */
@@ -604,7 +614,7 @@ describe("ClassView over a particle system", () => {
     };
     const read = mockInvoke.getMockImplementation()!;
     mockInvoke.mockImplementation((command, args) => {
-      if (command === "bin_declared") {
+      if (command === commandNames.bin.binDeclared) {
         return Promise.resolve({ ok: true, value: declared });
       }
 
@@ -664,7 +674,7 @@ describe("ClassView over a particle system", () => {
       ],
     };
     mockInvoke.mockImplementation((command, args) => {
-      if (command === "bin_declared") {
+      if (command === commandNames.bin.binDeclared) {
         return Promise.resolve({ ok: true, value: declared });
       }
 
@@ -695,7 +705,7 @@ describe("ClassView over a particle system", () => {
   it("patches an inspector leaf, refreshes its reads and queues the document save", async () => {
     const read = mockInvoke.getMockImplementation()!;
     mockInvoke.mockImplementation((command, args) => {
-      if (command === "bin_edit" || command === "bin_save") {
+      if (command === commandNames.bin.binEdit || command === commandNames.bin.binSave) {
         return Promise.resolve({ ok: true, value: null });
       }
 
@@ -719,9 +729,12 @@ describe("ClassView over a particle system", () => {
       ),
     );
     await waitFor(() => expect(asked().length).toBeGreaterThan(readsBefore));
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("bin_save", { document: 9 }), {
-      timeout: 2000,
-    });
+    await waitFor(
+      () => expect(mockInvoke).toHaveBeenCalledWith(commandNames.bin.binSave, { document: 9 }),
+      {
+        timeout: 2000,
+      },
+    );
   });
 
   it("edits a value family's authored constant at its nested address", async () => {
@@ -751,7 +764,7 @@ describe("ClassView over a particle system", () => {
     let saved = false;
 
     mockInvoke.mockImplementation((command, args) => {
-      if (command === "class_schema") {
+      if (command === commandNames.bin.classSchema) {
         return Promise.resolve({
           ok: true,
           value: {
@@ -784,11 +797,11 @@ describe("ClassView over a particle system", () => {
         return Promise.resolve({ ok: true, value: null });
       }
 
-      if (command === "bin_save") {
+      if (command === commandNames.bin.binSave) {
         return Promise.resolve({ ok: true, value: null });
       }
 
-      if (command === "bin_read" && saved) {
+      if (command === commandNames.bin.binRead && saved) {
         const paths = args?.paths as string[];
         return Promise.resolve({
           ok: true,
@@ -840,9 +853,12 @@ describe("ClassView over a particle system", () => {
     expect(rowOrder()).toEqual(orderBeforeEdit);
     expect(within(await fieldRow("period")).getByPlaceholderText("0")).toBe(period);
     expect(section("Emission")).toHaveAttribute("aria-expanded", "true");
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("bin_save", { document: 9 }), {
-      timeout: 2000,
-    });
+    await waitFor(
+      () => expect(mockInvoke).toHaveBeenCalledWith(commandNames.bin.binSave, { document: 9 }),
+      {
+        timeout: 2000,
+      },
+    );
   });
 
   it("keeps a stable value mode control beside the editable constant", async () => {
@@ -879,7 +895,7 @@ describe("ClassView over a particle system", () => {
         return Promise.resolve({ ok: true, value: null });
       }
 
-      if (command === "bin_read" && constant) {
+      if (command === commandNames.bin.binRead && constant) {
         const paths = (args?.paths ?? []) as string[];
         const constantRate = page([
           row(`${RATE}.${at("constantValue")}`, "constantValue", { type: "float", value: 3 }),
@@ -948,18 +964,20 @@ describe("ClassView over a particle system", () => {
     expect(await within(rate).findByDisplayValue("3")).toHaveClass(
       "w-[var(--bin-scalar-width,8rem)]",
     );
-    expect(await within(colour).findByRole("textbox", { name: "x" })).toHaveClass(
-      "w-[var(--bin-component-width,6rem)]",
+    expect(await within(colour).findByRole("button", { name: "Pick a color" })).toHaveTextContent(
+      "100%",
     );
   });
 
   it("edits a colour constant without changing its other channels", async () => {
     renderSystem(vi.fn(), true);
     const line = within(await fieldRow("birthColor"));
-    const field = await line.findByRole("textbox", { name: "x" });
+    await userEvent.click(await line.findByRole("button", { name: "Pick a color" }));
+    const field = await screen.findByRole("textbox", { name: "Channel R" });
 
     await userEvent.clear(field);
-    await userEvent.type(field, "0.5{Enter}");
+    await userEvent.type(field, "0.5");
+    await userEvent.click(screen.getByRole("button", { name: "Save color" }));
 
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith(
@@ -1207,14 +1225,14 @@ describe("ClassView over a particle system", () => {
   it("draws the birth colour in the square of an emitter with no texture", async () => {
     renderSystem();
 
-    expect(await screen.findByRole("img", { name: "Birth colour" })).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "Birth color" })).toBeInTheDocument();
   });
 
   it("reads both containers in one call, and their elements in the next", async () => {
     renderSystem();
 
     await screen.findAllByText("Glow");
-    const reads = mockInvoke.mock.calls.filter(([command]) => command === "bin_read");
+    const reads = mockInvoke.mock.calls.filter(([command]) => command === commandNames.bin.binRead);
 
     expect(reads[0]?.[1]).toMatchObject({ entry: ENTRY, paths: [COMPLEX, SIMPLE].sort() });
     expect(reads[1]?.[1]).toMatchObject({ entry: ENTRY, paths: [GLOW, SPARKS, TRAIL].sort() });
@@ -1223,7 +1241,7 @@ describe("ClassView over a particle system", () => {
   it("marks the squares and every row it draws, and reads the keys of what is on screen", async () => {
     renderSystem();
 
-    await screen.findByRole("img", { name: "Birth colour" });
+    await screen.findByRole("img", { name: "Birth color" });
     await waitFor(() => expect(asked()).toContain(RATE_TIMES));
 
     expect(asked()).toContain(SPARKS_COLOR);
@@ -1274,7 +1292,7 @@ describe("The emitter table", () => {
     renderSystem();
     await showTable(userEvent.setup());
 
-    expect(await screen.findByLabelText("2 colour stops")).toBeInTheDocument();
+    expect(await screen.findByLabelText("2 color stops")).toBeInTheDocument();
   });
 });
 
@@ -1514,7 +1532,7 @@ describe("The shell frame", () => {
   it("keeps unauthored fields in collapsed sections without requiring a Defaults switch", async () => {
     renderSystem();
     await screen.findByText("Emitter Lifetime");
-    expect(section("Scale", false)).toBeInTheDocument();
+    expect(await findSection("Scale", false)).toBeInTheDocument();
     expect(screen.queryByText("Scale over Lifetime")).not.toBeInTheDocument();
     await userEvent.click(section("Scale", false));
     expect(await screen.findByText("Scale over Lifetime")).toBeInTheDocument();
@@ -1524,7 +1542,7 @@ describe("The shell frame", () => {
   it("collapses authored constructor values while leaving changed and unknown sections open", async () => {
     const read = mockInvoke.getMockImplementation()!;
     mockInvoke.mockImplementation((command, args) => {
-      if (command === "class_schema") {
+      if (command === commandNames.bin.classSchema) {
         return Promise.resolve({
           ok: true,
           value: {
@@ -1565,7 +1583,7 @@ describe("The shell frame", () => {
     renderSystem();
     await screen.findByText("Emitter Lifetime");
     const search = screen.getByRole("textbox", { name: "Search emitter properties" });
-    expect(section("Scale", false)).toBeInTheDocument();
+    expect(await findSection("Scale", false)).toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: "scale0" } });
     expect(await screen.findByText("Scale over Lifetime")).toBeInTheDocument();
@@ -1577,6 +1595,62 @@ describe("The shell frame", () => {
     fireEvent.keyDown(search, { key: "Escape" });
     expect(section("Scale")).toBeInTheDocument();
     expect(screen.getByText("Scale over Lifetime")).toBeInTheDocument();
+  });
+
+  it("drops every field at its default while only defined properties are shown", async () => {
+    renderSystem();
+    const user = userEvent.setup();
+    await screen.findByText("Emitter Lifetime");
+    const toggle = screen.getByRole("button", { name: "Show only defined properties" });
+    expect(await findSection("Scale", false)).toBeInTheDocument();
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "Scale" })).not.toBeInTheDocument();
+    expect(screen.getByText("Emitter Lifetime")).toBeInTheDocument();
+  });
+
+  it("adds a field the emitter lacks from the action bar's add box", async () => {
+    const base = mockInvoke.getMockImplementation();
+    mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
+      if (command === commandNames.bin.binChoices) {
+        const fields = [
+          {
+            hash: nameHash("scale0"),
+            name: "scale0",
+            shape: { kind: "embed", key: null, value: null },
+            classHash: nameHash("ValueVector3"),
+            class: "ValueVector3",
+            inheritedFrom: null,
+          },
+        ];
+        return Promise.resolve({ ok: true, value: { kind: "fields", fields: { fields } } });
+      }
+      if (isEdit(command, args, "addProperty")) return landed();
+      return base?.(command, args);
+    });
+    renderSystem(vi.fn(), true);
+    const user = userEvent.setup();
+    await screen.findByText("Emitter Lifetime");
+
+    await user.click(screen.getByRole("button", { name: "Add property" }));
+    const box = screen.getByRole("combobox", { name: "Add a property, or type name: kind" });
+    await user.type(box, "scale over");
+    await user.click(await screen.findByRole("option", { name: /Scale over Lifetime/ }));
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith(
+        ...editCall(9, {
+          kind: "addProperty",
+          entry: ENTRY,
+          path: GLOW,
+          property: { kind: "declared", field: nameHash("scale0") },
+        }),
+      ),
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("textbox", { name: "Search emitter properties" })).toBeInTheDocument();
   });
 
   it("offers Show curve on a row with dynamics and on no row without", async () => {
@@ -1645,7 +1719,7 @@ describe("A child lane", () => {
     paneWidth = WIDE;
     const served = mockInvoke.getMockImplementation();
     mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) =>
-      command === "read_vfx_system"
+      command === commandNames.preview.readVfxSystem
         ? Promise.resolve({ ok: true, value: RESOLVED })
         : served?.(command, args),
     );
@@ -1766,7 +1840,7 @@ describe("A child lane", () => {
 
     await waitFor(() => {
       const located = mockInvoke.mock.calls
-        .filter(([command]) => command === "locate_game_files")
+        .filter(([command]) => command === commandNames.preview.locateFilesNear)
         .flatMap(([, args]) => (args as { paths: string[] }).paths);
       expect(located).toContain(CHILD_TEXTURE);
     });
@@ -1859,11 +1933,12 @@ describe("ClassView over sixty emitters", () => {
 
   function renderMany() {
     mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-      if (command === "locate_game_files") return Promise.resolve({ ok: true, value: {} });
-      if (command === "declared_objects") {
+      if (command === commandNames.preview.locateFilesNear)
+        return Promise.resolve({ ok: true, value: {} });
+      if (command === commandNames.objects.declaredObjects) {
         return Promise.resolve({ ok: true, value: { index: { status: "ready" }, objects: {} } });
       }
-      if (command !== "bin_read") {
+      if (command !== commandNames.bin.binRead) {
         return Promise.resolve({ ok: false, error: { code: "UNKNOWN", detail: command } });
       }
       const paths = (args?.paths ?? []) as string[];
@@ -1903,7 +1978,7 @@ describe("ClassView over sixty emitters", () => {
     await screen.findAllByText("Emitter0");
 
     const asked = mockInvoke.mock.calls
-      .filter(([command]) => command === "bin_read")
+      .filter(([command]) => command === commandNames.bin.binRead)
       .map(([, args]) => (args as { paths: string[] }).paths)
       .filter((paths) => paths.every((path) => MANY.includes(path)));
 

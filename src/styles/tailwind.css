@@ -3,10 +3,11 @@
    face are here, because every other face carries a `load` in `lib/fonts`. */
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/bricolage-grotesque";
-@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/jetbrains-mono";
 @import "tailwindcss";
 @import "./animations.css";
 @import "./global.css";
+@import "./layout.css";
 
 @theme {
   /* Surfaces */
@@ -94,6 +95,14 @@
   --color-channel-3-text: var(--ltk-channel-3-text);
   --color-channel-4: var(--ltk-channel-4);
   --color-channel-4-text: var(--ltk-channel-4-text);
+  --color-socket-float: var(--ltk-socket-float);
+  --color-socket-float-text: var(--ltk-socket-float-text);
+  --color-socket-vec2: var(--ltk-socket-vec2);
+  --color-socket-vec2-text: var(--ltk-socket-vec2-text);
+  --color-socket-vec3: var(--ltk-socket-vec3);
+  --color-socket-vec3-text: var(--ltk-socket-vec3-text);
+  --color-socket-vec4: var(--ltk-socket-vec4);
+  --color-socket-vec4-text: var(--ltk-socket-vec4-text);
 
   /* Folder */
   --color-folder: var(--ltk-folder);
@@ -102,6 +111,15 @@
   --color-bin-class-text: var(--ltk-bin-class-text);
   --color-bin-kind: var(--ltk-bin-kind);
   --color-bin-kind-text: var(--ltk-bin-kind-text);
+  --color-syntax-keyword-text: var(--ltk-syntax-keyword-text);
+  --color-syntax-control-text: var(--ltk-syntax-control-text);
+  --color-syntax-string-text: var(--ltk-syntax-string-text);
+  --color-syntax-number-text: var(--ltk-syntax-number-text);
+  --color-syntax-property-text: var(--ltk-syntax-property-text);
+  --color-syntax-function-text: var(--ltk-syntax-function-text);
+  --color-syntax-type-text: var(--ltk-syntax-type-text);
+  --color-graph-geometry: var(--ltk-graph-geometry);
+  --color-graph-geometry-text: var(--ltk-graph-geometry-text);
 
   /* Void */
   --color-void: var(--ltk-void);

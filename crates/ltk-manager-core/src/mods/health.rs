@@ -18,7 +18,7 @@ use crate::mods::ModLibrary;
 use crate::mods::health::sweep::{HealthSweepState, SweepScope};
 use crate::mods::index::{LibraryModEntry, ModStorage};
 use crate::problems::{self, Budget, Counts, GameBuild, ProjectFiles, Run};
-use fs_err as fs;
+use crate::utils::fs::{read_json_or_default, write_json};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -32,8 +32,7 @@ pub(in crate::mods) const LEGACY_VERDICTS_FILENAME: &str = "check-verdicts.json"
 /// What one check concluded, summarized for a mod user.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(export))]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
 pub struct ModHealthVerdict {
     pub mod_id: String,
     pub health: ModHealth,
@@ -60,8 +59,7 @@ pub struct ModHealthVerdict {
 /// modder's half, and it lives in the Problems panel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(export))]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
 pub struct RuleBrief {
     /// The rule's stable id, which the row quotes as a chip.
     pub rule: String,
@@ -75,7 +73,7 @@ pub struct RuleBrief {
     /// Folded per problem rather than taken from the rule, since one rule can
     /// report the same state at two severities - see
     /// [`Rule::severity`](problems::Rule::severity).
-    pub severity: problems::Severity,
+    pub severity: problems::ProblemSeverity,
     /// Live findings from this rule.
     pub count: u32,
     /// How many of them a repair would fix.
@@ -84,14 +82,11 @@ pub struct RuleBrief {
     /// order. Where a rule reports types, `Expected File, found Hash` is the
     /// actual problem, and the row draws it in place of the description.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(
-        feature = "ts",
-        ts(as = "Option<Vec<problems::TypeMismatch>>", optional)
-    )]
+    #[cfg_attr(feature = "ts", specta(optional))]
     pub mismatches: Vec<problems::TypeMismatch>,
     /// Why the rest stay unrepaired, present only when some do.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
+    #[cfg_attr(feature = "ts", specta(optional))]
     pub unfixable: Option<String>,
 }
 
@@ -100,11 +95,10 @@ pub struct RuleBrief {
 /// Per "The basis" in docs/ux/MOD_HEALTH.md.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(export))]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
 pub struct HealthCheckBasis {
     /// The installed game build, absent where none could be read.
-    #[cfg_attr(feature = "ts", ts(type = "string | null"))]
+    #[cfg_attr(feature = "ts", specta(type = Option<String>))]
     pub build: Option<GameBuild>,
     /// The manager version, which is what a migration table ships in.
     pub manager: String,
@@ -115,7 +109,7 @@ pub struct HealthCheckBasis {
     /// different names, so a sync makes every verdict due again without waiting
     /// for a game patch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
+    #[cfg_attr(feature = "ts", specta(optional))]
     pub tables: Option<String>,
     /// What the meta schema database held, absent where none was open.
     ///
@@ -126,7 +120,7 @@ pub struct HealthCheckBasis {
     /// gained two patches can still carry the stamp it was first published
     /// under.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
+    #[cfg_attr(feature = "ts", specta(optional))]
     pub schema: Option<String>,
 }
 
@@ -143,12 +137,11 @@ impl LibraryModEntry {
 /// The one word a mod's badge says.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(export))]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
 pub enum ModHealth {
     /// Nothing a live rule calls wrong.
     ///
-    /// Findings at [`Severity::Info`](problems::Severity::Info) land here too.
+    /// Findings at [`ProblemSeverity::Info`](problems::ProblemSeverity::Info) land here too.
     /// They are worth knowing and say nothing is wrong, so a mod holding only
     /// those is not one the library has to report.
     Healthy,
@@ -166,8 +159,7 @@ pub enum ModHealth {
 /// come first" in docs/ux/MOD_HEALTH.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(export))]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
 pub enum HealthCheckReadiness {
     /// The tables are open, so a check runs.
     Ready,
@@ -456,7 +448,7 @@ impl RuleBrief {
     /// rule whose findings each decide their own.
     fn worded(
         info: &problems::RuleInfo,
-        observed: problems::Severity,
+        observed: problems::ProblemSeverity,
         count: u32,
         fixable: u32,
         mismatches: Vec<problems::TypeMismatch>,
@@ -484,7 +476,7 @@ fn rule_briefs(run: &Run) -> Vec<RuleBrief> {
             let mut fixable = 0u32;
             let mut mismatches = Vec::new();
             /* The ladder runs worst-first, so the worst finding is the least. */
-            let mut severity = problems::Severity::Info;
+            let mut severity = problems::ProblemSeverity::Info;
             for problem in run.live_problems().filter(|p| p.rule == rule.id) {
                 count += 1;
                 severity = severity.min(problem.severity);
@@ -582,7 +574,7 @@ struct StoredRuleBrief {
     /// load. Kept for the two that cannot be answered from this build: a rule
     /// whose findings each answer for themselves, and a rule this build no
     /// longer ships.
-    severity: problems::Severity,
+    severity: problems::ProblemSeverity,
     count: u32,
     fixable: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -661,13 +653,7 @@ impl VerdictFile {
     /// failing a read over.
     fn load(storage_dir: &Path) -> Self {
         let path = storage_dir.join(MOD_HEALTH_VERDICTS_FILENAME);
-        let stored: StoredVerdictFile = match fs::read_to_string(&path) {
-            Ok(contents) => serde_json::from_str(&contents).unwrap_or_else(|e| {
-                tracing::warn!("Unreadable {MOD_HEALTH_VERDICTS_FILENAME}, starting over: {e}");
-                StoredVerdictFile::default()
-            }),
-            Err(_) => StoredVerdictFile::default(),
-        };
+        let stored: StoredVerdictFile = read_json_or_default(&path);
         if stored.version < VERDICT_FILE_VERSION && !stored.verdicts.is_empty() {
             tracing::info!(
                 "Discarding {} verdicts from shape {} of {MOD_HEALTH_VERDICTS_FILENAME}: the next sweep re-checks them",
@@ -699,11 +685,7 @@ impl VerdictFile {
                 .map(|(mod_id, verdict)| (mod_id.clone(), StoredVerdict::strip(verdict)))
                 .collect(),
         };
-        let path = storage_dir.join(MOD_HEALTH_VERDICTS_FILENAME);
-        let tmp = path.with_extension("json.tmp");
-        fs::write(&tmp, serde_json::to_string_pretty(&stored)?)?;
-        fs::rename(&tmp, &path)?;
-        Ok(())
+        write_json(&storage_dir.join(MOD_HEALTH_VERDICTS_FILENAME), &stored)
     }
 }
 

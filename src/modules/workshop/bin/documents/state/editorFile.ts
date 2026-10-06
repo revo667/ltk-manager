@@ -2,7 +2,7 @@
    the editor's components, whose imports circle back into workshop state. */
 import { z } from "zod";
 
-import type { AssetRef } from "@/lib/tauri";
+import type { AssetRef, SandboxRef, WadSource } from "@/lib/tauri";
 // eslint-disable-next-line no-restricted-imports -- the cycle the comment above names
 import {
   findLeaf,
@@ -23,6 +23,7 @@ import {
   type ShellKind,
 } from "../../shell/utils/shellPanes";
 import { type AbilityRecipe, readAbilities } from "../../spells/utils/abilityRecipe";
+import { readMarkers, type TimelineMarkers } from "../../vfx/timeline/utils/markers";
 
 /**
  * The module of one layer's `game_data.yaml` that a declared document's new keys join, by its
@@ -50,6 +51,8 @@ export interface PersistedProjectEditor {
   selectedLayer: string | null;
   /** The project's "Use game data declarations" choice, absent until the reader makes one. */
   useDeclarations?: boolean;
+  /** The layers whose declarations a declared document leaves unmarked. Absent for none. */
+  hiddenMarkLayers?: readonly string[];
   /** Null for the default placement. Absent in a file written before modules were chosen. */
   selectedModule?: SelectedModule | null;
   /** Each group's ephemeral tab, as leaf id to document id. Empty where none holds one. */
@@ -58,6 +61,8 @@ export interface PersistedProjectEditor {
   pinned: readonly string[];
   /** Each shell's tree of panes, which every object tab of its kind draws in. */
   shells: ShellArrangements;
+  /** Each particle system's timeline markers. Absent in a file written before markers. */
+  markers?: TimelineMarkers;
 }
 
 /** The one shell a file written before the skin had a shell carries, which is the particle system's. */
@@ -101,11 +106,13 @@ export function serializeEditorFile(state: PersistedProjectEditor): string {
       activeLeafId: state.activeLeafId,
       selectedLayer: state.selectedLayer,
       useDeclarations: state.useDeclarations,
+      hiddenMarkLayers: state.hiddenMarkLayers,
       selectedModule: state.selectedModule ?? null,
       previewIds: state.previewIds,
       pinned: state.pinned,
       shells: state.shells,
       abilities: state.abilities,
+      markers: state.markers,
     },
     null,
     2,
@@ -196,11 +203,19 @@ export function sanitizeEditorState(value: unknown): PersistedProjectEditor | nu
     ...(typeof entry.useDeclarations === "boolean"
       ? { useDeclarations: entry.useDeclarations }
       : {}),
+    ...(Array.isArray(entry.hiddenMarkLayers)
+      ? {
+          hiddenMarkLayers: entry.hiddenMarkLayers.filter(
+            (layer): layer is string => typeof layer === "string",
+          ),
+        }
+      : {}),
     selectedModule: readSelectedModule(entry.selectedModule),
     previewIds: readPreviewIds(entry, layout),
     pinned,
     shells: sanitizeShells(entry),
     ...(entry.abilities === undefined ? {} : { abilities: readAbilities(entry.abilities) }),
+    ...(entry.markers === undefined ? {} : { markers: readMarkers(entry.markers) }),
   };
 }
 
@@ -289,7 +304,15 @@ function sanitizeShells(entry: Partial<PersistedProjectEditor> & LegacyShell): S
         typeof leafId === "string" && findLeaf(layout, leafId) ? leafId : firstShellLeafId(layout),
     };
   };
-  return { vfx: read("vfx"), skin: read("skin"), map: read("map"), material: read("material") };
+  return {
+    vfx: read("vfx"),
+    skin: read("skin"),
+    map: read("map"),
+    material: read("material"),
+    atlas: read("atlas"),
+    font: read("font"),
+    element: read("element"),
+  };
 }
 
 /* Every field of a reference reaches the backend, which checks each one against
@@ -303,8 +326,18 @@ const assetRefSchema = z.discriminatedUnion("kind", [
     path: z.string(),
   }),
   z.object({ kind: z.literal("gameChunk"), wad: z.string(), pathHash: z.string() }),
+  z.object({ kind: z.literal("lcuChunk"), wad: z.string(), pathHash: z.string() }),
   z.object({ kind: z.literal("file"), path: z.string() }),
 ]) satisfies z.ZodType<AssetRef>;
+
+const wadSourceSchema = z.enum(["game", "lcu"]) satisfies z.ZodType<WadSource>;
+
+/* The sandbox of a tab switched away from its project's sandbox, per ADR-0056. */
+const sandboxRefSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("game") }),
+  z.object({ kind: z.literal("project"), project: z.string() }),
+  z.object({ kind: z.literal("layer"), project: z.string(), layer: z.string() }),
+]) satisfies z.ZodType<SandboxRef>;
 
 /* Tab entries stay unchecked here: `dropUnknownTabs` filters them one by one,
    so one bad entry costs a tab rather than the whole layout. */
@@ -340,9 +373,14 @@ const contentDocumentSchema = z.discriminatedUnion("kind", [
     layerName: z.string(),
     locale: z.string(),
   }),
-  z.object({ id: z.string(), kind: z.literal("game") }),
-  z.object({ id: z.string(), kind: z.literal("game-wads") }),
-  z.object({ id: z.string(), kind: z.literal("game-wad"), wadName: z.string() }),
+  z.object({ id: z.string(), kind: z.literal("game"), source: wadSourceSchema.optional() }),
+  z.object({ id: z.string(), kind: z.literal("game-wads"), source: wadSourceSchema.optional() }),
+  z.object({
+    id: z.string(),
+    kind: z.literal("game-wad"),
+    wadName: z.string(),
+    source: wadSourceSchema.optional(),
+  }),
   z.object({ id: z.string(), kind: z.literal("objects") }),
   z.object({ id: z.string(), kind: z.literal("references") }),
   z.object({
@@ -354,6 +392,7 @@ const contentDocumentSchema = z.discriminatedUnion("kind", [
     /* Optional so a file written before this field existed still mounts its
        preview tabs, per the version note above. */
     path: z.string().optional(),
+    sandbox: sandboxRefSchema.optional(),
   }),
   z.object({
     id: z.string(),
@@ -363,6 +402,7 @@ const contentDocumentSchema = z.discriminatedUnion("kind", [
     objectPath: z.string(),
     file: z.string(),
     objectClass: z.string().nullable().optional(),
+    sandbox: sandboxRefSchema.optional(),
   }),
 ]) satisfies z.ZodType<ContentDocument>;
 
