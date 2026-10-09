@@ -810,7 +810,7 @@ install's copy and a layer's sit side by side, and the layout is the diff.
 The object's properties, from depth zero. The header is the object, and no row repeats it.
 
 ```
-│ ◈ Resources · Aatrox.wad/…/skin0.bin  SkinCharacterDataProperties  17  Show in file  1 other │
+│ ◈ Resources · Aatrox.wad/…/skin0.bin  SkinCharacterDataProperties                         ⋮ │
 │ ├ skinClassification            u32          1                                               │
 │ ├ championSkinName              string       "Justicar Aatrox"                               │
 │ ├ ▸ skinMeshProperties          embed        SkinMeshDataProperties                          │
@@ -820,12 +820,11 @@ The object's properties, from depth zero. The header is the object, and no row r
 The facts sit at the trailing edge of the tab row, the [document chrome](PROJECT_EDITOR.md#document-chrome)
 rule of one row per leaf.
 
-| Fact         | Reads                                                                  |
-| ------------ | ---------------------------------------------------------------------- |
-| Class        | The class the declaration carries, as a [card](#the-class-card)        |
-| Show in file | Opens the declaring file's tab, scrolled to the object                 |
-| Mode         | The layout or Properties, where the class has a [layout](#class-views) |
-| Kebab        | The object's and the class's actions, per `DS-GLYPH-ROLE`              |
+| Fact  | Reads                                                                  |
+| ----- | ---------------------------------------------------------------------- |
+| Class | The class the declaration carries, as a [card](#the-class-card)        |
+| Mode  | The layout or Properties, where the class has a [layout](#class-views) |
+| Kebab | The object's and the class's actions, per `DS-GLYPH-ROLE`              |
 
 The other files declaring the object are in the [Sandbox options](#the-sandbox), which lead
 the row.
@@ -833,13 +832,15 @@ the row.
 The row carries no property count. The tree under it is the count, one row per property, and a
 tally of what is already on screen is a fact the reader reads twice.
 
-**A narrow toolbar drops what a reader reaches another way.** The class, the mode and the kebab
-stay at every width. Show in file folds into the kebab, where the object's other actions already are. What a toolbar never does is
-wrap or scroll, because a second row costs the tree a row of content at the width that has the
-least of it, and a control that has scrolled out of a row is a control nobody finds.
+**The row holds what the reader looks at, and the kebab holds what they do.** The class, the mode
+and the kebab stay at every width. A toolbar never wraps or scrolls, because a second row costs
+the tree a row of content at the width that has the least of it, and a control that has scrolled
+out of a row is a control nobody finds.
 
 The kebab is where the header's actions live, because a header is the one place a name sits with
-no row under it to right-click. It carries Find all references, Copy class name and Copy class
+no row under it to right-click. It leads with Show in file, which opens the declaring file's tab
+scrolled to the object, and Collapse all, which shuts every folder of the properties tree and is
+disabled while the tab draws a layout. It carries Find all references, Copy class name and Copy class
 hash for the class, and Copy path and Copy hash for the object.
 Its click builds the index.
 
@@ -1141,7 +1142,7 @@ control.
 
 ```
 +-----------------------------------------------------------------------------------+
-| StaticMaterialDef . 9 properties   [ Material | Properties ]   Show in file   [:] |
+| StaticMaterialDef . 9 properties                  [ Material | Properties ]   [:] |
 +-----------------------------------------------------------------------------------+
 | v IDENTITY                                                                        |
 |   name                Ezreal_Base_Mat                                             |
@@ -1168,10 +1169,23 @@ The file tab keeps its blocks. A layout is the object tab's, per ADR-0028.
 
 ### A map's files
 
-A `Map`, a `MapSkin` and a `MapContainer` open in a shell of three panes: the drawn map, an
-outliner of its chunks, and the object's sections. The outliner lists each
+A `Map`, a `MapSkin` and a `MapContainer` open in a shell of four panes: the drawn map, an
+outliner of its chunks, its visibility, and the object's sections. The outliner lists each
 `MapPlaceableContainer` of the map's `.materials.bin` and what it holds. A row sends the camera
 to where its placeable stands, and an eye hides a chunk or one placeable from the scene.
+
+The Visibility pane is a tab behind the outliner. It lists the layers of the map and the
+visibility controllers that its `.materials.bin` declares. A layer has a checkbox that changes
+the active flags of the preview. A controller that depends on no other controller has a checkbox
+that sets its state. These controllers are grouped as Terrain, Stage, Mutator and Other. A
+terrain is titled by its layer, a stage by its stage and a mutator by its name, each followed by
+the controller's name, or its path hash if no hash table has the name.
+
+A controller that depends on other controllers has no checkbox, because its state is computed.
+It is listed under each controller it depends on, with a plus if it is shown while that
+controller is shown and a minus if it is hidden, and an eye for its current state. A row opens
+the controller object in its own tab, and the reset returns the map to its own defaults. The
+rules are ADR-0064.
 
 A search box over the outliner keeps the placeables whose name or class holds its text, and every
 placeable of a chunk whose own name does. A chip per kind the map holds keeps only that kind.
@@ -1193,7 +1207,8 @@ own fields, read in the `.materials.bin`, with a button that opens its chunk's t
 A `.mapgeo` and a `.materials.bin` open on the same map, because the map is what a reader of
 either file came for. The path says which map it is, since both files are the map's entry path
 under `data/`. A `.materials.bin` keeps its blocks behind a Map and Objects switch in the
-toolbar, and a `.mapgeo` has no objects to switch to. A file no hash table names has no path to
+toolbar, and a `.mapgeo` has no objects to switch to. The panel beside the map switches between
+the outliner and the visibility. A file no hash table names has no path to
 read, so it opens as the blocks it always did.
 
 Everything the scene reads is looked for in the project first and the install second: the
@@ -1478,7 +1493,7 @@ where they were.
 ```
 
 **One row holds the object tab's header and the crumb.** The sandbox, the class, the crumb, the
-mode control, Show in file and Panes share it, and the preview takes the height of the row it
+mode control and Panes share it, and the preview takes the height of the row it
 saves. The row starts with `Sandbox (<name>) >`, per [the sandbox](#the-sandbox).
 
 The crumb names system and emitter, and each segment is a target the inspector draws. The system's
@@ -1641,6 +1656,11 @@ saved arrangement with no `timeline` leaf opens without the pane, and the Panes 
 and the rest of the tree waits behind it. A second double click, or Esc, restores the tree.
 Maximizing writes nothing to the arrangement. The editor grid maximizes a document panel the same
 way, per [the panel layout](PROJECT_EDITOR.md#maximizing-a-panel).
+
+**The open tab joins its pane.** A pane's strip has no surface of its own. The open pane's tab
+takes the fill and the edge of the pane under it and covers the pane's top edge, so the two read
+as one shape, and a tab behind it is its glyph and its title alone. Each tab leads with the glyph
+the Panes menu lists the pane by, and its title is written as the menu writes it.
 
 **A tab has a menu.** A right click on a pane's tab offers Float, Maximize or Restore, and Close,
 on the open tab and on one behind it alike (`PaneStrip` in `src/modules/editor/layout`).

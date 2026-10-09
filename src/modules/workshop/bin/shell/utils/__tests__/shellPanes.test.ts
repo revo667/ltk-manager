@@ -65,11 +65,27 @@ describe("defaultShellArrangements", () => {
     expect(shells.material).toEqual({ layout: defaultShellLayout("material"), leafId: "leaf-2" });
   });
 
-  it("holds every pane of the Atlas shell once, the canvas between the layers and the inspector", () => {
+  it("holds every pane of the Atlas shell once, the components over the layers beside the canvas", () => {
     const tree = defaultShellLayout("atlas");
 
     expect([...openShellPanes(tree)].sort()).toEqual([...shellPanesOf("atlas")].sort());
-    expect(leaves(tree).map((leaf) => leaf.tabs[0])).toEqual(["layers", "preview", "inspector"]);
+    expect(leaves(tree).map((leaf) => leaf.tabs[0])).toEqual([
+      "components",
+      "layers",
+      "preview",
+      "inspector",
+    ]);
+  });
+
+  it("holds every pane of the map shell once, the visibility a tab behind the outliner", () => {
+    const tree = defaultShellLayout("map");
+
+    expect([...openShellPanes(tree)].sort()).toEqual([...shellPanesOf("map")].sort());
+    expect(leaves(tree).map((leaf) => leaf.tabs)).toEqual([
+      ["preview"],
+      ["outliner", "visibility"],
+      ["inspector"],
+    ]);
   });
 
   it("holds every pane of the material shell once, the preview beside the inspector", () => {
@@ -179,12 +195,30 @@ describe("sanitizeShellLayout", () => {
     });
 
     expect(leaves(tree).map((leaf) => leaf.tabs)).toEqual([
-      ["layers", "variants", "sprites"],
+      ["layers", "variants", "sprites", "components"],
       ["preview"],
     ]);
     expect(sanitizeShellLayout("atlas", defaultShellLayout("atlas"))).toEqual(
       defaultShellLayout("atlas"),
     );
+  });
+
+  it("opens an Atlas tree saved before the components pane existed with it behind the layers", () => {
+    const tree = sanitizeShellLayout("atlas", {
+      kind: "split",
+      id: "split-1",
+      dir: "row",
+      children: [
+        { kind: "leaf", id: "leaf-5", tabs: ["layers", "sprites"], activeTab: "sprites" },
+        { kind: "leaf", id: "leaf-2", tabs: ["preview"], activeTab: "preview" },
+      ],
+    });
+
+    expect(leaves(tree).map((leaf) => leaf.tabs)).toEqual([
+      ["layers", "sprites", "components"],
+      ["preview"],
+    ]);
+    expect(leaves(tree)[0]?.activeTab).toBe("sprites");
   });
 
   it("opens a skin tree saved before the material pane existed with it behind the inspector", () => {
@@ -239,6 +273,46 @@ describe("sanitizeShellLayout", () => {
       ["preview", "clips"],
       ["material", "skeleton"],
       ["inspector", "physics"],
+    ]);
+  });
+
+  it("opens a map tree saved before the visibility pane existed with it behind the outliner", () => {
+    const tree = sanitizeShellLayout("map", {
+      kind: "split",
+      id: "split-1",
+      dir: "row",
+      children: [
+        { kind: "leaf", id: "leaf-2", tabs: ["preview"], activeTab: "preview" },
+        { kind: "leaf", id: "leaf-5", tabs: ["outliner"], activeTab: "outliner" },
+        { kind: "leaf", id: "leaf-3", tabs: ["inspector"], activeTab: "inspector" },
+      ],
+    });
+
+    expect(leaves(tree).map((leaf) => leaf.tabs)).toEqual([
+      ["preview"],
+      ["outliner", "visibility"],
+      ["inspector"],
+    ]);
+  });
+
+  it("leaves a map tree that holds the visibility pane, or no outliner, as it is", () => {
+    const held = {
+      kind: "split",
+      id: "split-1",
+      dir: "row",
+      children: [
+        { kind: "leaf", id: "leaf-2", tabs: ["preview", "visibility"], activeTab: "preview" },
+        { kind: "leaf", id: "leaf-5", tabs: ["outliner"], activeTab: "outliner" },
+      ],
+    };
+    const bare = { kind: "leaf", id: "leaf-1", tabs: ["preview"], activeTab: "preview" };
+
+    expect(leaves(sanitizeShellLayout("map", held)).map((leaf) => leaf.tabs)).toEqual([
+      ["preview", "visibility"],
+      ["outliner"],
+    ]);
+    expect(leaves(sanitizeShellLayout("map", bare)).map((leaf) => leaf.tabs)).toEqual([
+      ["preview"],
     ]);
   });
 
