@@ -69,7 +69,7 @@ use std::sync::Arc;
 
 use ltk_hash::{BinHash, Hash as _, WadHash};
 use ltk_meta::property::{Kind, ValueMut, values};
-use ltk_meta::walk::{Node, PropertyRefMut, Visit, Visitor, VisitorMut};
+use ltk_meta::walk::{Leaf, Node, PropertyRefMut, Visit, Visitor, VisitorMut};
 use ltk_meta::{BinDelta, BinKind, BinObject, BinStream, PropertyValueEnum};
 
 use crate::engine::parse_bin;
@@ -496,7 +496,10 @@ impl Lens<'_> {
             answered = Some(build);
             if !TypeSpec::from(shape).matches(value)? {
                 return Ok(Some(Objection {
-                    migration: Cow::Owned(derived(class, field, expected, value)?),
+                    migration: narrowed(
+                        Cow::Owned(derived(class, field, expected, value)?),
+                        value,
+                    )?,
                     build,
                 }));
             }
@@ -513,7 +516,7 @@ impl Lens<'_> {
             };
             if migration.from.matches(value)? {
                 return Ok(Some(Objection {
-                    migration: Cow::Borrowed(migration),
+                    migration: narrowed(Cow::Borrowed(migration), value)?,
                     build: table.build(),
                 }));
             }
@@ -622,6 +625,42 @@ fn derived<'a>(
         conversion,
         from,
         to,
+    })
+}
+
+fn narrowed<'a>(
+    migration: Cow<'static, Migration>,
+    value: impl Declared<'a>,
+) -> Result<Cow<'static, Migration>, ltk_meta::Error> {
+    if migration.conversion != Conversion::Unknown
+        || migration.from.value.is_some()
+        || migration.to.value.is_some()
+    {
+        return Ok(migration);
+    }
+    let fits = value
+        .as_leaf()?
+        .and_then(leaf_number)
+        .is_some_and(|number| integer_of(migration.to.kind, number).is_some());
+    if !fits {
+        return Ok(migration);
+    }
+    let mut owned = migration.into_owned();
+    owned.conversion = Conversion::Widen;
+    Ok(Cow::Owned(owned))
+}
+
+fn leaf_number(leaf: Leaf<'_>) -> Option<i128> {
+    Some(match leaf {
+        Leaf::I8(v) => i128::from(v),
+        Leaf::U8(v) => i128::from(v),
+        Leaf::I16(v) => i128::from(v),
+        Leaf::U16(v) => i128::from(v),
+        Leaf::I32(v) => i128::from(v),
+        Leaf::U32(v) => i128::from(v),
+        Leaf::I64(v) => i128::from(v),
+        Leaf::U64(v) => i128::from(v),
+        _ => return None,
     })
 }
 

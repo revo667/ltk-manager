@@ -1637,6 +1637,23 @@ fn an_integer_the_game_narrowed_is_reported_without_a_repair() {
     assert_eq!(problems[0].fix, None);
 }
 
+#[test]
+fn an_integer_the_game_narrowed_is_rewritten_when_the_number_fits() {
+    let bin = object_bin(TEXT_STYLE_DATA, FONT_WEIGHT, values::U32::new(3));
+    let (_tmp, files) = project_on(&bin, Some(AFTER_RETYPE));
+
+    let problems = check_with(&files);
+    assert_eq!(problems.len(), 1);
+    assert!(problems[0].fix.is_some(), "3 fits the narrower type");
+
+    let (applied, written) = fix_all_on(&bin, Some(AFTER_RETYPE));
+
+    assert_eq!(applied.applied, 1);
+    let value = &written.objects()[&ENTRY].properties[&FONT_WEIGHT];
+    assert!(!matches!(value, PropertyValueEnum::U32(_)));
+    assert_eq!(whole(value), Some(3));
+}
+
 /// A container crosses on what it holds, so a list of narrow integers is
 /// rebuilt item by item. No shipped revision retypes one, and a mod that
 /// declared the wrong item type reaches the same road.
