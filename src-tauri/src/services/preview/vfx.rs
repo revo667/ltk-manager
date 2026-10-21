@@ -13,15 +13,19 @@ use ltk_manager_assets::preview::AssetRef;
 use ltk_manager_bin::bin_document::BinDocumentId;
 use ltk_manager_bin::meta_schema::SchemaNames;
 use ltk_manager_bin::vfx::{vfx_templates as catalog, VfxTemplate};
-use ltk_manager_game::vfx::{resolve_system, search_linked_materials, VfxSystem};
+use ltk_manager_game::spell::{missile_spells, MissileSpell};
+use ltk_manager_game::vfx::{
+    child_targets, resolve_system, search_linked_children, search_linked_materials, VfxObject,
+    VfxSystem,
+};
 use tauri::AppHandle;
 
 /// One particle system of an open document, with every reference resolved.
 ///
 /// `entry` is the object's hash as `0x` and eight hex digits. A class or field the hash
-/// tables leave unnamed takes the meta schema's name. A custom material the document does
-/// not declare is looked for through the files it links, and a linked file that cannot be
-/// read is passed over.
+/// tables leave unnamed takes the meta schema's name. A child system or a custom material
+/// that the document does not declare is looked for through the files it links, and a
+/// linked file that cannot be read is passed over.
 #[tauri::command]
 #[specta::specta]
 pub async fn read_vfx_system(
@@ -38,6 +42,15 @@ pub async fn read_vfx_system(
             let names = SchemaNames::new(names, &schema);
             let mut system = resolve_system(open, entry, &names, assets, shaders.as_deref())?;
             let linked: Vec<AssetRef> = linked_assets(open, assets);
+            search_linked_children(
+                &mut system,
+                open,
+                linked.clone(),
+                &names,
+                assets,
+                shaders.as_deref(),
+                &mut read,
+            );
             search_linked_materials(
                 &mut system,
                 linked,
@@ -47,6 +60,46 @@ pub async fn read_vfx_system(
                 &mut read,
             );
             Ok(system)
+        })
+    })
+    .await
+}
+
+/// The spells that fire one particle system of an open document as their missile.
+///
+/// `entry` is the system's hash as `0x` and eight hex digits. The spells are read from the
+/// bin of the character that the system's path names. Returns none for a system that no
+/// table names or whose path names no character.
+#[tauri::command]
+#[specta::specta]
+pub async fn vfx_missile_spells(
+    document: BinDocumentId,
+    entry: String,
+    app_handle: AppHandle,
+) -> IpcResult<Vec<MissileSpell>> {
+    off_thread(move || {
+        let entry = parse_entry(&entry)?;
+        read_resolved(&app_handle, document, |open, names, assets| {
+            let Some(path) = names.entry_name(entry) else {
+                return Ok(Vec::new());
+            };
+            let mut read = linked_reader(&app_handle);
+            Ok(missile_spells(open, entry, &path, names, assets, &mut read))
+        })
+    })
+    .await
+}
+
+/// The systems that a child particle set of an open document can link.
+#[tauri::command]
+#[specta::specta]
+pub async fn vfx_child_targets(
+    document: BinDocumentId,
+    app_handle: AppHandle,
+) -> IpcResult<Vec<VfxObject>> {
+    off_thread(move || {
+        read_resolved(&app_handle, document, |open, names, _| {
+            Ok(child_targets(open, names))
         })
     })
     .await

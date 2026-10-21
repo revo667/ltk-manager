@@ -1,4 +1,4 @@
-import { LINGER_TYPE } from "../../engine/model/enums";
+import { LINGER_TYPE, QUAD_TYPE } from "../../engine/model/enums";
 import type { EmitterModel } from "../../engine/model/model";
 import { lingerSeconds } from "../../engine/model/systemModel";
 import { bornSimple, bornUv } from "../../engine/simulation/emit";
@@ -118,26 +118,47 @@ export function particleInto(
   out.lookup[2] = erosionDrive(pool, at, emitter, now);
 }
 
-/** The particle a surface follows through a run, by its serial, and -1 before one is picked. */
+/** The particle a surface follows through a run. */
 export interface Followed {
+  /** The followed particle's serial, and -1 before one is picked. */
   serial: number;
+  /** The run time the followed particle was last seen alive at, and `-Infinity` before one is. */
+  seen: number;
 }
 
+/** A new `Followed` that follows no particle. */
+export function following(): Followed {
+  return { serial: -1, seen: -Infinity };
+}
+
+/** How far before `Followed.seen` a birth may lie and still count as after it, for float32 times. */
+const BIRTH_SLACK = 1e-4;
+
 /**
- * The row of the particle of emitter `index` a surface follows in `pool`, and -1 while it has none.
+ * The row of the particle of emitter `index` a surface follows in `pool` at run time `time`, and
+ * -1 while it has none.
  *
- * The followed particle holds until it dies, and the emitter's newest particle is then
- * picked, so the surface shows one life after another at the run's own births.
+ * The followed particle holds until it dies. The newest particle born since it was last seen
+ * alive is then picked, so the surface shows one life after another at the run's own births and
+ * never steps back to a particle that is already part way through its life. If `time` is before
+ * the last sighting, the run looped or was seeked back, and any particle can be picked.
  */
-export function followedRow(pool: Pool, index: number, followed: Followed): number {
+export function followedRow(pool: Pool, index: number, followed: Followed, time: number): number {
+  if (time < followed.seen) followed.seen = -Infinity;
+
   let newest = -1;
   for (let at = 0; at < pool.count; at += 1) {
     if (pool.emitter[at] !== index) continue;
-    if (pool.serial[at] === followed.serial) return at;
+    if (pool.serial[at] === followed.serial) {
+      followed.seen = time;
+      return at;
+    }
+    if (pool.birthTime[at] < followed.seen - BIRTH_SLACK) continue;
     if (newest < 0 || pool.serial[at] > pool.serial[newest]) newest = at;
   }
 
   followed.serial = newest < 0 ? -1 : pool.serial[newest];
+  if (newest >= 0) followed.seen = time;
   return newest;
 }
 
@@ -163,6 +184,20 @@ function born(emitter: EmitterModel, chance: number, lifetime: number): void {
  *
  * The box is `width` by `height`, and a quad with no extent on either axis fits as a square.
  */
+/**
+ * Returns the width and the height of `emitter`'s texture on its particle, from the particle's
+ * `scale`.
+ *
+ * A camera quad lays the texture's `u` along its `x` and its `v` along its `y`. An arbitrary
+ * quad turns it a quarter, `u` along its `y` and `v` along its `x` (`ARBITRARY_UV`), so the
+ * texture stands upright only with the two sides swapped.
+ */
+export function surfaceSides(emitter: EmitterModel, scale: Float32Array): [number, number] {
+  const across = scale[0] ?? 0;
+  const up = scale[1] ?? 0;
+  return emitter.quadType === QUAD_TYPE.arbitraryQuad ? [up, across] : [across, up];
+}
+
 export function fitInto(
   across: number,
   up: number,

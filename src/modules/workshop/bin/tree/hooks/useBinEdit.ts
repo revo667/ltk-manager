@@ -13,6 +13,7 @@ import {
   type DependencyEdit as WireDependencyEdit,
   type EditOutcome,
   type NewItem,
+  type ObjectEdit,
 } from "@/lib/tauri";
 import { map, type Result } from "@/utils/result";
 
@@ -77,6 +78,7 @@ const DOCUMENT_READS = [
   ["bin-changes"],
   DECLARATIONS_OUTLINE_ROOT,
   ["vfx-system"],
+  ["vfx-child-targets"],
   ["ui-view"],
   ["ui-font"],
   ["ui-scene-view"],
@@ -89,6 +91,12 @@ const DOCUMENT_READS = [
   ["skin-programs"],
   ["material-program"],
   ["spell"],
+  ["map-outline"],
+  ["map-particles"],
+  ["map-characters"],
+  ["map-material-defs"],
+  /* The map backdrop's model carries the sun, post effects and materials that the bins state. */
+  ["viewport-backdrop", "model"],
 ] as const;
 
 /** How the header's dependency list takes an edit. "Dependencies" in docs/ux/BIN_EDITOR.md. */
@@ -107,6 +115,8 @@ export interface DependencyEdit {
 export interface BinEdit {
   /** The edits of the header's dependency list. */
   dependencies: DependencyEdit;
+  /** Send the object edit `edit`, and queue the save where it landed. */
+  object: (edit: ObjectEdit) => Promise<Result<EditOutcome>>;
   /** Send what the reader typed to the leaf `row` draws, or mark the row where it cannot be sent. */
   commit: (row: BinRow, typed: TypedLeaf) => Promise<boolean>;
   /** Why the backend refused the last edit a row sent, by row key. */
@@ -154,7 +164,10 @@ export interface TreeFocus {
 export const BinEditContext = createContext<BinEdit | null>(null);
 
 /** The edits the row under `key` takes, and whether its last one was refused. */
-export function useRowEdit(key: string): { edit: BinEdit | null; refusal: AppError | undefined } {
+export function useRowEdit(key: string): {
+  edit: BinEdit | null;
+  refusal: AppError | undefined;
+} {
   const edit = use(BinEditContext);
   return { edit, refusal: edit?.refused.get(key) };
 }
@@ -412,14 +425,22 @@ export function useBinEditor(
         }
         case "clearValue": {
           const path = parent?.value.type === "optional" ? row.path : `${row.path}[0]`;
-          const cleared = edited({ kind: "removeItem", entry: row.entry, path });
+          const cleared = edited({
+            kind: "removeItem",
+            entry: row.entry,
+            path,
+          });
           void send(cleared, () => {
             focus.remap(droppedUnder(keyOf(row.entry, path)));
           });
           return;
         }
         case "setNull": {
-          const nulled = edited({ kind: "setPointer", ...address, className: null });
+          const nulled = edited({
+            kind: "setPointer",
+            ...address,
+            className: null,
+          });
           void send(nulled, () => {
             focus.remap(droppedInside(at));
           });
@@ -477,6 +498,15 @@ export function useBinEditor(
     };
   }, [call, landed]);
 
+  const object = useCallback(
+    async (edit: ObjectEdit) => {
+      const { result, id } = await call((id) => api.bin.edit(id, { kind: "object", edit }));
+      if (result.ok) landed(id);
+      return result;
+    },
+    [call, landed],
+  );
+
   const enter = useCallback(
     (at: string) => {
       const pending = returns.current;
@@ -492,6 +522,7 @@ export function useBinEditor(
       editable
         ? {
             dependencies,
+            object,
             commit,
             refused,
             add,
@@ -506,6 +537,19 @@ export function useBinEditor(
             settleFocus: focus.settle,
           }
         : null,
-    [editable, dependencies, commit, refused, add, insert, run, setKey, dismiss, enter, focus],
+    [
+      editable,
+      dependencies,
+      object,
+      commit,
+      refused,
+      add,
+      insert,
+      run,
+      setKey,
+      dismiss,
+      enter,
+      focus,
+    ],
   );
 }

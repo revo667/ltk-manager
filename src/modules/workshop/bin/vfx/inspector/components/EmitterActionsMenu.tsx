@@ -10,12 +10,11 @@ import {
 import { Button, Menu } from "@/components";
 import { m } from "@/i18n";
 
-import type { EmitterRef } from "../../clipboard/emitterCopy";
 import { useEmitterClipboard } from "../../clipboard/useEmitterClipboard";
 import { MaskSubmenu } from "../../stencil/MaskSubmenu";
 import { TemplateSubmenu } from "../../templates/TemplateMenus";
 import { useEmitters } from "../state/emitterChoice";
-import { nameOf } from "../utils/emitterCards";
+import { emitterRef } from "../utils/emitterName";
 
 /**
  * Duplicate, copy, paste, add from template and delete of the open card's emitter, as one
@@ -31,7 +30,7 @@ export function EmitterActionsMenu() {
   }
 
   const { copy, duplicate, paste, remove } = clipboard;
-  const emitter: EmitterRef = { entry: card.row.entry, wire: card.row.path, name: nameOf(card) };
+  const emitter = emitterRef(card);
 
   return (
     <Menu.Root>
@@ -50,11 +49,11 @@ export function EmitterActionsMenu() {
       />
       <Menu.Content align="start" data-ui="EmitterActionsMenu" className="w-48">
         {duplicate !== null && (
-          <Menu.Item icon={<CopySimpleIcon />} onClick={() => void duplicate(emitter)}>
+          <Menu.Item icon={<CopySimpleIcon />} onClick={() => void duplicate([emitter])}>
             {m.workshop_bin_inspector_emitter_duplicate_action()}
           </Menu.Item>
         )}
-        <Menu.Item icon={<CopyIcon />} onClick={() => void copy(emitter)}>
+        <Menu.Item icon={<CopyIcon />} onClick={() => void copy([emitter])}>
           {m.workshop_bin_inspector_emitter_copy_action()}
         </Menu.Item>
         {paste !== null && (
@@ -70,7 +69,7 @@ export function EmitterActionsMenu() {
         {remove !== null && (
           <>
             <Menu.Separator />
-            <Menu.Item icon={<TrashIcon />} variant="danger" onClick={() => void remove(emitter)}>
+            <Menu.Item icon={<TrashIcon />} variant="danger" onClick={() => void remove([emitter])}>
               {m.workshop_bin_inspector_emitter_delete_action()}
             </Menu.Item>
           </>

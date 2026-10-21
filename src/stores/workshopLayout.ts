@@ -29,6 +29,9 @@ type SidebarViewId =
   | "game"
   | "source";
 
+/** An Effects Quality level of the client, 0 for Very Low to 4 for Very High. */
+type PreviewEffectsQuality = 0 | 1 | 2 | 3 | 4;
+
 /**
  * What a viewport draws around the run, and how the inspector lists a class.
  *
@@ -60,8 +63,15 @@ interface PreviewDisplay {
   previewAntiAliasing: AntiAliasing;
   /** The selected emitter's origin, offset and spawn shape are drawn as a wireframe. */
   previewGizmo: boolean;
+  /** The VFX viewport draws a gizmo that moves the rig's target. Not persisted. */
+  previewTargetHandle: boolean;
   /** Each emitter that writes a stencil mask draws the mask as a tint. */
   previewMasks: boolean;
+  /**
+   * The client's Effects Quality every particle preview simulates, from 0 for Very Low to 4
+   * for Very High.
+   */
+  previewEffectsQuality: PreviewEffectsQuality;
   /** The live counts and the frame's milliseconds are drawn in the corner. */
   previewStats: boolean;
   /** A character's skeleton is drawn over it, a dot per joint and a line to its parent. */
@@ -278,7 +288,9 @@ const PREVIEW_DISPLAY_DEFAULTS: PreviewDisplay = {
   /* The game's own default, `DEFAULT_ANTI_ALIASING`, kept a literal so the store loads no renderer. */
   previewAntiAliasing: "fxaa",
   previewGizmo: true,
+  previewTargetHandle: false,
   previewMasks: false,
+  previewEffectsQuality: 4,
   previewStats: false,
   previewArmature: false,
   previewShaders: false,
@@ -376,7 +388,8 @@ export const useWorkshopLayoutStore = create<WorkshopLayoutStore>()(
     }),
     {
       name: "ltk-workshop-layout",
-      version: 8,
+      version: 9,
+      partialize: ({ previewTargetHandle: _session, ...kept }) => kept,
       migrate: (persisted) => {
         const state = {
           ...keepUnversioned<
@@ -413,6 +426,7 @@ export const useWorkshopLayoutStore = create<WorkshopLayoutStore>()(
           state.previewViewMode = "lit";
           state.previewWireOverlay = true;
         }
+        if (state.previewTargetHandle) state.previewTargetHandle = false;
         return state;
       },
     },
@@ -438,6 +452,7 @@ export type {
   ExplorerView,
   LayerPanelSide,
   PreviewDisplay,
+  PreviewEffectsQuality,
   PreviewFlag,
   ProjectEditorKey,
   SidebarViewId,
@@ -510,7 +525,10 @@ export const usePreviewAntiAliasing = () => useWorkshopLayoutStore((s) => s.prev
 export const usePreviewAmbientOcclusion = () =>
   useWorkshopLayoutStore((s) => s.previewAmbientOcclusion);
 export const usePreviewGizmo = () => useWorkshopLayoutStore((s) => s.previewGizmo);
+export const usePreviewTargetHandle = () => useWorkshopLayoutStore((s) => s.previewTargetHandle);
 export const usePreviewMasks = () => useWorkshopLayoutStore((s) => s.previewMasks);
+export const usePreviewEffectsQuality = () =>
+  useWorkshopLayoutStore((s) => s.previewEffectsQuality);
 export const usePreviewStats = () => useWorkshopLayoutStore((s) => s.previewStats);
 export const usePreviewArmature = () => useWorkshopLayoutStore((s) => s.previewArmature);
 export const usePreviewShaders = () => useWorkshopLayoutStore((s) => s.previewShaders);

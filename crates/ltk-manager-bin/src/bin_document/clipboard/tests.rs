@@ -10,7 +10,7 @@ use ltk_meta::property::Kind;
 use ltk_meta::{Bin, BinObject};
 
 use super::*;
-use crate::bin_document::ValueEdit;
+use crate::bin_document::{NewObject, ObjectCreation, PropertyEdit, ValueEdit};
 use crate::meta_schema::{self, MetaSchema};
 use ltk_manager_base::game_build::GameBuild;
 
@@ -153,6 +153,7 @@ fn duplicate(document: &mut BinDocument, index: usize) -> Result<(), BinDocument
             path: String::new(),
             index: Some(index + 1),
             unique: unique(),
+            key: None,
         }],
         schema().at(Some(BUILD)),
     )
@@ -173,6 +174,7 @@ fn paste(
             index,
             text: text.to_owned(),
             unique: unique(),
+            key: None,
         }],
         schema().at(Some(BUILD)),
     )
@@ -397,6 +399,7 @@ fn a_system_template_lands_its_emitters_named_apart_in_one_undo_step() {
             index: Some(index),
             text: emitter.text.clone(),
             unique: None,
+            key: None,
         });
         edits.push(ValueEdit::SetLeaf {
             path: format!("[{index}].{}", hashed("emitterName")),
@@ -417,4 +420,372 @@ fn a_system_template_lands_its_emitters_named_apart_in_one_undo_step() {
     assert_eq!(names(&document, SYSTEM), taken);
     assert!(document.undo().unwrap());
     assert_eq!(names(&document, SYSTEM), ["Sparks"]);
+}
+
+/// Applies `edits` under `childParticleSetDefinition` of the system's first complex emitter.
+fn edit_children(
+    document: &mut BinDocument,
+    edits: Vec<ValueEdit>,
+) -> Result<(), BinDocumentError> {
+    document.edit_property(
+        h(SYSTEM),
+        &format!("{}[0]", hashed("complexEmitterDefinitionData")),
+        &format!("0x{}", hashed("childParticleSetDefinition")),
+        edits,
+        schema().at(Some(BUILD)),
+    )
+}
+
+/// Returns the edits that append the child at `index`, which names its system through `field`.
+fn add_child(index: usize, field: &str, value: LeafValue) -> Vec<ValueEdit> {
+    let children = hashed("childrenIdentifiers");
+    vec![
+        ValueEdit::EnsurePointer {
+            path: String::new(),
+            class: "VfxChildParticleSetDefinitionData".to_owned(),
+        },
+        ValueEdit::EnsureProperty {
+            path: String::new(),
+            field: format!("0x{children}"),
+        },
+        ValueEdit::InsertItem {
+            path: children.clone(),
+            item: crate::bin_document::NewItem {
+                index: None,
+                key: None,
+                class: Some("VfxChildIdentifier".to_owned()),
+            },
+        },
+        ValueEdit::EnsureProperty {
+            path: format!("{children}[{index}]"),
+            field: format!("0x{}", hashed(field)),
+        },
+        ValueEdit::SetLeaf {
+            path: format!("{children}[{index}].{}", hashed(field)),
+            value,
+        },
+    ]
+}
+
+/// Returns the edits that move item 1 of the list `list` to its front.
+fn move_to_front(list: &str) -> [ValueEdit; 2] {
+    [
+        ValueEdit::CopyItem {
+            from: format!("{list}[1]"),
+            path: list.to_owned(),
+            index: Some(0),
+            unique: None,
+            key: None,
+        },
+        ValueEdit::RemoveItem {
+            path: format!("{list}[2]"),
+        },
+    ]
+}
+
+/// Returns the fields of each child identifier of the first complex emitter, and its bones.
+fn child_set(document: &BinDocument) -> (Vec<Vec<BinHash>>, Vec<String>) {
+    let PropertyValueEnum::Struct(emitter) =
+        &list(document, SYSTEM, "complexEmitterDefinitionData")[0]
+    else {
+        panic!("an emitter is a pointer");
+    };
+    let PropertyValueEnum::Struct(set) = &emitter.properties[&h("childParticleSetDefinition")]
+    else {
+        panic!("the child set is a pointer");
+    };
+    let items = |field: &str| match set.properties.get(&h(field)) {
+        Some(PropertyValueEnum::Container(items)) => items.items().to_vec(),
+        Some(other) => panic!("{field} is no list: {other:?}"),
+        None => Vec::new(),
+    };
+
+    let children = items("childrenIdentifiers")
+        .iter()
+        .map(|item| match item {
+            PropertyValueEnum::Embedded(values::Embedded(inner)) => {
+                inner.properties.keys().copied().collect()
+            }
+            other => panic!("a child identifier is an embed: {other:?}"),
+        })
+        .collect();
+    let bones = items("boneToSpawnAt")
+        .iter()
+        .map(|item| match item {
+            PropertyValueEnum::String(text) => text.value.clone(),
+            other => panic!("a bone is a string: {other:?}"),
+        })
+        .collect();
+    (children, bones)
+}
+
+#[test]
+fn a_child_set_takes_a_link_a_key_bones_a_move_and_a_removal() {
+    let mut document = document(&["Flash"], &[]);
+    let children = hashed("childrenIdentifiers");
+    let bones = hashed("boneToSpawnAt");
+    let link = LeafValue::ObjectLink {
+        text: format!("0x{}", hashed(OTHER)),
+    };
+    let key = LeafValue::Hash {
+        text: "Teemo_R_Key".to_owned(),
+    };
+    let bone = crate::bin_document::NewItem {
+        index: None,
+        key: None,
+        class: None,
+    };
+
+    edit_children(&mut document, add_child(0, "effect", link)).unwrap();
+    edit_children(&mut document, add_child(1, "effectKey", key)).unwrap();
+    edit_children(
+        &mut document,
+        vec![
+            ValueEdit::EnsureProperty {
+                path: String::new(),
+                field: format!("0x{bones}"),
+            },
+            ValueEdit::InsertItem {
+                path: bones.clone(),
+                item: bone.clone(),
+            },
+            ValueEdit::InsertItem {
+                path: bones.clone(),
+                item: bone,
+            },
+            ValueEdit::SetLeaf {
+                path: format!("{bones}[1]"),
+                value: LeafValue::String {
+                    value: "Head".to_owned(),
+                },
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        child_set(&document),
+        (
+            vec![vec![h("effect")], vec![h("effectKey")]],
+            vec![String::new(), "Head".to_owned()]
+        )
+    );
+
+    let moved = [move_to_front(&children), move_to_front(&bones)].concat();
+    edit_children(&mut document, moved).unwrap();
+    assert_eq!(
+        child_set(&document),
+        (
+            vec![vec![h("effectKey")], vec![h("effect")]],
+            vec!["Head".to_owned(), String::new()]
+        )
+    );
+
+    edit_children(
+        &mut document,
+        vec![
+            ValueEdit::RemoveItem {
+                path: format!("{children}[0]"),
+            },
+            ValueEdit::RemoveItem {
+                path: format!("{bones}[0]"),
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        child_set(&document),
+        (vec![vec![h("effect")]], vec![String::new()])
+    );
+
+    assert!(document.undo().unwrap());
+    assert_eq!(child_set(&document).0.len(), 2);
+}
+
+fn paste_into(
+    target: &mut BinDocument,
+    system: &str,
+    objects: &[ObjectCreation],
+    text: &str,
+) -> Result<(), BinDocumentError> {
+    target.create_and_edit(
+        objects,
+        vec![PropertyEdit {
+            entry: hex(h(system)),
+            holder: String::new(),
+            field: format!("0x{}", hashed("complexEmitterDefinitionData")),
+            edits: vec![ValueEdit::PasteItem {
+                path: String::new(),
+                index: None,
+                text: text.to_owned(),
+                unique: unique(),
+                key: None,
+            }],
+        }],
+        schema().at(Some(BUILD)),
+    )
+}
+
+fn pasted_system(text: String) -> ObjectCreation {
+    ObjectCreation {
+        name: SYSTEM.to_owned(),
+        origin: NewObject::Paste { text },
+    }
+}
+
+#[test]
+fn create_and_edit_pastes_object_and_emitter_as_one_step() {
+    let source = document(&["Spark"], &[]);
+    let object = copy(&source, "");
+    let spark = copy(
+        &source,
+        &format!("{}[0]", hashed("complexEmitterDefinitionData")),
+    );
+    let mut target = BinDocument::parse(bin_bytes(OTHER, &["Ember"], &[])).unwrap();
+
+    paste_into(&mut target, OTHER, &[pasted_system(object)], &spark).unwrap();
+
+    assert_eq!(target.object_at(h(SYSTEM)), source.object_at(h(SYSTEM)));
+    assert_eq!(names(&target, OTHER), ["Ember", "Spark"]);
+    assert!(target.undo().unwrap());
+    assert!(target.object_at(h(SYSTEM)).is_none());
+    assert_eq!(names(&target, OTHER), ["Ember"]);
+}
+
+#[test]
+fn create_and_edit_takes_back_created_objects_on_refusal() {
+    let source = document(&["Spark"], &[]);
+    let object = copy(&source, "");
+    let mut target = BinDocument::parse(bin_bytes(OTHER, &["Ember"], &[])).unwrap();
+
+    let refused = paste_into(&mut target, OTHER, &[pasted_system(object)], "Spark");
+
+    assert_eq!(rejection(refused), EditRejection::NotACopy);
+    assert!(target.object_at(h(SYSTEM)).is_none());
+    assert!(!target.undo().unwrap());
+}
+
+const CHUNK: &str = "Maps/MapGeometry/Map11/Base/Chunk";
+
+/// A chunk holding one `MapLocator` under the key of `Locator1`.
+fn chunk() -> BinDocument {
+    let locator = class(
+        "MapLocator",
+        vec![("name", values::String::from("Locator1").into())],
+    );
+    let items = values::Map::new(
+        Kind::Hash,
+        Kind::Struct,
+        vec![(values::Hash::new(h("Locator1")).into(), locator.into())],
+    )
+    .unwrap();
+    let object = BinObject::builder(h(CHUNK), h("MapPlaceableContainer"))
+        .property(h("items"), items)
+        .build();
+    let mut out = Cursor::new(Vec::new());
+    Bin::new([object], std::iter::empty::<&str>())
+        .to_writer(&mut out)
+        .unwrap();
+    BinDocument::parse(out.into_inner()).unwrap()
+}
+
+fn edit_items(document: &mut BinDocument, edit: ValueEdit) -> Result<(), BinDocumentError> {
+    document.edit_property(
+        h(CHUNK),
+        "",
+        &format!("0x{}", hashed("items")),
+        vec![edit],
+        schema().at(Some(BUILD)),
+    )
+}
+
+fn item_keys(document: &BinDocument) -> Vec<BinHash> {
+    match &document.object_at(h(CHUNK)).unwrap().properties[&h("items")] {
+        PropertyValueEnum::Map(map) => map
+            .entries()
+            .iter()
+            .map(|(key, _)| match key {
+                PropertyValueEnum::Hash(hash) => hash.value.try_as_bin_hash().unwrap(),
+                other => panic!("an item key is a hash: {other:?}"),
+            })
+            .collect(),
+        other => panic!("items is no map: {other:?}"),
+    }
+}
+
+#[test]
+fn copy_item_lands_map_entry_under_key() {
+    let mut document = chunk();
+
+    edit_items(
+        &mut document,
+        ValueEdit::CopyItem {
+            from: format!("{{{}}}", hashed("Locator1")),
+            path: String::new(),
+            index: None,
+            unique: None,
+            key: Some("Locator2".to_owned()),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(item_keys(&document), [h("Locator1"), h("Locator2")]);
+    assert!(document.undo().unwrap());
+    assert_eq!(item_keys(&document), [h("Locator1")]);
+}
+
+#[test]
+fn paste_item_lands_map_entry_under_key() {
+    let mut document = chunk();
+    let text = document
+        .copy_value(
+            h(CHUNK),
+            &format!("{}{{{}}}", hashed("items"), hashed("Locator1")),
+            schema().at(Some(BUILD)),
+        )
+        .unwrap();
+
+    edit_items(
+        &mut document,
+        ValueEdit::PasteItem {
+            path: String::new(),
+            index: Some(0),
+            text,
+            unique: None,
+            key: Some(format!("0x{}", hashed("Locator0"))),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(item_keys(&document), [h("Locator0"), h("Locator1")]);
+}
+
+#[test]
+fn copy_item_refuses_key_the_map_holds() {
+    let mut document = chunk();
+
+    let refused = edit_items(
+        &mut document,
+        ValueEdit::CopyItem {
+            from: format!("{{{}}}", hashed("Locator1")),
+            path: String::new(),
+            index: None,
+            unique: None,
+            key: Some("Locator1".to_owned()),
+        },
+    );
+
+    assert_eq!(rejection(refused), EditRejection::KeyExists);
+}
+
+#[test]
+fn create_object_refuses_paste_of_value_that_is_no_struct() {
+    let source = document(&["Spark"], &[]);
+    let text = copy(&source, &hashed("particleName"));
+    let mut target = BinDocument::parse(bin_bytes(OTHER, &[], &[])).unwrap();
+
+    let refused = target
+        .create_object(SYSTEM, &NewObject::Paste { text })
+        .map(|_| ());
+
+    assert_eq!(rejection(refused), EditRejection::InvalidShape);
 }

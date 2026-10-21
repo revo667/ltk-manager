@@ -81,8 +81,10 @@ export interface QuadLayers {
   readonly reflectionTexture: Texture | null;
   /** `softParticleParams` where the draw path fades, from `fadeOf`, and null elsewhere. */
   readonly soft: SoftModel | null;
-  /** `isGroundLayer`: every vertex is laid on the ground. */
+  /** `isGroundLayer`: the emitter draws in the ground layer, before the character. */
   readonly ground: boolean;
+  /** `sliceTechniqueRange`, and 0 for an emitter drawing no slice. */
+  readonly slice: number;
 }
 
 /** Which of the emitter's optional passes this draw path compiles. */
@@ -107,7 +109,8 @@ export function layersOf(
     mult: emitter.multUv,
     multTexture: samplers.mult,
     mode: emitter.uvMode,
-    colorTexture: draws.ramp ? samplers.color : null,
+    /* A slice reads the ramp on every path, a mesh's included. */
+    colorTexture: draws.ramp || emitter.sliceRange > 0 ? samplers.color : null,
     palette: emitter.palette,
     paletteTexture: samplers.palette,
     erosion: drawsFixedAlphaUv(emitter) ? null : emitter.erosion,
@@ -118,12 +121,8 @@ export function layersOf(
     reflectionTexture: draws.sheen ? samplers.reflection : null,
     soft: draws.fade ? fadeOf(emitter) : null,
     ground: emitter.groundLayer,
+    slice: emitter.sliceRange,
   };
-}
-
-/** `GROUND_LAYER` where the emitter draws in the ground layer. */
-export function groundDefines(layers: QuadLayers): Defines {
-  return layers.ground ? { GROUND_LAYER: "" } : {};
 }
 
 /** Which of a layer's axes are mirrored, as the shader's `mix` weights. */
@@ -144,18 +143,34 @@ export function multiplies(layers: QuadLayers): boolean {
 
 /** The palette and the colour ramp's own uniforms: the two textures, the mix and the row. */
 export function colorUniforms(layers: QuadLayers) {
-  const palette =
-    layers.paletteTexture !== null && drawsPalette(layers.palette) ? layers.palette : null;
-  const mix = palette === null ? [0, 0, 0, 0] : [...sampleCurve(palette.mix, 0)];
-
   return {
     mapRamp: { value: layers.colorTexture },
-    mapPalette: { value: layers.paletteTexture },
-    addressPalette: { value: palette?.addressMode ?? 0 },
+    ...paletteUniforms(layers.palette, layers.paletteTexture),
+  };
+}
+
+/** Returns `palette` if it draws and `texture` has arrived, and null otherwise. */
+function drawnPalette(palette: PaletteModel | null, texture: Texture | null): PaletteModel | null {
+  return texture !== null && drawsPalette(palette) ? palette : null;
+}
+
+/** The palette's own uniforms: its texture, the address mode, the mix, the row and the scroll. */
+export function paletteUniforms(palette: PaletteModel | null, texture: Texture | null) {
+  const drawn = drawnPalette(palette, texture);
+  const mix = drawn === null ? [0, 0, 0, 0] : [...sampleCurve(drawn.mix, 0)];
+
+  return {
+    mapPalette: { value: texture },
+    addressPalette: { value: drawn?.addressMode ?? 0 },
     paletteMix: { value: [mix[0] ?? 0, mix[1] ?? 0, mix[2] ?? 0, mix[3] ?? 0] },
-    paletteRow: { value: palette === null ? 0 : paletteRow(palette) },
+    paletteRow: { value: drawn === null ? 0 : paletteRow(drawn) },
     paletteScroll: { value: [0, 0] },
   };
+}
+
+/** `HAS_PALETTE` if `palette` draws and `texture` has arrived. */
+export function paletteDefines(palette: PaletteModel | null, texture: Texture | null): Defines {
+  return drawnPalette(palette, texture) === null ? {} : { HAS_PALETTE: "" };
 }
 
 /**
@@ -167,8 +182,6 @@ export function colorUniforms(layers: QuadLayers) {
  * texture has arrived.
  */
 export function colorDefines(layers: QuadLayers): Defines {
-  const palette =
-    layers.paletteTexture !== null && drawsPalette(layers.palette) ? layers.palette : null;
   const multPass = layers.mult !== null;
   const ramp =
     layers.colorTexture !== null &&
@@ -178,7 +191,7 @@ export function colorDefines(layers: QuadLayers): Defines {
   return {
     ...(ramp ? { HAS_RAMP: "" } : {}),
     ...(multPass ? { RAMP_AT_MULT: "" } : {}),
-    ...(palette !== null ? { HAS_PALETTE: "" } : {}),
+    ...paletteDefines(layers.palette, layers.paletteTexture),
   };
 }
 
@@ -338,4 +351,23 @@ export function erosionDefines(erosion: ErosionModel | null, texture: Texture | 
     ...(erosion !== null ? { EROSION: "" } : {}),
     ...(erosion !== null && texture !== null ? { HAS_MAP_EROSION: "" } : {}),
   };
+}
+
+/** Which slice shader a draw path compiles: the quad's, which scales by the texel's green, or the mesh's. */
+export const SLICE = { quad: 1, mesh: 2 } as const;
+
+/** The slice shader's own uniforms: the band and the ramp it reads on every path. */
+export function sliceUniforms(layers: QuadLayers): Record<string, { value: unknown }> {
+  return layers.slice > 0
+    ? { sliceRange: { value: layers.slice }, mapRamp: { value: layers.colorTexture } }
+    : {};
+}
+
+/** `SLICE` as the path's kind where the emitter draws a slice, and `SLICE_RAMP` once its ramp arrived. */
+export function sliceDefines(
+  layers: QuadLayers,
+  kind: (typeof SLICE)[keyof typeof SLICE],
+): Defines {
+  if (layers.slice <= 0) return {};
+  return { SLICE: kind, ...(layers.colorTexture !== null ? { SLICE_RAMP: "" } : {}) };
 }

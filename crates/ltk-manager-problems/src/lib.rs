@@ -401,6 +401,10 @@ pub struct RuleInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", specta(optional))]
     pub severity: Option<ProblemSeverity>,
+    /// The `ltk://` deep link that a panel offers beside this rule's findings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", specta(optional))]
+    pub link: Option<String>,
     /// Whether this project is one the rule speaks about yet.
     pub state: RuleState,
 }
@@ -661,7 +665,8 @@ pub struct RuleMeta {
     /// The severity every problem this rule reports carries.
     ///
     /// `None` where each finding answers for itself, because what it costs
-    /// depends on the machine the check ran on rather than on the rule.
+    /// depends on the machine the check ran on, or on the property the finding
+    /// is at, rather than on the rule.
     ///
     /// **A severity given here is this build's word, as much as the title is.**
     /// That is what lets a remembered verdict take it from the running build
@@ -704,8 +709,16 @@ pub trait Rule: Send + Sync {
             description: meta.description.to_owned(),
             unfixable: meta.unfixable.to_owned(),
             severity: meta.severity,
+            link: self.link().map(str::to_owned),
             state: RuleState::Active,
         }
+    }
+
+    /// Returns the `ltk://` deep link that a panel offers beside this rule's findings.
+    ///
+    /// The default implementation returns `None`.
+    fn link(&self) -> Option<&'static str> {
+        None
     }
 
     /// Why this rule waits for something `project` does not have yet.

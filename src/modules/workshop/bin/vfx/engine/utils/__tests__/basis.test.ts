@@ -4,6 +4,7 @@ import {
   alongInto,
   AXIS,
   axisInto,
+  beamInto,
   flightInto,
   mirrorInto,
   multiplyInto,
@@ -89,6 +90,42 @@ describe("alongInto", () => {
   });
 });
 
+describe("beamInto", () => {
+  function axesOf(direction: number[]): number[][] {
+    const basis = beamInto(direction, new Float32Array(9));
+    return [AXIS.x, AXIS.y, AXIS.z].map((axis) => {
+      const out = new Float32Array(3);
+      axisInto(basis, axis, out, 0);
+      return rounded(out);
+    });
+  }
+
+  it("points local z along the direction with x as world up crossed with z", () => {
+    expect(axesOf([3, 0, 0])).toEqual([
+      [0, 0, -1],
+      [0, 1, 0],
+      [1, 0, 0],
+    ]);
+  });
+
+  it("uses world x as the up vector if the direction is vertical", () => {
+    expect(axesOf([0, 2, 0])).toEqual([
+      [0, 0, 1],
+      [1, 0, 0],
+      [0, 1, 0],
+    ]);
+    expect(axesOf([0, -2, 0])).toEqual([
+      [0, 0, -1],
+      [1, 0, 0],
+      [0, -1, 0],
+    ]);
+  });
+
+  it("writes the identity if the direction has zero length", () => {
+    expect(rounded(beamInto([0, 0, 0], new Float32Array(9)))).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  });
+});
+
 describe("yawInto", () => {
   it("stands on the world's axes facing forward", () => {
     expect(rounded(yawInto([0, 0, 1], new Float32Array(9)))).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
@@ -130,7 +167,20 @@ describe("flightInto", () => {
   it("trades the forward yaw's y and z and turns x about, and flies forward with no reach", () => {
     const forward = [-1, 0, 0, 0, 0, 1, 0, 1, 0];
     expect(rounded(flightInto([0, 0, 1], new Float32Array(9)))).toEqual(forward);
-    expect(rounded(flightInto([0, 1, 0], new Float32Array(9)))).toEqual(forward);
+    expect(rounded(flightInto([0, 0, 0], new Float32Array(9)))).toEqual(forward);
+  });
+
+  it("returns the identity if the direction points straight up", () => {
+    expect(rounded(flightInto([0, 2, 0], new Float32Array(9)))).toEqual([
+      1, 0, 0, 0, 1, 0, 0, 0, 1,
+    ]);
+  });
+
+  it("pitches local Y along a climbing direction and keeps local X level", () => {
+    const [xx, yx, , xy, yy, , xz, yz] = rounded(flightInto([0, 1, 1], new Float32Array(9)));
+
+    expect([xx, xy, xz]).toEqual([-1, 0, 0]);
+    expect([yx, yy, yz].map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 0.707, 0.707]);
   });
 });
 

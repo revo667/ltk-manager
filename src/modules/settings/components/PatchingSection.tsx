@@ -63,6 +63,13 @@ export function PatchingSection() {
             hint="Takes effect the next time the patcher starts."
             control={<SettingSwitch setting="verbosePatcherLogging" />}
           />
+
+          <SettingRow
+            setting="betaPatcher"
+            description="Patcher builds come from the beta channel."
+            hint="Takes effect the next time the patcher starts after the build downloads."
+            control={<SettingSwitch setting="betaPatcher" />}
+          />
         </SettingGroup>
 
         <SettingGroup id="patching.mod-safety" title="Mod safety">
@@ -77,13 +84,6 @@ export function PatchingSection() {
               Modding allows running Lua scripts. Only install from sources you trust.
             </AlertBox>
           )}
-
-          <SettingRow
-            setting="linkedBinCheckEnabled"
-            description="Flags enabled mods that reference files removed from the game."
-            hint="Shown as a badge on each affected mod, plus a one-time warning when you start the patcher."
-            control={<SettingSwitch setting="linkedBinCheckEnabled" />}
-          />
 
           <SettingRow
             setting="enforceSkinhackScan"

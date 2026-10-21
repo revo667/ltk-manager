@@ -11,6 +11,7 @@ use ltk_meta::property::values;
 use ltk_meta::{BinObject, PropertyValueEnum};
 use serde::{Deserialize, Serialize};
 
+use super::super::clipboard::copied_object;
 use super::super::edit::{Edit, bin_hash};
 use super::super::properties::field_path;
 use super::super::{BinDocument, BinDocumentError, ClassChoice, EditRejection, hex};
@@ -50,6 +51,12 @@ pub enum NewObject {
         /// The template's catalog id.
         template: String,
     },
+    /// An object that clipboard `text` carries as a struct value: `class` and a `set` of each
+    /// of its properties.
+    Paste {
+        /// The clipboard text of a copied object.
+        text: String,
+    },
 }
 
 /// What a declaration of the chosen layer does to one object of the chunk.
@@ -74,15 +81,15 @@ pub enum ObjectChange {
 }
 
 impl BinDocument {
-    /// Declare a new object named `name` in the chosen layer, answering its path hash.
+    /// Declare a new object named `name` in the chosen layer, answering its path hash. A
+    /// document that writes its own bytes adds the object as an undoable edit instead.
     ///
     /// The name is the author's. The game-data reference suggests `Mods/<mod id>/` ahead of
     /// it, and nothing checks that.
     ///
     /// # Errors
     ///
-    /// Fails with [`BinDocumentError::Declaring`] for a document that declares nothing, with
-    /// [`BinDocumentError::EditRejected`] for a name that is no entry name
+    /// Fails with [`BinDocumentError::EditRejected`] for a name that is no entry name
     /// ([`EditRejection::MalformedHash`]), one the chunk holds
     /// ([`EditRejection::ObjectExists`]), and a creation no declaration expresses
     /// ([`EditRejection::Undeclarable`]), a source or a class that is no name and no hash
@@ -94,6 +101,10 @@ impl BinDocument {
         name: &str,
         origin: &NewObject,
     ) -> Result<BinHash, BinDocumentError> {
+        if !self.declares() {
+            return self.create_owned_object(name, origin);
+        }
+
         let declared = self.declared.as_ref().ok_or_else(not_declared)?;
         let rejected = |rejection| BinDocumentError::EditRejected {
             address: name.to_owned(),
@@ -151,6 +162,13 @@ impl BinDocument {
                 filling = Some(own_named(value, &name));
                 (ObjectOperation::Construct(spelled), expected)
             }
+            NewObject::Paste { text } => {
+                let value = copied_object(text).map_err(rejected)?;
+                let spelled = self.spelled(|names| class_name(value.class_hash, names))?;
+                let expected = BinObject::new(entry, value.class_hash);
+                filling = Some(value.properties.into_iter().collect());
+                (ObjectOperation::Construct(spelled), expected)
+            }
         };
 
         let plan = self.object_edit(name, operation)?;
@@ -200,17 +218,17 @@ impl BinDocument {
     /// Declare the removal of the object `entry` in the chosen layer.
     ///
     /// An object the layer creates loses its creation, and any other object gains a
-    /// `remove: true` entry.
+    /// `remove: true` entry. A document that writes its own bytes takes the object out as an
+    /// undoable edit instead.
     ///
     /// # Errors
     ///
-    /// Fails with [`BinDocumentError::Declaring`] for a document that declares nothing, with
-    /// [`BinDocumentError::NodeNotFound`] for an object the document does not hold, and with
-    /// [`BinDocumentError::EditRejected`] for a removal no declaration expresses. A refused
+    /// Fails with [`BinDocumentError::NodeNotFound`] for an object the document does not hold,
+    /// and with [`BinDocumentError::EditRejected`] for a removal no declaration expresses. A refused
     /// edit leaves the tree and the manifest as they were.
     pub fn remove_object(&mut self, entry: BinHash) -> Result<(), BinDocumentError> {
         if !self.declares() {
-            return Err(not_declared());
+            return self.remove_owned_object(entry);
         }
         if self.object_at(entry).is_none() {
             return Err(BinDocumentError::NodeNotFound {
@@ -394,7 +412,10 @@ fn class_name(class: BinHash, names: &RenderNames<'_>) -> ClassName {
 
 /// The properties of a system template made under `name`, its `particleName` the name's last
 /// segment and its `particlePath` the name, as a clone rewrites its own path.
-fn own_named(system: values::Struct, name: &EntryName) -> Vec<(BinHash, PropertyValueEnum)> {
+pub(in super::super) fn own_named(
+    system: values::Struct,
+    name: &EntryName,
+) -> Vec<(BinHash, PropertyValueEnum)> {
     let path = name.as_str();
     let leaf = path.rsplit('/').next().unwrap_or(path);
     let particle_name = BinHash::hash_str("particleName");
@@ -421,7 +442,11 @@ fn own_named(system: values::Struct, name: &EntryName) -> Vec<(BinHash, Property
 
 /// The object a clone of `object`, spelled `source`, makes under `name`. league-mod
 /// ADR-0030 rewrites the copy's own path.
-fn clone_as(object: &BinObject, source: &EntryName, name: &EntryName) -> BinObject {
+pub(in super::super) fn clone_as(
+    object: &BinObject,
+    source: &EntryName,
+    name: &EntryName,
+) -> BinObject {
     let mut copy = object.clone();
     copy.path_hash = name.object_hash();
     let spelled = !source.is_hash() && !name.is_hash();

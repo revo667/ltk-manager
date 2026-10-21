@@ -67,6 +67,11 @@ const INDEX = [
     title: "Automatically categorize mods",
   },
   {
+    id: "library.autoHealthCheckEnabled",
+    key: "autoHealthCheckEnabled",
+    title: "Automatically check mods",
+  },
+  {
     id: "library.promoteEnabledMods",
     key: "promoteEnabledMods",
     title: m.settings_library_promotion_title(),
@@ -129,12 +134,8 @@ const INDEX = [
     key: "verbosePatcherLogging",
     title: "Verbose patcher logging",
   },
+  { id: "patching.betaPatcher", key: "betaPatcher", title: "Beta patcher" },
   { id: "patching.blockScriptsWad", key: "blockScriptsWad", title: "Block Scripts.wad.client" },
-  {
-    id: "patching.linkedBinCheckEnabled",
-    key: "linkedBinCheckEnabled",
-    title: "Warn about missing dependencies",
-  },
   {
     id: "patching.enforceSkinhackScan",
     key: "enforceSkinhackScan",

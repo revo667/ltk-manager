@@ -37,7 +37,7 @@ import {
 } from "@/modules/library/api";
 import { useLibrarySidebarStore, useLibraryTableStore } from "@/modules/library/state";
 import { getMapLabel, getTagLabel } from "@/modules/library/utils/labels";
-import { useSettings } from "@/modules/settings";
+import { useSettings } from "@/modules/settings/api";
 import { useModHealthDrawerStore } from "@/stores";
 import { twMerge } from "@/utils";
 
@@ -143,7 +143,7 @@ export function ModCardToggle({ view }: { view: ModCardView }) {
  * Where the mod's content is read from, as a choice between the two rather than
  * a button naming the one it is not.
  *
- * Per "Storage" in CONTEXT.md.
+ * Per "Storage" in GLOSSARY.md.
  */
 function ModCardStorageSubmenu({ view }: { view: ModCardView }) {
   return (

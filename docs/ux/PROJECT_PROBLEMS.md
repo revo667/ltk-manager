@@ -4,16 +4,16 @@
 
 | Date       | Change                                                       |
 | ---------- | ------------------------------------------------------------ |
+| 2026-10-21 | `bin/property-type` rehashes a material name for patch 16.22 |
+| 2026-10-16 | A finding opens the setting that its rule links to           |
+| 2026-10-16 | `bin/base-skin-copy` reports a copy of the base skin bin     |
+| 2026-10-15 | `bin/texture-file` reports a non-image texture file          |
+| 2026-10-12 | `bin/object-link` reports a link to an undefined object      |
 | 2026-10-02 | Check only packed files, and report packed working files     |
 | 2026-09-30 | Name each unchecked file once, with its reason               |
 | 2026-09-17 | Open a bin finding at the node it names                      |
 | 2026-09-05 | Point the lazy-read link at the reader that landed           |
 | 2026-09-01 | The meta schema judges, and a table speaks for later builds  |
-| 2026-08-30 | A bin is recognized by its content, and repaired at its hash |
-| 2026-08-28 | Preserve the names a fix hashes, and drop the restore point  |
-| 2026-08-28 | The library surface ships, and moves to MOD_HEALTH.md        |
-| 2026-08-24 | Draw the forward-looking lints by default, dimmed            |
-| 2026-08-24 | Give the forward-looking switch a row, and drop the notice   |
 
 Each edit of this document adds a row at the top. The table keeps the last ten rows.
 
@@ -53,10 +53,13 @@ This table holds every major feature of Problems. A status word has one meaning.
 | Bins found by magic  | Available | A chunk or hex file no table names is typed by its first bytes         |
 | Bin retype rule      | Available | `bin/property-type`. The first rule, and the urgent one                |
 | The meta schema      | Available | The wiki database. Judges the installed build, and ships a snapshot    |
-| The migration tables | Available | 395 rows, `include_str!` into the core crate. What a later build wants |
-| Texture size rule    | Available | `tex/block-alignment`. The one confirmed crash, and it repairs         |
+| The migration tables | Available | One file per build, `include_str!` into the core crate. 397 rows       |
+| Texture size rule    | Available | `tex/block-alignment`. A confirmed crash, and it repairs               |
 | Audio bank rule      | Available | `audio/bank-version`. A bank the game drops without a word             |
 | Working file rule    | Available | `project/working-file`. A packed source file, with no ignore rules     |
+| Object link rule     | Available | `bin/object-link`. A link to an object no mod or game bin defines      |
+| Texture file rule    | Available | `bin/texture-file`. A texture property that names a non-image file     |
+| Base skin copy rule  | Available | `bin/base-skin-copy`. A skin bin that is a copy of the base skin       |
 | Repair by removal    | Available | A fix may delete a file, where something still answers for it          |
 | The fix preview      | Available | The before value and the after value, for each problem                 |
 | Preserved names      | Available | A fix writes what it hashes into the mod's own `hashes/`               |
@@ -66,6 +69,8 @@ This table holds every major feature of Problems. A status word has one meaning.
 | The count in the bar | Available | An error count beside Test, which opens the tab                        |
 | Forward-looking lint | Available | On by default, muted, and a switch in a row under the filter           |
 | Open at the property | Available | A click opens the bin scrolled to the node the finding names           |
+| Open the setting     | Available | A rule's `ltk://settings` link adds a settings button to its rows      |
+| Marks on rows        | Available | File, folder and bin rows draw the worst severity at them              |
 | Hash-name repair     | Proposed  | The 8 rows that need `binhashes` to name a hash                        |
 | Move the old checks  | Proposed  | The three checks below become rules and lose their shapes              |
 | Linked bin rule      | Proposed  | `bin/missing-link`, from the overlay build's offenders                 |
@@ -117,18 +122,18 @@ editor has used it since the panel was first proposed. The code follows the docu
 
 ## What exists today
 
-The manager runs three checks. Each has its own type, its own surface and its own life, and
-none of them can say where a problem is in a way a user can click.
+The manager ran three checks before this feature. Each had its own type, its own surface and its
+own life, and none of them could say where a problem is in a way a user can click. The linked bin
+check is removed, and `bin/object-link` reports a missing linked object in its place.
 
 | Check              | Produces                | Surface                | Location |
 | ------------------ | ----------------------- | ---------------------- | -------- |
 | `validate_project` | Two `Vec<String>`       | A dialog before a pack | None     |
-| Linked bin check   | `LinkedBinOffenderInfo` | A warning in Library   | A mod id |
 | WAD report         | `ModWadReport`, on disk | The mod's own page     | A mod    |
 
 A string is not a finding. `"Invalid version format: 1.0 (expected semver like 1.0.0)"` says
 what is wrong and nothing about what to do or where to go. This feature is the shape those
-three should have had, and moving them onto it is what proves the shape is generic.
+checks should have had, and moving them onto it is what proves the shape is generic.
 
 ## The model
 
@@ -836,6 +841,11 @@ deployed is not part of that answer at either setting.
 answer on the run, and calls `check` either way. What a check waits for is the check's own
 business, and a rule holding several claims can have taken some of them and still be waiting on
 the rest.
+
+**A rule that holds several tables waits only while the game has reached none of them.** Once
+the game is on the first table's build, the rule is active, because that table's findings are
+live. A finding of a later table is drawn at warning with its fix withheld, and a fix run skips
+it, so a repair never writes a type the installed game does not read.
 
 ## Applying a fix
 

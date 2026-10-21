@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 
 import type { OverlayProgress } from "@/lib/tauri";
 import { useTauriProgress } from "@/lib/useTauriProgress";
-import { usePatcherStatus } from "@/modules/patcher";
+import { usePatcherStatus } from "@/modules/patcher/api";
 
 import { libraryKeys } from "./keys";
 
@@ -25,16 +25,6 @@ export function useOverlayProgress() {
   useEffect(() => {
     const unlisten = listen("wad-reports-updated", () => {
       queryClient.invalidateQueries({ queryKey: libraryKeys.wadReports() });
-    });
-    return () => {
-      unlisten.then((fn) => fn()).catch(() => {});
-    };
-  }, [queryClient]);
-
-  // Refresh the linked-bin offender badges when a build records a fresh snapshot.
-  useEffect(() => {
-    const unlisten = listen("linked-bins-updated", () => {
-      queryClient.invalidateQueries({ queryKey: libraryKeys.linkedBinOffenders() });
     });
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});

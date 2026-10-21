@@ -10,8 +10,8 @@
 
 import { ADDRESS_MODE, type AddressMode } from "../../engine/model/enums";
 import type { EmitterModel, UvLayer } from "../../engine/model/model";
-import { type Pool, UV, uvAt } from "../../engine/simulation/pool";
-import { integratedInto, sampleCurve } from "../../engine/utils/sampleCurve";
+import { flexChannel, type Pool, UV, uvAt } from "../../engine/simulation/pool";
+import { integratedInto, sampleCurveInto } from "../../engine/utils/sampleCurve";
 
 /** What one layer hands its sampler for one particle. */
 export interface UvDraw {
@@ -41,6 +41,10 @@ const DEGREE = Math.PI / 180;
 /** Scratch one integrated rate is read into. */
 const INTEGRATED = new Float32Array(2);
 
+/* Scratch buffers for the scale and rotation curves, so a particle allocates nothing. */
+const SCALE = new Float32Array(2);
+const ROTATION = new Float32Array(1);
+
 /**
  * One layer's transform for the particle at `index`, into `out`.
  *
@@ -62,24 +66,35 @@ export function uvTransformInto(
   emitterScroll = true,
 ): void {
   const slot = uvAt(index, which);
-  const scale = sampleCurve(layer.scale, age01);
+
+  /* A channel that the curve does not write defaults to a scale of 1 and a turn of 0. */
+  SCALE.fill(1);
+  sampleCurveInto(layer.scale, age01, SCALE, 0);
+  ROTATION[0] = 0;
+  sampleCurveInto(layer.rotation, age01, ROTATION, 0);
+
   const lifetime = pool.lifetime[index];
   const lived = Number.isFinite(lifetime) ? lifetime : 0;
 
   INTEGRATED.fill(0);
   integratedInto(layer.rotateRate, age01, 1, INTEGRATED, 0);
-  const turned =
-    (sampleCurve(layer.rotation, age01)[0] ?? 0) +
-    age * pool.uv[slot + UV.birthRotate] +
-    INTEGRATED[0] * lived;
+  const turned = ROTATION[0] + age * pool.uv[slot + UV.birthRotate] + INTEGRATED[0] * lived;
   out.turn = turned * DEGREE;
-  out.scaleU = scale[0] ?? 1;
-  out.scaleV = scale[1] ?? 1;
+  out.scaleU = SCALE[0];
+  out.scaleV = SCALE[1];
 
   INTEGRATED.fill(0);
   integratedInto(layer.scrollRate, age01, 1, INTEGRATED, 0);
-  const rampU = pool.uv[slot + UV.birthOffsetX] + age * pool.uv[slot + UV.birthScrollX];
-  const rampV = pool.uv[slot + UV.birthOffsetY] + age * pool.uv[slot + UV.birthScrollY];
+  /* `flexBirthUVOffset` reads its channel each frame, so a channel set mid-run moves it. */
+  const flexed = flexChannel(pool.flex, pool.uv[slot + UV.flexChannel]);
+  const rampU =
+    pool.uv[slot + UV.birthOffsetX] +
+    age * pool.uv[slot + UV.birthScrollX] +
+    flexed * pool.uv[slot + UV.flexOffsetX];
+  const rampV =
+    pool.uv[slot + UV.birthOffsetY] +
+    age * pool.uv[slot + UV.birthScrollY] +
+    flexed * pool.uv[slot + UV.flexOffsetY];
   /* The shader mirrors the whole offset under a flip, so a term that lands after the flip
      goes in reversed. */
   const panU = emitterScroll ? layer.emitterScrollRate[0] * now * (layer.flipU ? -1 : 1) : 0;
@@ -109,10 +124,15 @@ export function uvTransformInto(
   out.cellV = Math.floor(cell / columns) / rows;
 }
 
-/** The birth ramp held within reach when the layer clamps, and wrapped into a cell otherwise. */
+/**
+ * The birth ramp held within reach when the layer clamps, and its fraction otherwise.
+ *
+ * The fraction keeps the ramp's sign, as the engine's `modff` returns it. Under clamp, border
+ * and mirror, a negative offset samples differently from the same offset plus one cell.
+ */
 function ramp(value: number, clamped: boolean): number {
   if (clamped) return Math.min(Math.max(value, -RAMP_REACH), RAMP_REACH);
-  return value - Math.floor(value);
+  return value % 1;
 }
 
 /** `value` brought inside `[0, span)`, which a negative one still lands in. */

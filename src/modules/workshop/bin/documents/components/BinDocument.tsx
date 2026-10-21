@@ -41,7 +41,6 @@ import { useBinDocument, useFileDependencies, useFileRoots } from "../hooks/useB
 import { useBinTab } from "../hooks/useBinTab";
 import { useDeclaredState } from "../hooks/useDeclared";
 import { BinEditState } from "./BinEditState";
-import { DeclarationsOffNotice } from "./DeclarationsOffNotice";
 import { SandboxOptions } from "./SandboxOptions";
 
 interface BinDocumentProps {
@@ -129,9 +128,8 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
 
   const narrow = useNarrowToolbar();
   useBinTab(documentId, handle.document, asset, handle.readOnly === null);
-  /* Only a declared document that takes edits creates an object. ADR-0049. */
   const newObject = useNewObjectDraft();
-  const declares = declaredState !== null && handle.readOnly === null;
+  const creates = prop && handle.readOnly === null;
   useLendOpenBin(documentId, handle.document, null);
 
   /* A bin holding one object opens it expanded. */
@@ -187,7 +185,7 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
 
   return (
     <DocumentFrame data-ui="BinDocument">
-      <NewObjectContext value={declares ? newObject : null}>
+      <NewObjectContext value={creates ? newObject : null}>
         <DocumentToolbar active={active}>
           <span className="flex shrink-0 items-center text-row select-none">
             <SandboxOptions documentId={documentId} handle={handle} />
@@ -208,9 +206,6 @@ function OpenBin({ documentId, asset, name, file, handle, active, actions, reope
           />
           {actions}
         </DocumentToolbar>
-        {handle.readOnly === "declarationsOff" && (
-          <DeclarationsOffNotice asset={asset} file={file} subject={name} />
-        )}
         <CurveDockContext value={dock}>
           <BinTree
             document={handle.document}

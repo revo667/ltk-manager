@@ -52,7 +52,7 @@ import type {
 
 import { type BlockElement, elementView, floatsOf } from "./blockViews";
 import type { EngineEnvironment } from "./engineEnvironment";
-import { BLACK, GREY, neutral } from "./neutralTextures";
+import { BLACK, GREY, neutral, WHITE } from "./neutralTextures";
 import {
   type MemberSlot,
   splicePixelProgram,
@@ -81,6 +81,12 @@ const MATERIAL_TEXTURE = "__TX";
 
 /** The suffix an engine-filled texture carries, which the environment binds neutral. */
 const SHARED_TEXTURE = "_SharedTexture";
+
+/** The shared textures that a brush reads its grass tint from, the base and the alternate. */
+export const GRASS_TINTS: readonly string[] = [
+  "GRASS_TINT_MAP_SharedTexture",
+  "GRASS_TINT_MAP_ALTERNATE_SharedTexture",
+];
 
 /** The engine's copy of the frame, which a distortion samples at a screen coordinate. */
 export const SCREEN_COPY = "SAMPLER_BACK_BUFFER_COPY_SharedTexture";
@@ -310,6 +316,21 @@ export function bindProgramTexture(
   }
 }
 
+/**
+ * Every read the pixel stage of `material` makes of the bytecode's texture `name` is
+ * transparent black outside the texture, as the engine's border address mode reads it.
+ *
+ * GL has no border mode, so the stage's source is rewritten. The material must not have
+ * drawn yet.
+ */
+export function borderProgramTexture(material: RawShaderMaterial, name: string): void {
+  const samplers = GLOBALS_OF.get(material)?.samplers;
+  const held = samplers?.get(name) ?? samplers?.get(`${name}${MATERIAL_TEXTURE}`) ?? [];
+  for (const sampler of held) {
+    material.fragmentShader = withBorder(material.fragmentShader, sampler);
+  }
+}
+
 /** Where a draw can write over what a program material packed into `$Globals`. */
 export interface ProgramGlobals {
   /** Where each member sits in each stage's block that declares it, by the engine's name. */
@@ -379,6 +400,9 @@ function textureFor(
   dimension: TextureDimension,
   { pass, textures }: SubmeshProgram,
 ): Texture {
+  /* White until `EngineEnvironment.draw` binds the map's tint, because a brush multiplies its
+     color by the tint. */
+  if (GRASS_TINTS.includes(name)) return neutral(dimension, WHITE);
   if (name.endsWith(SHARED_TEXTURE)) return neutral(dimension, BLACK);
   const own = name.endsWith(MATERIAL_TEXTURE) ? name.slice(0, -MATERIAL_TEXTURE.length) : name;
   const texture = textures.get(own);
@@ -574,6 +598,22 @@ function withScreenCopy(source: string): string {
     .replaceAll(`textureLod(${SCREEN_COPY}, `, `${SCREEN_COPY_READ}Lod(`)
     .replaceAll(`texture(${SCREEN_COPY}, `, `${SCREEN_COPY_READ}(`)
     .replace(declaration, `${declaration}\n\n${read}\n\n${readLod}`);
+}
+
+/**
+ * `source` reading `sampler` as transparent black at a coordinate outside `[0, 1]`.
+ *
+ * The texel is sampled before the test, since a sample inside a branch has no derivatives.
+ */
+function withBorder(source: string, sampler: string): string {
+  const declaration = `uniform highp sampler2D ${sampler};`;
+  const read = `hexshade_bordered_${sampler}`;
+  if (!source.includes(declaration) || source.includes(`${read}(`)) return source;
+
+  const helper = `vec4 ${read}(vec2 at)\n{\n    vec4 texel = texture(${sampler}, at);\n    return clamp(at, 0.0, 1.0) == at ? texel : vec4(0.0);\n}`;
+  return source
+    .replaceAll(`texture(${sampler}, `, `${read}(`)
+    .replace(declaration, `${declaration}\n\n${helper}`);
 }
 
 /** `source` without the `#version` line three writes itself. */

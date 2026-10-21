@@ -26,7 +26,7 @@ import {
 
 import { ContextMenu } from "@/components";
 
-import { runEmitterKey } from "../../clipboard/emitterKeys";
+import { runEmitterKey, selectedEmitters } from "../../clipboard/emitterKeys";
 import { useEmitterClipboard } from "../../clipboard/useEmitterClipboard";
 import { BoardMotion } from "../utils/boardMotion";
 import type { GraphLayout } from "../utils/driverLayout";
@@ -36,6 +36,7 @@ import { PreviewViewStore } from "../utils/previewViews";
 import type { GraphItem } from "../utils/systemGraph";
 import { CONNECTION_PROPS, useCanvasAdds } from "./canvasAdds";
 import { type CanvasNode, canvasPosition, layoutNodes, withMoves } from "./canvasNodes";
+import { ChildrenNodeView, ChildSystemNodeView } from "./ChildNodes";
 import { ComponentNodeView } from "./ComponentNode";
 import { FrameNodeView } from "./EmitterFrame";
 import { MasterNodeView, StructNodeView } from "./EmitterNodes";
@@ -65,12 +66,13 @@ import { GraphMinimap } from "./GraphMinimap";
 import { DriverNodeView, EmitterNodeView, PreviewNodeView } from "./GraphNodes";
 import { runNodeKey, useNodeStructure } from "./nodeStructure";
 import { BoardMotionContext } from "./onScreen";
+import { useInspectorFollowsPick } from "./paneSync";
 import { PreviewViewsContext } from "./PreviewView";
 import { QuickAdd } from "./QuickAdd";
 import { RenderNodeView } from "./RenderNode";
 import { ValueNodeView } from "./ValueNode";
 import { useGraphFollowsChoice, useHoverReport } from "./viewportLink";
-import { ZoomDetail } from "./ZoomDetail";
+import { FlowStore, ZoomDetail } from "./ZoomDetail";
 
 const NODE_TYPES: NodeTypes = {
   preview: PreviewNodeView,
@@ -82,6 +84,8 @@ const NODE_TYPES: NodeTypes = {
   value: ValueNodeView,
   file: FileNodeView,
   render: RenderNodeView,
+  children: ChildrenNodeView,
+  system: ChildSystemNodeView,
   frame: FrameNodeView,
 };
 
@@ -116,11 +120,13 @@ export function GraphCanvas(props: GraphCanvasProps) {
 
   return (
     <ReactFlowProvider>
-      <PreviewViewsContext value={views}>
-        <BoardMotionContext value={motion}>
-          <Canvas {...props} />
-        </BoardMotionContext>
-      </PreviewViewsContext>
+      <FlowStore>
+        <PreviewViewsContext value={views}>
+          <BoardMotionContext value={motion}>
+            <Canvas {...props} />
+          </BoardMotionContext>
+        </PreviewViewsContext>
+      </FlowStore>
     </ReactFlowProvider>
   );
 }
@@ -233,10 +239,8 @@ function Canvas({
   const picked = soleId === null ? undefined : nodes.find((node) => node.id === soleId);
   const pickedItem =
     picked === undefined || picked.type === "frame" ? null : picked.data.placed.item;
-  const pickedEmitter =
-    pickedItem?.type === "master" && actions !== null
-      ? { entry: actions.entry, wire: pickedItem.wire, name: pickedItem.name }
-      : null;
+  const selection = actions === null ? [] : selectedEmitters(nodes, actions.entry);
+  const pickedEmitter = soleId === null ? null : (selection[0] ?? null);
 
   const box = useRef<HTMLDivElement>(null);
   const adds = useCanvasAdds({
@@ -245,6 +249,8 @@ function Canvas({
     layout,
     picked: soleId,
   });
+
+  useInspectorFollowsPick(pickedItem, adds.masters);
 
   const selectAll = (selected: boolean) =>
     setNodes((each) => each.map((node) => (node.type === "frame" ? node : { ...node, selected })));
@@ -331,7 +337,7 @@ function Canvas({
 
                     const entry = actions?.entry ?? "";
                     if (
-                      runEmitterKey(event, clipboard, entry, pickedEmitter) ||
+                      runEmitterKey(event, clipboard, entry, pickedEmitter, selection) ||
                       runNodeKey(event, structure, pickedItem)
                     ) {
                       /* Ctrl+D also opens Diagnostics app-wide, so a handled chord stops here. */
@@ -412,6 +418,7 @@ function Canvas({
                   onFrame={frame}
                   onCollapseAll={onCollapseAll}
                   onResetLayout={resetLayout}
+                  selected={selection}
                 />
               </ContextMenu.Root>
             </LoopedSurfacesContext>

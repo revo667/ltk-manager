@@ -7,6 +7,7 @@ import {
   UV_MODE,
 } from "../../engine/model/enums";
 import type { EmitterModel } from "../../engine/model/model";
+import { distortsAt, shadowsAt } from "../../engine/model/quality";
 
 /**
  * The emitters in the order the engine draws them, as a rank per emitter index.
@@ -78,10 +79,18 @@ const OVER: DrawPhases = { colour: "over", warpsEarly: false, warpsLate: false }
  * no phase draws nowhere. Left automatic, a HUD-layer emitter draws in the HUD's phase
  * alone, a ground-layer one in the ground's, and one with an active distortion block in
  * the distortion phases alone. Every other emitter draws by the sign of its `pass`:
- * negative before the late distortion, and zero or more after it. The shadow phase is
- * not drawn, so an emitter forced into it draws nothing.
+ * negative before the late distortion, and zero or more after it. The shadow pass is
+ * apart from these phases, per `castsShadow`. Below Medium effects quality the distortion
+ * passes are not drawn.
  */
 export function drawPhases(emitter: EmitterModel): DrawPhases {
+  const phases = phasesOf(emitter);
+  if (distortsAt(emitter.effectsQuality)) return phases;
+
+  return { colour: phases.colour, warpsEarly: false, warpsLate: false };
+}
+
+function phasesOf(emitter: EmitterModel): DrawPhases {
   const custom = emitter.customMaterial != null && !emitter.customMaterial.missing;
   const warps = emitter.distortion !== null && !custom;
 
@@ -117,6 +126,25 @@ export function drawPhases(emitter: EmitterModel): DrawPhases {
   return emitter.pass < 0 ? UNDER : OVER;
 }
 
+/**
+ * Returns true if `emitter` draws into the sun's shadow map.
+ *
+ * An emitter left to the automatic phase casts if it sets `doesCastShadow`, and still draws
+ * its colour. One forced into the shadow phase casts and draws nothing else, and any other
+ * forced phase casts nothing. A distorting, ground-layer, HUD-layer or planar-projection
+ * emitter never casts. The pass is drawn only at High effects quality and above.
+ */
+export function castsShadow(emitter: EmitterModel): boolean {
+  if (!shadowsAt(emitter.effectsQuality)) return false;
+  if (emitter.groundLayer || emitter.hudLayer) return false;
+  if (emitter.quadType === QUAD_TYPE.planarProjection) return false;
+  const custom = emitter.customMaterial != null && !emitter.customMaterial.missing;
+  if (emitter.distortion !== null && !custom) return false;
+
+  if (emitter.renderPhaseOverride === RENDER_PHASE.shadow) return true;
+  return emitter.renderPhaseOverride === RENDER_PHASE.automatic && emitter.doesCastShadow;
+}
+
 /** The primitive kinds a simple emitter draws. It simulates the rest and draws nothing. */
 const SIMPLE_DRAWN: ReadonlySet<number | null> = new Set([
   QUAD_TYPE.cameraQuad,
@@ -131,7 +159,7 @@ function reachesAPhase(emitter: EmitterModel): boolean {
   if (emitter.simple && !SIMPLE_DRAWN.has(emitter.quadType)) return false;
 
   const phases = drawPhases(emitter);
-  return phases.colour !== null || phases.warpsEarly || phases.warpsLate;
+  return phases.colour !== null || phases.warpsEarly || phases.warpsLate || castsShadow(emitter);
 }
 
 /**
@@ -201,7 +229,8 @@ export function drawsFixedAlphaUv(emitter: EmitterModel): boolean {
   return (
     emitter.uvMode === UV_MODE.lockAlpha &&
     emitter.quadType !== QUAD_TYPE.mesh &&
-    emitter.quadType !== QUAD_TYPE.attachedMesh
+    emitter.quadType !== QUAD_TYPE.attachedMesh &&
+    !stretchesAMesh(emitter)
   );
 }
 
@@ -216,24 +245,33 @@ export function trailFacesTheCamera(emitter: EmitterModel): boolean {
 }
 
 /**
- * The emitter draws a quad per particle from the system to its target.
+ * Returns whether the emitter draws beam ribbon geometry between the system and its target.
  *
- * A beam that names a mesh has its ribbon suppressed and reaches no mesh draw, so it
- * draws nothing here either.
+ * Returns false for a `VfxPrimitiveBeam` that names a mesh, because the mesh replaces the
+ * ribbon (see [`drawsAsMesh`]).
  */
 export function drawsAsBeam(emitter: EmitterModel): boolean {
   return emitter.beam !== null && emitter.mesh === null && reachesAPhase(emitter);
 }
 
 /**
- * The emitter draws a mesh, which needs geometry before it draws anything.
+ * Returns whether the emitter draws the mesh that its definition names.
  *
- * The plain kind alone draws what its definition names. The attached kind draws the
- * owner's own skinned mesh instead and never reads the three name fields, which is
- * [`drawsTheAttachment`].
+ * Returns true for `VfxPrimitiveMesh` and for a `VfxPrimitiveBeam` with `mMesh`, which the
+ * engine stretches between the beam's ends. The attached kind draws the owner's skinned
+ * mesh instead, which is [`drawsTheAttachment`].
  */
 export function drawsAsMesh(emitter: EmitterModel): boolean {
-  return emitter.quadType === QUAD_TYPE.mesh && emitter.mesh !== null && reachesAPhase(emitter);
+  return (
+    (emitter.quadType === QUAD_TYPE.mesh || stretchesAMesh(emitter)) &&
+    emitter.mesh !== null &&
+    reachesAPhase(emitter)
+  );
+}
+
+/** Returns whether the emitter is a `VfxPrimitiveBeam` that names a mesh. */
+export function stretchesAMesh(emitter: EmitterModel): boolean {
+  return emitter.quadType === QUAD_TYPE.beam && emitter.beam !== null && emitter.mesh !== null;
 }
 
 /**

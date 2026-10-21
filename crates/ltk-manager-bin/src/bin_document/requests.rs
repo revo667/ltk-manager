@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AddableFields, BinDocumentId, BinDocuments, ClassChoice, DeclaredState, LeafValue, NewItem,
-    NewObject, NewProperty, PropertyEdit, ValueEdit, hex,
+    NewObject, NewProperty, ObjectCreation, PropertyEdit, ValueEdit, hex,
 };
 use crate::meta_schema::SchemaAt;
 use crate::object_index::parse_hash;
@@ -43,6 +43,12 @@ pub enum BinEdit {
     /// Edit several properties, of one object or several, as one undoable change.
     /// [`BinDocument::edit_properties`].
     EditProperties { edits: Vec<PropertyEdit> },
+    /// Create `objects`, then edit several properties, as one undoable change.
+    /// [`BinDocument::create_and_edit`].
+    CreateAndEdit {
+        objects: Vec<ObjectCreation>,
+        edits: Vec<PropertyEdit>,
+    },
     /// Add a property to the end of the holder at `path`. [`BinDocument::add_property`].
     AddProperty {
         entry: String,
@@ -89,7 +95,7 @@ pub enum BinEdit {
         reference: String,
         merge: bool,
     },
-    /// Create, remove or restore an object of a declared document. ADR-0049.
+    /// Create, remove or restore an object. A declared document declares the edit (ADR-0049).
     Object { edit: ObjectEdit },
     /// Edit the header's dependency list. ADR-0050.
     Dependency { edit: DependencyEdit },
@@ -98,7 +104,8 @@ pub enum BinEdit {
     ModuleAction { layer: String, action: ModuleAction },
 }
 
-/// An object edit of a declared document. ADR-0049.
+/// An object edit. A declared document declares it (ADR-0049), and any other document takes it
+/// as an undoable edit.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(
     tag = "kind",
@@ -107,12 +114,12 @@ pub enum BinEdit {
 )]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
 pub enum ObjectEdit {
-    /// Declare a new object named `name`, answering [`EditOutcome::Object`].
+    /// Add a new object named `name`, answering [`EditOutcome::Object`].
     /// [`BinDocument::create_object`].
     Create { name: String, origin: NewObject },
-    /// Declare the removal of `entry`. [`BinDocument::remove_object`].
+    /// Remove `entry`. [`BinDocument::remove_object`].
     Remove { entry: String },
-    /// Take back the removal of `entry`. [`BinDocument::restore_object`].
+    /// Take back a declared removal of `entry`. [`BinDocument::restore_object`].
     Restore { entry: String },
 }
 
@@ -211,6 +218,14 @@ impl TypedTexts {
             BinEdit::Patch { value, .. } => typed.leaf(value),
             BinEdit::EditProperty { field, edits, .. } => typed.property(field, edits),
             BinEdit::EditProperties { edits } => {
+                for edit in edits {
+                    typed.property(&edit.field, &edit.edits);
+                }
+            }
+            BinEdit::CreateAndEdit { objects, edits } => {
+                typed
+                    .hashes
+                    .extend(objects.iter().map(|object| object.name.clone()));
                 for edit in edits {
                     typed.property(&edit.field, &edit.edits);
                 }
@@ -315,6 +330,10 @@ impl BinDocuments {
             }
             BinEdit::EditProperties { edits } => {
                 self.edit(id, |open| open.edit_properties(edits, schema))?;
+                EditOutcome::Done
+            }
+            BinEdit::CreateAndEdit { objects, edits } => {
+                self.edit(id, |open| open.create_and_edit(&objects, edits, schema))?;
                 EditOutcome::Done
             }
             BinEdit::AddProperty {

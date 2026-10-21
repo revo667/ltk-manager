@@ -14,6 +14,7 @@ the plan of the pose modifiers and sockets is docs/plans/pose-dynamics-preview.m
 
 | Date       | Change                                                                   |
 | ---------- | ------------------------------------------------------------------------ |
+| 2026-10-15 | Add, rebone and remove idle effects in the VFX section                   |
 | 2026-10-04 | Add the Skeleton and Physics panes, and simulate a skin's pose modifiers |
 | 2026-10-04 | Split out of docs/ux/BIN_EDITOR.md, with the skin's preview              |
 
@@ -54,6 +55,11 @@ after them what plays, which is the clip picker and a parametric clip's slider. 
 as wide as the clip's name, up to a cap, and draws without a box. The scrub takes what the
 rest leaves and keeps a least length. Only under a pane too narrow to hold both do the clip's
 controls drop to a second row.
+
+**The scrub follows the clock every frame.** It is a rail filled up to the playhead, which is a
+line over it, and the time beside it reads the same frame. A press on the rail seeks there. A
+drag holds the clock, and a playing clip plays on from where the drag lets go. A drag stops just
+short of the clip's end, which is the start of its next pass.
 
 **The backdrop menu stands the skin on a map.** It lists None and the install's maps by folder,
 and four switches under them: Particles, Event effects, Structures and props, and Sky. Particles
@@ -241,6 +247,24 @@ Other, and no skeleton to name a mask's joints by.
 over the map's keys, the tick rate and the flags become fields, the event map a sub-table with
 a frame column, and a row's name renames its key. Until then every cell is a value and a chip,
 per "A cell is a row".
+
+## The VFX section
+
+The VFX section of the inspector lists the skin's idle effects, as "What a layout reads" in
+docs/ux/BIN_EDITOR.md describes. The section edits them when the view edits and the skin's own
+file declares its resolver.
+
+**Add effect adds an idle effect.** The combobox lists the systems that Add child lists: every
+system of the file, then each system that a resolver of the file maps. A pick appends an effect
+on the skeleton's first joint, keyed to the system. The effect takes the key that the resolver
+maps to the system. If no key maps to it, the add writes a key named after the last segment of
+the system's path, numbered from 2 if another system holds that name. In a file that the project
+holds, the add is one undo step. In a declared game bin, each write is its own step, so the
+game's keys and effects stay out of the layer.
+
+**A row picks its bone from the skeleton.** The bone cell is a joint combobox, and a remove
+button ends the row. A removed effect leaves its resolver key, because a clip event or a spell
+can read the same key.
 
 ## The material pane
 

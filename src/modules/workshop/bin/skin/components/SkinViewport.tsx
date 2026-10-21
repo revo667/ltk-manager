@@ -60,6 +60,7 @@ import {
   usePreviewShaders,
   usePreviewSun,
   useSetPreviewDisplay,
+  usePreviewEffectsQuality,
 } from "@/stores";
 
 import { assetKey } from "../../../preview/utils/assetRef";
@@ -120,14 +121,12 @@ import {
 import { socketDragEdits } from "../utils/socketEdits";
 import { BakeTangentsButton } from "./BakeTangentsButton";
 import { ClipEffect } from "./ClipEffect";
+import { BEFORE_THE_SCENE, Clock } from "./Clock";
 import { IdleEffect } from "./IdleEffect";
 import { PhysicsMenu } from "./PhysicsMenu";
 import { SkinEffectsMenu } from "./SkinEffectsMenu";
 import { SkinPhysicsOverlay } from "./SkinPhysicsOverlay";
 import { type PlayingStep, SkinTransport } from "./SkinTransport";
-
-/** `useFrame` runs the lowest priority first, so the clock moves before anything samples it. */
-const BEFORE_THE_SCENE = -1;
 
 const NO_CLIPS: readonly GraphClip[] = [];
 
@@ -224,6 +223,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
   const ambientOcclusion = usePreviewAmbientOcclusion();
   const [origin, setOrigin] = useState<readonly [number, number, number] | null>(null);
   const [controlsHidden, setControlsHidden] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
   const setDisplay = useSetPreviewDisplay();
 
   useEffect(() => {
@@ -363,6 +363,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
       return next;
     });
   }, []);
+  const quality = usePreviewEffectsQuality();
   const cueModels = useQueries({
     queries: cues.map((cue) => {
       const handle = cue.source === null ? document : (opened.get(assetKey(cue.source)) ?? null);
@@ -370,7 +371,9 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
       return vfxQueries.system(handle, cue.system);
     }),
     combine: (results) =>
-      results.map((result) => (result.data === undefined ? null : systemModel(result.data))),
+      results.map((result) =>
+        result.data === undefined ? null : systemModel(result.data, quality),
+      ),
   });
 
   const assets = useMemo(() => textureAssets(skin), [skin]);
@@ -418,7 +421,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
     queries: idle.map(({ system }) => vfxQueries.system(document, system)),
   });
   const models = systems.map((query) =>
-    query.data === undefined ? null : systemModel(query.data),
+    query.data === undefined ? null : systemModel(query.data, quality),
   );
   const worn = [...models, ...cueModels];
   const loaded = worn.map((model) => (model === null ? "-" : "+")).join("");
@@ -487,7 +490,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
           ambientOcclusion={backdrop === null ? null : ambientOcclusion}
           onBackdropOrigin={setOrigin}
         >
-          <Clock clock={clock} playing={playing} speed={speed} />
+          <Clock clock={clock} playing={playing && !scrubbing} speed={speed} />
           <VisibilityCues
             timeline={timeline}
             clock={clock}
@@ -726,6 +729,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
           parameter={values === null || at === null ? null : { values, value: at }}
           onParameterChange={setParameter}
           onPlayingChange={setPlaying}
+          onScrubbingChange={setScrubbing}
           onSpeedChange={setSpeed}
           onClipChange={setPicked}
         />
@@ -1021,14 +1025,6 @@ function SubmeshMenu({ submeshes, hidden, overridden, onShow, onReset }: Submesh
       </Menu.Content>
     </Menu.Root>
   );
-}
-
-/** The scene's clock, spending each frame's time before the scene is sampled. */
-function Clock({ clock, playing, speed }: { clock: SceneClock; playing: boolean; speed: number }) {
-  useFrame((_, delta) => {
-    if (playing) clock.advance(delta * speed);
-  }, BEFORE_THE_SCENE);
-  return null;
 }
 
 interface VisibilityCuesProps {

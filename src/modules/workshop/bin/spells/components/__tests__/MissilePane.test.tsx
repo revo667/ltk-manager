@@ -32,6 +32,7 @@ const PREVIEW: SpellPreview = {
   castConeAngle: null,
   castConeDistance: null,
   animationName: null,
+  missileSpeed: null,
   missile: {
     movement: { kind: "fixedSpeed", speed: 5000 },
     startDelay: null,
@@ -39,6 +40,9 @@ const PREVIEW: SpellPreview = {
     targetBone: "r_hand",
     targetHeight: 100,
     initialTargetHeight: 100,
+    heightOffsetAtEnd: null,
+    height: null,
+    facing: null,
   },
   effectKey: "0x00000001",
   effectName: null,

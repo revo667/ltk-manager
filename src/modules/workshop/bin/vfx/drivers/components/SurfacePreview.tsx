@@ -34,9 +34,11 @@ import { emitterOf } from "../utils/graphEmitter";
 import type { FileItem, StructItem } from "../utils/graphItems";
 import {
   drawnLive,
+  surfaceSides,
   fitInto,
   type Followed,
   followedRow,
+  following,
   particleInto,
   surfaceAt,
   surfaceCycle,
@@ -313,7 +315,7 @@ function SurfaceScene({ emitter, looped, tiled, shown, magnified, bar, onFail }:
   const outline = useDisposable(() => outlineMaterial(material), [material]);
   const backdrop = useDisposable(backdropMaterial, []);
   const draw = useMemo(surfaceDraw, []);
-  const followed = useMemo<Followed>(() => ({ serial: -1 }), []);
+  const followed = useMemo<Followed>(following, []);
   const particle = useRef<Mesh>(null);
   const grid = useRef<Mesh>(null);
   const ground = useBackdropColor();
@@ -361,7 +363,8 @@ function SurfaceScene({ emitter, looped, tiled, shown, magnified, bar, onFail }:
     const uniforms = material.uniforms;
     uniforms.viewport.value.set(VIEW.z, VIEW.w);
     uniforms.viewportOrigin.value.set(VIEW.x, VIEW.y);
-    fitInto(draw.scale[0], draw.scale[1], VIEW.z, VIEW.w, uniforms.extent.value);
+    const [across, up] = surfaceSides(emitter, draw.scale);
+    fitInto(across, up, VIEW.z, VIEW.w, uniforms.extent.value);
   };
 
   return (
@@ -425,7 +428,7 @@ function followedParticle(
   bar: LifeBar,
 ) {
   const { pool, time } = run.driver;
-  const row = followedRow(pool, emitter.index, followed);
+  const row = followedRow(pool, emitter.index, followed, time);
   if (row < 0) {
     showLife(bar, 0, 1);
     return false;

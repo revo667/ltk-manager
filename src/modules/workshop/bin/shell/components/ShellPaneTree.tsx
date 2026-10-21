@@ -3,6 +3,7 @@ import { type PointerEvent, type ReactNode, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { IconButton, Menu, RetainedContent, Tooltip } from "@/components";
+import { useZoomedPx } from "@/hooks";
 import { m } from "@/i18n";
 import {
   type LayoutNode,
@@ -10,15 +11,16 @@ import {
   leafHolding,
   type LeafNode,
   leaves,
+  PANE_STRIP_HEIGHT,
   PaneStrip,
   type PortalHost,
   PortalSlot,
   SplitLayout,
   TabDndProvider,
+  TabRail,
   useIslands,
   usePortalHosts,
 } from "@/modules/editor";
-import { twMerge } from "@/utils";
 
 import {
   useActivateShellPane,
@@ -53,11 +55,11 @@ import { FloatingPane } from "./FloatingPane";
 
 /**
  * The box one pane draws under its strip, so no pane invents a surface of its own. Its fill and
- * edge are the open tab's in `PaneStrip`, and its corner is square under an open first tab, so
- * the tab and the box read as one shape. DS-GROUND.
+ * edge are the open tab's in `PaneStrip`, and the strip draws its top edge, so the tab and the
+ * box read as one shape. DS-GROUND.
  */
 const PANE_BODY =
-  "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-surface-700/50 bg-surface-900";
+  "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-b-lg border border-t-0 border-surface-700/50 bg-surface-900";
 
 /** What one pane draws: its body, and the controls its own strip carries. */
 export interface ShellPane {
@@ -98,6 +100,7 @@ export function ShellPaneTree<K extends ShellKind>({ kind, content }: ShellPaneT
   const maximizedLeafId = useShellMaximizedLeaf(kind);
   const restoreMaximized = useRestoreMaximizedShellLeaf(kind);
   const hostOf = usePortalHosts();
+  const zoomed = useZoomedPx();
   const bodies: Partial<Record<ShellPaneId, ShellPane>> = content;
   /* Tells the editor group's frame that the panes draw their own edges. */
   useIslands();
@@ -130,6 +133,8 @@ export function ShellPaneTree<K extends ShellKind>({ kind, content }: ShellPaneT
           )}
           maximizedLeafId={maximizedLeafId}
           onRestore={restoreMaximized}
+          collapsedSize={zoomed(PANE_STRIP_HEIGHT)}
+          renderCollapsedLeaf={(leaf) => <PaneLeafRail kind={kind} leaf={leaf} />}
         />
         {floating.map((pane) => (
           <FloatingPane
@@ -250,12 +255,7 @@ function PaneLeaf<K extends ShellKind>({
           actions={active === null ? null : bodies[active]?.actions}
           actionsWidth={active === null ? undefined : bodies[active]?.actionsWidth}
         />
-        <div
-          className={twMerge(
-            PANE_BODY,
-            active !== null && active === panes[0] && "rounded-tl-none",
-          )}
-        >
+        <div className={PANE_BODY}>
           {panes.map((pane) => (
             <PortalSlot key={pane} host={hostOf(pane)} />
           ))}
@@ -263,6 +263,25 @@ function PaneLeaf<K extends ShellKind>({
         </div>
       </div>
     </LeafDropZones>
+  );
+}
+
+/** One panel collapsed in a row: its panes as a rail of their glyphs. */
+function PaneLeafRail({ kind, leaf }: { kind: ShellKind; leaf: LeafNode }) {
+  const panes = useShellPanes(kind, leaf.id);
+  const active = useShellActivePane(kind, leaf.id);
+  const activate = useActivateShellPane(kind);
+
+  return (
+    <TabRail
+      tabs={panes.map((pane) => ({
+        id: pane,
+        title: SHELL_PANE_TITLE[pane](),
+        icon: <PaneGlyph pane={pane} />,
+      }))}
+      activeId={active}
+      onActivate={(id) => isShellPaneId(id) && activate(leaf.id, id)}
+    />
   );
 }
 

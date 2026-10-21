@@ -29,6 +29,7 @@ use self::diagnostics::Raised;
 pub use self::diagnostics::{DeclaredDiagnostic, DeclaredDiagnosticKind, ObjectSkip, SkipReason};
 pub use self::links::{DeclaredLinkMark, LinkChange};
 pub use self::objects::{DeclaredObjectMark, NewObject, ObjectChange};
+pub(super) use self::objects::{clone_as, own_named};
 pub use self::project::ProjectDeclarations;
 use super::edit::UNDO_DEPTH;
 use super::{
@@ -501,12 +502,18 @@ impl BinDocument {
     }
 
     /// Run `edits`, each declaring itself, and fold what they wrote into one undo step. A
-    /// refusal takes back what the ones before it wrote.
+    /// refusal takes back what the ones before it wrote. If a group is already open, the
+    /// writes of `edits` are folded into that group's step.
     pub(super) fn declared_group(
         &mut self,
         edits: impl FnOnce(&mut Self) -> Result<(), BinDocumentError>,
     ) -> Result<(), BinDocumentError> {
-        self.declared.as_mut().ok_or_else(not_declared)?.group = Some(None);
+        let declared = self.declared.as_mut().ok_or_else(not_declared)?;
+        if declared.group.is_some() {
+            return edits(self);
+        }
+
+        declared.group = Some(None);
         let outcome = edits(self);
         let declared = self.declared.as_mut().ok_or_else(not_declared)?;
         let folded = declared.group.take().flatten();
@@ -1243,7 +1250,7 @@ fn declaring(error: AppError) -> BinDocumentError {
     BinDocumentError::Declaring(Box::new(error))
 }
 
-fn not_declared() -> BinDocumentError {
+pub(super) fn not_declared() -> BinDocumentError {
     declaring(AppError::Other(
         "The document declares into no project".to_owned(),
     ))

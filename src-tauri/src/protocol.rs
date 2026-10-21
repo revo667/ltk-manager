@@ -12,6 +12,7 @@ use std::panic::AssertUnwindSafe;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use ltk_manager_assets::game_wads::WadCache;
+use ltk_manager_assets::map_import::{preview_buffer, read_model, UpAxis};
 use ltk_manager_assets::preview::{
     AssetRef, Preview, PreviewError, PreviewFile, PreviewFont, PreviewImage, PreviewRequest,
 };
@@ -19,6 +20,7 @@ use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{AppHandle, Manager};
 
 use crate::error::AppError;
+use crate::services::preview::{MapGeometryDocuments, MapGeometryId};
 use crate::state::SettingsState;
 
 /// The scheme a preview URL carries.
@@ -41,6 +43,21 @@ const GEOMETRY_FORM: &str = "geometry";
 /// The [`FORM_PARAMETER`] value asking a map for its every mesh in one buffer.
 const MAP_FORM: &str = "map";
 
+/// The parameter that asks for a map's buffer from the `.mapgeo` open under that id, with its
+/// edits, in place of the file's.
+const GEOMETRY_DOCUMENT_PARAMETER: &str = "geometry";
+
+/// The parameter that narrows an open `.mapgeo`'s buffer to the meshes it lists.
+const MESHES_PARAMETER: &str = "meshes";
+
+/// The [`FORM_PARAMETER`] value that requests the import preview buffer of a model file. The
+/// layout is documented on `map_import::preview_buffer`.
+const MODEL_FORM: &str = "model";
+
+/// The parameters of [`MODEL_FORM`]: engine units per file unit, and `y` or `z` for the up axis.
+const SCALE_PARAMETER: &str = "scale";
+const UP_PARAMETER: &str = "up";
+
 /// The [`FORM_PARAMETER`] value asking a skeleton for its joint buffer.
 const SKELETON_FORM: &str = "skeleton";
 
@@ -52,6 +69,8 @@ const CUBE_FORM: &str = "cube";
 
 /// The [`FORM_PARAMETER`] value asking a texture for its own mip chain in one buffer.
 const MIPS_FORM: &str = "mips";
+/// Asks a mip chain for the texture's own BC1 or BC3 blocks, which the client uploads as they are.
+const BLOCKS_PARAMETER: &str = "bc";
 
 /// The [`FORM_PARAMETER`] value asking a light grid for its ambient buffer.
 const LIGHT_GRID_FORM: &str = "lightgrid";
@@ -97,10 +116,21 @@ pub fn serve(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         Err(message) => return message_response(StatusCode::BAD_REQUEST, &message),
     };
 
+    if parameter(request.uri().query(), FORM_PARAMETER) == Some(MODEL_FORM) {
+        return model_preview(&asset, request.uri().query());
+    }
+
     let wanted = match requested(request.uri().query()) {
         Ok(wanted) => wanted,
         Err(message) => return message_response(StatusCode::BAD_REQUEST, &message),
     };
+
+    if let (PreviewRequest::Map, Some(id)) = (
+        &wanted,
+        parameter(request.uri().query(), GEOMETRY_DOCUMENT_PARAMETER),
+    ) {
+        return edited_map(app, id, parameter(request.uri().query(), MESHES_PARAMETER));
+    }
 
     let config = app.state::<SettingsState>().config();
 
@@ -113,6 +143,68 @@ pub fn serve(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
             tracing::debug!("No preview for {asset:?}: {e}");
             message_response(status_for(&e), &e.to_string())
         }
+    }
+}
+
+/// Answers the map buffer of the `.mapgeo` open under the id `id`, with its edits.
+///
+/// `meshes`, a comma list of mesh indices, narrows the buffer to those meshes in that order.
+fn edited_map(app: &AppHandle, id: &str, meshes: Option<&str>) -> Response<Vec<u8>> {
+    let Ok(id) = id.parse::<MapGeometryId>() else {
+        return message_response(StatusCode::BAD_REQUEST, "Not a map geometry id");
+    };
+    let documents = app.state::<MapGeometryDocuments>();
+
+    let answer = match meshes {
+        None => documents.preview(id),
+        Some(list) => {
+            let Ok(indices) = list
+                .split(',')
+                .map(str::parse::<usize>)
+                .collect::<Result<Vec<_>, _>>()
+            else {
+                return message_response(StatusCode::BAD_REQUEST, "Not a list of mesh indices");
+            };
+            documents.preview_meshes(id, &indices)
+        }
+    };
+    match answer {
+        Ok(bytes) => buffer_response(bytes),
+        Err(e) => message_response(StatusCode::NOT_FOUND, &e.to_string()),
+    }
+}
+
+/// Returns the preview buffer of the meshes in `query` of the model file `asset`.
+fn model_preview(asset: &AssetRef, query: Option<&str>) -> Response<Vec<u8>> {
+    let AssetRef::File { path } = asset else {
+        return message_response(StatusCode::BAD_REQUEST, "The model is not a file on disk");
+    };
+    let Ok(meshes) = parameter(query, MESHES_PARAMETER)
+        .unwrap_or_default()
+        .split(',')
+        .filter(|each| !each.is_empty())
+        .map(str::parse::<usize>)
+        .collect::<Result<Vec<_>, _>>()
+    else {
+        return message_response(
+            StatusCode::BAD_REQUEST,
+            "`meshes` is not a list of mesh indices",
+        );
+    };
+    let Ok(scale) = parameter(query, SCALE_PARAMETER)
+        .unwrap_or("1")
+        .parse::<f32>()
+    else {
+        return message_response(StatusCode::BAD_REQUEST, "`scale` is not a number");
+    };
+    let up = match parameter(query, UP_PARAMETER) {
+        Some("z") => UpAxis::Z,
+        _ => UpAxis::Y,
+    };
+
+    match read_model(std::path::Path::new(path)) {
+        Ok(model) => buffer_response(preview_buffer(&model, &meshes, scale, up)),
+        Err(e) => message_response(StatusCode::UNPROCESSABLE_ENTITY, &e.to_string()),
     }
 }
 
@@ -140,6 +232,7 @@ fn requested(query: Option<&str>) -> Result<PreviewRequest, String> {
         Some(CUBE_FORM) => Ok(PreviewRequest::Cube),
         Some(MIPS_FORM) => Ok(PreviewRequest::Mips {
             min_width: requested_width(query)?,
+            blocks: parameter(query, BLOCKS_PARAMETER) == Some("1"),
         }),
         Some(LIGHT_GRID_FORM) => Ok(PreviewRequest::LightGrid),
         Some(FONT_FORM) => Ok(PreviewRequest::Font),
@@ -375,12 +468,16 @@ mod tests {
         assert_eq!(
             requested(Some("as=mips&w=64")),
             Ok(PreviewRequest::Mips {
-                min_width: NonZeroU32::new(64)
+                min_width: NonZeroU32::new(64),
+                blocks: false,
             })
         );
         assert_eq!(
-            requested(Some("as=mips")),
-            Ok(PreviewRequest::Mips { min_width: None })
+            requested(Some("as=mips&bc=1")),
+            Ok(PreviewRequest::Mips {
+                min_width: None,
+                blocks: true,
+            })
         );
         assert!(requested(Some("as=mips&w=0")).is_err());
     }

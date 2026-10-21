@@ -2,22 +2,20 @@
 //! found wrong with the mods it read.
 
 use crate::error::{AppError, AppResult, IpcResult};
-use crate::mods::{
-    ChecksumMismatchInfo, ChecksumMismatchState, LinkedBinOffenderInfo, LinkedBinState,
-    ModLibraryState,
-};
+use crate::mods::{ChecksumMismatchInfo, ChecksumMismatchState, ModLibraryState};
 #[cfg(target_os = "windows")]
-use crate::patcher::host::HOOK_DLL_NAME;
+use crate::patcher::host::{HOOK_DLL_NAME, HOST_EXE_NAME};
 use crate::patcher::injector::INJECTOR_EXE_NAME;
 use crate::patcher::thread::TauriPatcherEvents;
 use crate::patcher::{
-    PatcherError, PatcherEvents, PatcherHostState, PatcherPhase, PatcherSession, PatcherState,
-    PatcherThread, SessionParams, StoredPatcherConfig,
+    PatcherDeliveryState, PatcherError, PatcherEvents, PatcherHostState, PatcherPhase,
+    PatcherSession, PatcherState, PatcherThread, SessionParams, StoredPatcherConfig,
 };
 use crate::state::{IncidentStoreState, SettingsState};
 use ltk_manager_base::utils::client_settings::LeagueClientSettings;
 use ltk_manager_base::utils::game::GameDir;
 use ltk_manager_runtime::diagnostics::binary_id::PatcherBinaries;
+use ltk_manager_runtime::patcher::delivery::Selection;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -236,24 +234,53 @@ pub(crate) fn start_patcher_inner(
 
     let should_elevate = ltk_manager_runtime::patcher::should_elevate(&config_snapshot);
 
-    // The injected hook DLL is a Windows-only binary; on macOS the host patches
-    // the game in-process, so there is no DLL to identify or compare.
     #[cfg(target_os = "windows")]
-    let patcher_binaries = {
+    let (injector_exe, patcher_binaries) = {
         let dll_path = super::diagnostics::resolve_patcher_dll(app_handle)
             .or_else(|| injector_exe.parent().map(|dir| dir.join(HOOK_DLL_NAME)))
             .unwrap_or_else(|| PathBuf::from(HOOK_DLL_NAME));
-        PatcherBinaries::identify(
-            &dll_path,
-            &injector_exe,
-            option_env!("LTK_BUNDLED_DLL_HASH").unwrap_or_default(),
-            option_env!("LTK_BUNDLED_HOST_HASH").unwrap_or_default(),
-        )
+
+        let delivery = app_handle.state::<PatcherDeliveryState>();
+        delivery.sync_in_background(&config_snapshot);
+
+        let selection = match delivery.delivery() {
+            Some(client) => client
+                .select(
+                    crate::patcher::delivery::channel(&config_snapshot),
+                    &injector_exe,
+                    &dll_path,
+                    should_elevate,
+                )
+                .map_err(|error| AppError::Other(error.to_string()))?,
+            None => Selection::Bundled,
+        };
+
+        // A delivered DLL is not the bundle, so an incident identifies it by hash alone.
+        let (injector_exe, dll_path, expected_dll, expected_host) = match selection {
+            Selection::Delivered {
+                dir,
+                version,
+                digest,
+            } => {
+                tracing::info!(%version, %digest, "Using the delivered patcher DLL");
+                (dir.join(HOST_EXE_NAME), dir.join(HOOK_DLL_NAME), "", "")
+            }
+            Selection::Bundled => (
+                injector_exe,
+                dll_path,
+                option_env!("LTK_BUNDLED_DLL_HASH").unwrap_or_default(),
+                option_env!("LTK_BUNDLED_HOST_HASH").unwrap_or_default(),
+            ),
+        };
+
+        let binaries =
+            PatcherBinaries::identify(&dll_path, &injector_exe, expected_dll, expected_host);
+        (injector_exe, binaries)
     };
+    // The injected hook DLL is a Windows-only binary; on macOS the host patches
+    // the game in-process, so there is no DLL to identify, deliver or compare.
     #[cfg(not(target_os = "windows"))]
     let patcher_binaries = {
-        // No DLL to point at; identify the host alone and leave the bundle
-        // comparison unevaluated (both expected hashes empty).
         let no_dll = PathBuf::from("<none>");
         PatcherBinaries::identify(&no_dll, &injector_exe, "", "")
     };
@@ -366,52 +393,10 @@ fn get_patcher_status_inner(state: &State<PatcherState>) -> PatcherStatus {
     })
 }
 
-/// Linked-bin offenders found in the most recent overlay build, keyed by mod id.
-///
-/// These are recorded as a byproduct of `start_patcher`'s single overlay build (and
-/// any hot-reload), so this is a cheap read with no IO - it never builds the overlay
-/// itself. Display names are resolved from the library index; mods absent from the
-/// latest build (e.g. since-disabled) simply don't appear. Missing linked bins are
-/// non-fatal at injection, so this is advisory: the frontend surfaces it as per-mod
-/// badges and a reachable warning dialog.
-#[tauri::command]
-#[specta::specta]
-pub fn get_linked_bin_offenders(
-    linked_bins: State<Arc<LinkedBinState>>,
-    library: State<ModLibraryState>,
-    settings: State<SettingsState>,
-) -> IpcResult<HashMap<String, LinkedBinOffenderInfo>> {
-    let result: AppResult<HashMap<String, LinkedBinOffenderInfo>> = (|| {
-        let offenders = linked_bins.get_all();
-        if offenders.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let config_snapshot = settings.config();
-        let display_names: HashMap<String, String> = library
-            .0
-            .get_installed_mods(&config_snapshot)?
-            .into_iter()
-            .map(|m| (m.id, m.display_name))
-            .collect();
-
-        Ok(offenders
-            .into_iter()
-            .map(|mut offender| {
-                if let Some(name) = display_names.get(&offender.mod_id) {
-                    offender.display_name = name.clone();
-                }
-                (offender.mod_id.clone(), offender)
-            })
-            .collect())
-    })();
-    result.into()
-}
-
 /// Checksum mismatches found in the most recent overlay build, keyed by mod id.
 ///
-/// Recorded as a byproduct of the same build that records linked-bin offenders,
-/// so this is a cheap read with no IO. A mismatch marks a badly-packed mod: its
+/// Recorded as a byproduct of `start_patcher`'s overlay build and of any
+/// hot-reload, so this is a cheap read with no IO. A mismatch marks a badly-packed mod: its
 /// container claimed a checksum its own bytes do not have. Never fatal - the
 /// overlay carries the recomputed value, so this is advisory, surfaced per-mod
 /// in mod details.

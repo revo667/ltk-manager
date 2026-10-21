@@ -10,9 +10,11 @@ import type {
   VfxSystem,
 } from "@/lib/tauri";
 import { type MapVisibility, useBackdropMaterials } from "@/modules/viewport";
+import { usePreviewEffectsQuality } from "@/stores";
 
 import { systemModel } from "../../skin/utils/skinScene";
 import type { SystemModel } from "../../vfx/engine/model/model";
+import { EFFECTS_QUALITIES } from "../../vfx/engine/model/quality";
 import { vfxQueries } from "../../vfx/hooks/useVfxSystem";
 import { mapQueries } from "../api/mapQueries";
 import { isHidden } from "../utils/mapOutline";
@@ -57,10 +59,41 @@ export interface PlayedOptions {
   readonly picked?: ReadonlySet<string>;
 }
 
-/* Declared once, so the query client answers the same array for as long as no read moves. */
-function modelsOf(results: UseQueryResult<VfxSystem, AppError>[]): (SystemModel | null)[] {
-  return results.map((result) => (result.data === undefined ? null : systemModel(result.data)));
+/**
+ * Every group made, by its system and its particles. A system read that lands rebuilds the list,
+ * and the cache keeps each other group the same object, so its placements skip the render.
+ */
+const GROUPS = new WeakMap<SystemModel, WeakMap<readonly MapParticle[], MapParticleGroup>>();
+
+/** Returns the group of `system` at `particles`, the same object while its fields are the same. */
+function groupOf(
+  document: BinDocumentId,
+  entry: string,
+  system: SystemModel,
+  particles: readonly MapParticle[],
+): MapParticleGroup {
+  let byParticles = GROUPS.get(system);
+  if (byParticles === undefined) {
+    byParticles = new WeakMap();
+    GROUPS.set(system, byParticles);
+  }
+
+  const held = byParticles.get(particles);
+  if (held !== undefined && held.document === document && held.entry === entry) return held;
+  const made = { document, entry, system, particles };
+  byParticles.set(particles, made);
+  return made;
 }
+
+/* Declared once per quality, so the query client answers the same array for as long as no
+   read moves. */
+const MODELS_AT = EFFECTS_QUALITIES.map(
+  (quality) =>
+    (results: UseQueryResult<VfxSystem, AppError>[]): (SystemModel | null)[] =>
+      results.map((result) =>
+        result.data === undefined ? null : systemModel(result.data, quality),
+      ),
+);
 
 /**
  * The particle systems a map stands in its scene, read out of its open `.materials.bin`.
@@ -76,6 +109,7 @@ export function useMapParticles(
   { hidden = NONE_HIDDEN, events = false, picked = NONE_HIDDEN }: PlayedOptions = {},
 ): readonly MapParticleGroup[] {
   const placed = useQuery(mapQueries.particles(document));
+  const quality = usePreviewEffectsQuality();
 
   const played = useMemo(() => {
     const shown = playedParticles(placed.data ?? [], visibility, events, picked).filter(
@@ -85,14 +119,16 @@ export function useMapParticles(
   }, [placed.data, visibility, hidden, events, picked]);
   const models = useQueries({
     queries: document === null ? [] : played.map(([entry]) => vfxQueries.system(document, entry)),
-    combine: modelsOf,
+    combine: MODELS_AT[quality],
   });
 
   const groups = useMemo(
     () =>
       played.flatMap(([entry, particles], at) => {
         const system = models[at];
-        return system == null || document === null ? [] : [{ document, entry, system, particles }];
+        return system == null || document === null
+          ? []
+          : [groupOf(document, entry, system, particles)];
       }),
     [played, models, document],
   );

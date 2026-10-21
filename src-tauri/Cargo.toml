@@ -1,6 +1,6 @@
 [package]
 name = "ltk-manager"
-version = "1.27.1"
+version = "1.29.2"
 description = "LeagueToolkit Mod Manager - Desktop app for managing League of Legends mods"
 edition = "2021"
 license = "GPL-3.0-or-later"
@@ -104,6 +104,9 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
+# Versions of wry's, so `PlatformWebview::controller` returns these types.
+webview2-com = "0.38"
+windows-core = "0.61"
 
 [dev-dependencies]
 assert_matches = { workspace = true }

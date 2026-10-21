@@ -22,6 +22,7 @@ import {
   type EmitterCardData,
   type EmitterMode,
   type InspectorTarget,
+  type RowReveal,
   SECTION_SHOWN,
   type SectionRead,
 } from "../utils/emitterTypes";
@@ -67,10 +68,21 @@ export interface EmitterChoice {
   readonly aim: (target: InspectorTarget) => void;
   /** Open a card, which its name row does and which aims the crumb middle segment. */
   readonly chooseCard: (key: string) => void;
+  /**
+   * The keys of the cards selected in the timeline, which always hold the open card. One key
+   * while a single card is open, and none while a child lane or no card is.
+   */
+  readonly selected: ReadonlySet<string>;
+  /** Select the cards `keys` and open the card `open`, which a modified lane click does. */
+  readonly pickCards: (keys: ReadonlySet<string>, open: string) => void;
   /** Open one group of a card, which a chip does and which aims the last segment. */
   readonly chooseGroup: (chosen: Chosen) => void;
   /** Select a child lane, which draws the child's emitter and opens its parent's card. */
   readonly chooseChild: (child: ChildChoice) => void;
+  /** The rows last asked for, and null before any ask. */
+  readonly revealed: RowReveal | null;
+  /** Scroll the inspector to the first of the row keys `keys` that it draws. */
+  readonly revealRows: (keys: readonly string[]) => void;
   readonly mode: EmitterMode;
   readonly setMode: (mode: EmitterMode) => void;
   /** The squares colours and the rows the inspector draws, the only families it marks. */
@@ -107,8 +119,12 @@ const NO_EMITTERS: EmitterChoice = {
   shown: NO_GROUPS,
   aim: () => {},
   chooseCard: () => {},
+  selected: NO_KEYS,
+  pickCards: () => {},
   chooseGroup: () => {},
   chooseChild: () => {},
+  revealed: null,
+  revealRows: () => {},
   mode: "cards",
   setMode: () => {},
   marked: NO_MARKED,
@@ -139,6 +155,7 @@ export function useEmitterChoice(
     return section === undefined ? NO_CARDS : cardsOf(section, pages);
   }, [placed, pages]);
   const [chosen, setChosen] = useState<Chosen | null>(null);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(NO_KEYS);
   const [target, setTarget] = useState<InspectorTarget>("emitter");
   const [child, setChild] = useState<ChildChoice | null>(null);
   const [childChosen, setChildChosen] = useState<Chosen | null>(null);
@@ -171,6 +188,13 @@ export function useEmitterChoice(
     [child, rootOpen, childChosen, childCard],
   );
   const card = child === null ? root : childCard;
+  /* A choice made anywhere else opens a card outside the picked set, which ends the set. */
+  const selected = useMemo((): ReadonlySet<string> => {
+    if (child !== null || root === undefined) return NO_KEYS;
+    if (!picked.has(root.key)) return new Set([root.key]);
+
+    return new Set(cards.filter((each) => picked.has(each.key)).map((each) => each.key));
+  }, [child, root, picked, cards]);
   /* The group last picked, never the one on screen, so the crumb's own segment holds still
      while a reader scrolls. "The crumb holds still and the header moves" in
      docs/ux/BIN_EDITOR.md. */
@@ -185,6 +209,7 @@ export function useEmitterChoice(
       } else {
         setChild(null);
         setChosen(next);
+        setPicked((held) => (held.has(next.key) ? held : NO_KEYS));
       }
       setTarget("emitter");
       setJumpRequest((count) => count + 1);
@@ -196,6 +221,19 @@ export function useEmitterChoice(
     (key: string) => {
       setChild(null);
       setChosen({ key, group: firstGroup(cards, key) });
+      setPicked(NO_KEYS);
+      setTarget("emitter");
+      setJumpRequest((count) => count + 1);
+    },
+    [cards],
+  );
+  const pickCards = useCallback(
+    (keys: ReadonlySet<string>, open: string) => {
+      setChild(null);
+      setChosen((last) =>
+        last?.key === open ? last : { key: open, group: firstGroup(cards, open) },
+      );
+      setPicked(keys);
       setTarget("emitter");
       setJumpRequest((count) => count + 1);
     },
@@ -206,6 +244,7 @@ export function useEmitterChoice(
       const { parent } = next;
       setChild(next);
       setChildChosen(null);
+      setPicked(NO_KEYS);
       if (parent !== null) {
         setChosen((last) =>
           last?.key === parent ? last : { key: parent, group: firstGroup(cards, parent) },
@@ -216,6 +255,11 @@ export function useEmitterChoice(
     },
     [cards],
   );
+
+  const [revealed, setRevealed] = useState<RowReveal | null>(null);
+  const revealRows = useCallback((keys: readonly string[]) => {
+    setRevealed((last) => ({ keys, request: (last?.request ?? 0) + 1, at: performance.now() }));
+  }, []);
 
   const [sections, setSections] = useState(NO_SECTIONS);
   const report = useCallback((group: EmitterGroup, read: SectionRead) => {
@@ -276,8 +320,12 @@ export function useEmitterChoice(
       shown,
       aim: setTarget,
       chooseCard,
+      selected,
+      pickCards,
       chooseGroup,
       chooseChild,
+      revealed,
+      revealRows,
       mode,
       setMode,
       marked,
@@ -301,8 +349,12 @@ export function useEmitterChoice(
       child,
       shown,
       chooseCard,
+      selected,
+      pickCards,
       chooseGroup,
       chooseChild,
+      revealed,
+      revealRows,
       mode,
       marked,
       spark,

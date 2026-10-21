@@ -10,11 +10,11 @@ import {
   type InstalledMod,
   type LayoutMigrationState,
   type LibraryFolder,
-  type LinkedBinOffenderInfo,
   type ModDocument,
   type ModHealthVerdict,
   type ModWadReport,
   type Profile,
+  type ShippedSkin,
 } from "@/lib/tauri";
 import { queryFn, queryFnWithArgs, unwrapForQuery } from "@/utils/query";
 
@@ -81,13 +81,6 @@ export const modQueries = {
       staleTime: REPORT_STALE_MS,
     }),
 
-  linkedBinOffenders: () =>
-    queryOptions<Record<string, LinkedBinOffenderInfo>, AppError>({
-      queryKey: libraryKeys.linkedBinOffenders(),
-      queryFn: queryFn(api.getLinkedBinOffenders),
-      staleTime: REPORT_STALE_MS,
-    }),
-
   checksumMismatches: () =>
     queryOptions<Record<string, ChecksumMismatchInfo[]>, AppError>({
       queryKey: libraryKeys.checksumMismatches(),
@@ -120,6 +113,13 @@ export const modQueries = {
       queryFn: queryFnWithArgs(api.getModLicenseText, modId),
       staleTime: Infinity,
       gcTime: Infinity,
+    }),
+
+  /* A packed mod's first ask unpacks a copy of its content. */
+  skin: (modId: string) =>
+    queryOptions<ShippedSkin | null, AppError>({
+      queryKey: libraryKeys.skin(modId),
+      queryFn: queryFnWithArgs(api.bin.locateModSkin, modId),
     }),
 } as const;
 

@@ -364,6 +364,11 @@ export type BinEdit =
  *  [`BinDocument::edit_properties`].
  */
 { kind: "editProperties"; edits: PropertyEdit[] } | 
+/**
+ *  Create `objects`, then edit several properties, as one undoable change.
+ *  [`BinDocument::create_and_edit`].
+ */
+{ kind: "createAndEdit"; objects: ObjectCreation[]; edits: PropertyEdit[] } | 
 /**  Add a property to the end of the holder at `path`. [`BinDocument::add_property`]. */
 { kind: "addProperty"; entry: string; path: string; property: NewProperty } | 
 /**  Take the property at `path` out of its holder. [`BinDocument::remove_property`]. */
@@ -395,7 +400,7 @@ export type BinEdit =
  *  row's list or map. [`BinDocument::declare_reference`].
  */
 { kind: "declareReference"; entry: string; path: string; reference: string; merge: boolean } | 
-/**  Create, remove or restore an object of a declared document. ADR-0049. */
+/**  Create, remove or restore an object. A declared document declares the edit (ADR-0049). */
 { kind: "object"; edit: ObjectEdit } | 
 /**  Edit the header's dependency list. ADR-0050. */
 { kind: "dependency"; edit: DependencyEdit } | 
@@ -931,8 +936,6 @@ export type Config_Deserialize = {
 	patchTft?: boolean,
 	/**  Whether to block mods from patching Scripts.wad.client. Default: true. */
 	blockScriptsWad?: boolean,
-	/**  Whether to run the linked-bin dependency check before starting the patcher. Default: true. */
-	linkedBinCheckEnabled?: boolean,
 	/**  Additional WAD files to exclude from overlay building. */
 	wadBlocklist?: WadBlocklistEntry[],
 	/**
@@ -951,6 +954,12 @@ export type Config_Deserialize = {
 	 *  the user sets themselves are used. Default: true.
 	 */
 	autoCategorizationEnabled?: boolean,
+	/**
+	 *  Whether the library sweep checks mod health at startup, after a hashtable
+	 *  sync and after an install. A check the user starts runs either way.
+	 *  Default: true.
+	 */
+	autoHealthCheckEnabled?: boolean,
 	/**  Enabling a mod moves it to the front of its folder. Off by default. */
 	promoteEnabledMods?: boolean,
 	/**
@@ -974,6 +983,11 @@ export type Config_Deserialize = {
 	 *  takes effect on the next start. Default: false.
 	 */
 	verbosePatcherLogging?: boolean,
+	/**
+	 *  Whether the patcher runs builds from the beta delivery channel instead of
+	 *  the stable channel. Default: false.
+	 */
+	betaPatcher?: boolean,
 	/**
 	 *  Whether to set the `FULL_WAD_SCAN` hook flag, which scans every archive
 	 *  up front instead of the DLL's default of verifying each one as the game
@@ -1043,8 +1057,6 @@ export type Config_Serialize = {
 	patchTft: boolean,
 	/**  Whether to block mods from patching Scripts.wad.client. Default: true. */
 	blockScriptsWad: boolean,
-	/**  Whether to run the linked-bin dependency check before starting the patcher. Default: true. */
-	linkedBinCheckEnabled: boolean,
 	/**  Additional WAD files to exclude from overlay building. */
 	wadBlocklist: WadBlocklistEntry[],
 	/**
@@ -1063,6 +1075,12 @@ export type Config_Serialize = {
 	 *  the user sets themselves are used. Default: true.
 	 */
 	autoCategorizationEnabled: boolean,
+	/**
+	 *  Whether the library sweep checks mod health at startup, after a hashtable
+	 *  sync and after an install. A check the user starts runs either way.
+	 *  Default: true.
+	 */
+	autoHealthCheckEnabled: boolean,
 	/**  Enabling a mod moves it to the front of its folder. Off by default. */
 	promoteEnabledMods: boolean,
 	/**
@@ -1086,6 +1104,11 @@ export type Config_Serialize = {
 	 *  takes effect on the next start. Default: false.
 	 */
 	verbosePatcherLogging: boolean,
+	/**
+	 *  Whether the patcher runs builds from the beta delivery channel instead of
+	 *  the stable channel. Default: false.
+	 */
+	betaPatcher: boolean,
 	/**
 	 *  Whether to set the `FULL_WAD_SCAN` hook flag, which scans every archive
 	 *  up front instead of the DLL's default of verifying each one as the game
@@ -1258,6 +1281,14 @@ export type DeclarationsLoadError = {
 	document: string | null,
 	/**  Where in the manifest, `None` for an error in another file or at no place. */
 	span: LineSpan | null,
+};
+
+/**  One define a shader's TOCs declare, with every value they declare it with. */
+export type DeclaredDefine = {
+	/**  The define name. */
+	name: string,
+	/**  Every value that the TOCs declare for the name, sorted. */
+	values: string[],
 };
 
 /**  One diagnostic of the last apply, on the row it names. */
@@ -1601,6 +1632,8 @@ export type DefineSource =
 "switch" | 
 /**  `StaticMaterialPassDef.shaderMacros`. */
 "pass" | 
+/**  Picked in a shader def's preview, which writes nothing to the def. */
+"preview" | 
 /**  Set by the engine for the emitter that draws an engine particle shader. */
 "emitter";
 
@@ -1984,6 +2017,19 @@ export type ExportSummary = {
 	skipped: string[],
 	/**  What the export wrote, for a surface that offers to reveal it. */
 	destination: string,
+};
+
+/**  The map mesh that a mesh of an exported glTF file was written from, read from its extras. */
+export type ExportedMesh = {
+	/**  The index of the mesh in its `.mapgeo` at the export. */
+	mesh: number,
+	/**  The entry path of the map's `MapContainer`. */
+	container: string,
+	/**
+	 *  The vertex count of the mesh at the export. A reimport compares it to detect a stale
+	 *  index.
+	 */
+	vertices: number,
 };
 
 /**  One `ExtraJointChainData`: a second chain turned by the angles of the first. */
@@ -3781,38 +3827,10 @@ export type LinkChange =
 /**  A `-links` item of a dependency of the game's list the applied one lacks. */
 "removed";
 
-/**
- *  One library mod whose property-bins reference linked dependencies no archive
- *  the game mounts can answer.
- * 
- *  The lookup is across every mounted archive rather than inside the one the
- *  declaring bin came from, so what the check tests is presence anywhere in the
- *  built overlay bar the archives the user blocked.
- */
-export type LinkedBinOffenderInfo = {
-	/**  Library mod id (matches `InstalledMod.id` on the frontend). */
-	modId: string,
-	/**  Mod display name — a fallback for the UI when it can't resolve the id. */
-	displayName: string,
-	/**
-	 *  WAD targets (e.g. `Ahri.wad.client`) in this mod that contain the unresolved
-	 *  bins. May be empty when the offending bin came from a RAW override.
-	 */
-	wads: string[],
-	/**  The missing linked bin paths, deduped. */
-	missingLinks: string[],
-};
-
-/**
- *  Payload for the `linked-bins-warning` event, emitted after a patcher start whose
- *  single overlay build found enabled mods with unresolved linked dependencies (only
- *  when `linked_bin_check_enabled`). Injection is non-fatal, so this never blocks the
- *  start - it drives a non-blocking toast. The per-mod badges and the reachable
- *  `LinkedBinWarningDialog` carry the detail (fetched via `get_linked_bin_offenders`).
- */
-export type LinkedBinWarningPayload = {
-	/**  Number of enabled mods flagged in the latest build. */
-	count: number,
+/**  The world rectangle on X and Z that a map-wide texture covers, in engine units. */
+export type MapBounds = {
+	min: [(number | null), (number | null)],
+	max: [(number | null), (number | null)],
 };
 
 /**  One character a map stands in its scene. */
@@ -3860,6 +3878,10 @@ export type MapChunkItem = {
 	kind: MapItemKind,
 	/**  Where it stands in the map's space. */
 	position: [(number | null), (number | null), (number | null)],
+	/**  Its `transform`, column major with the translation last. */
+	transform: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+	/**  The extent the viewport draws, and `None` for a class that states none. */
+	shape: MapItemShape | null,
 	/**  The layer mask, one bit per visibility layer. */
 	visibility: number,
 	/**  The controller that shows and hides it, which no layer mask expresses. */
@@ -3950,6 +3972,14 @@ export type MapFiles = {
 	materials: AssetRef | null,
 };
 
+/**  One visibility flag of a map: the layer bit and the name the map gives it. */
+export type MapFlag = {
+	/**  The layer bit, 0 to 7. */
+	bit: number,
+	/**  `PublicName` of the flag definition. */
+	name: string,
+};
+
 /**  One fog of [`MapPostEffects`], ramping from nothing at `start` to its most at `end`. */
 export type MapFog = {
 	/**  The fog is drawn. */
@@ -3964,6 +3994,106 @@ export type MapFog = {
 	maxIntensity: number | null,
 };
 
+/**  An open `.mapgeo` after a change, and what the change did to the meshes a viewport draws. */
+export type MapGeometryChange = {
+	state: MapGeometryState,
+	deltas: MeshDelta[],
+};
+
+/**  One change to the meshes of an open `.mapgeo`, which is one undo step. */
+export type MapGeometryEdit = 
+/**  Sets the transform of each mesh and recomputes its bounding box. */
+{ kind: "transform"; meshes: MeshTransform[] } | 
+/**  Sets the visibility controller of each mesh, `0x` and eight hex digits, or none. */
+{ kind: "controller"; meshes: number[]; controller: string | null } | 
+/**
+ *  Sets the region entity of each mesh, `0x` and eight hex digits, or none, and
+ *  recomputes its bounding box.
+ */
+{ kind: "region"; meshes: number[]; region: string | null } | 
+/**  Sets the material of one submesh, as the entry path of a `StaticMaterialDef`. */
+{ kind: "material"; mesh: number; submesh: number; material: string } | 
+/**  Sets the visibility layer mask of each mesh. */
+{ kind: "visibility"; meshes: number[]; mask: number } | 
+/**  Sets the quality mask of each mesh. */
+{ kind: "quality"; meshes: number[]; mask: number } | 
+/**  Turns backface culling off or on for each mesh. */
+{ kind: "backfaceCulling"; meshes: number[]; disabled: boolean } | 
+/**  Appends a copy of each mesh. */
+{ kind: "duplicate"; meshes: number[] } | 
+/**  Removes each mesh and drops the buffers that no remaining mesh uses. */
+{ kind: "remove"; meshes: number[] } | 
+/**
+ *  Appends the meshes `meshes` of the model file at `source`, scaled by `scale` and
+ *  turned from `up` to the engine's axes, with `transform` as each mesh's transform.
+ */
+{ kind: "import"; source: string; meshes: number[]; scale: number | null; up: UpAxis; 
+/**  The entry path of the `StaticMaterialDef` of each material of the file, by index. */
+materials: string[]; 
+/**  The layer mask of every new mesh. */
+visibility: number; 
+/**  The controller of every new mesh, `0x` and eight hex digits, or none. */
+controller: string | null; 
+/**  Column major with the translation last. */
+transform: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)] } | 
+/**
+ *  Replaces the mesh at `mesh` with the mesh `source_mesh` of the model file at `source`,
+ *  scaled by `scale` and turned from `up` to the engine's axes. The new mesh keeps the
+ *  visibility, controller, region, flags, light channels and texture overrides of the old
+ *  one, and draws its submesh materials in source material order. Its transform is the
+ *  identity, because the importer applies the file's node transforms to the vertices.
+ */
+{ kind: "reimport"; mesh: number; source: string; sourceMesh: number; scale: number | null; up: UpAxis };
+
+/**  What a mesh editor lists and inspects of one mesh. */
+export type MapGeometryMesh = {
+	index: number,
+	/**  Column major with the translation last. */
+	transform: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+	min: [(number | null), (number | null), (number | null)],
+	max: [(number | null), (number | null), (number | null)],
+	/**  The layer mask, one bit per visibility layer. */
+	visibility: number,
+	/**  The controller's path hash as `0x` and eight hex digits, and none for no controller. */
+	controller: string | null,
+	/**  The region entity's path hash as `0x` and eight hex digits, and none for no region. */
+	region: string | null,
+	/**  The quality mask, one bit per quality level. */
+	quality: number,
+	backfaceCullingDisabled: boolean,
+	vertexCount: number,
+	/**  The material of each submesh, in submesh order. */
+	materials: string[],
+};
+
+/**  Where an open `.mapgeo` stands after a change. */
+export type MapGeometryState = {
+	id: number,
+	/**  Counts every change. */
+	revision: number,
+	/**  The document holds changes that no save wrote. */
+	dirty: boolean,
+};
+
+/**  The grass tint of one `MapAlternateAsset`, and the visibility flag that turns it on. */
+export type MapGrassAlternate = {
+	/**  The layer bit of the flag, 0 to 7. */
+	bit: number,
+	texture: AssetRef,
+};
+
+/**  The grass tint texture of one `MapSkin`. */
+export type MapGrassTint = {
+	/**  The `MapSkin`'s `name`. */
+	skin: string,
+	texture: AssetRef,
+	/**
+	 *  The skin's alternate tints, in file order. The first one whose flag is on replaces
+	 *  `texture`.
+	 */
+	alternates: MapGrassAlternate[],
+};
+
 /**  What a placeable is to a scene, which is what an outliner marks its row with. */
 export type MapItemKind = 
 /**  A `MapParticle`, which plays a system. */
@@ -3976,8 +4106,31 @@ export type MapItemKind =
 "group" | 
 /**  A `MapAudio`. */
 "audio" | 
+/**  A dynamic or a static point light or spotlight. */
+"light" | 
+/**  A `MapCubemapProbe`. */
+"probe" | 
+/**  A `MapLightingVolume` or a `LightRegionEntityTemplate`. */
+"volume" | 
+/**  A `MapMotionPath`. */
+"path" | 
 /**  Any other class. */
 "other";
+
+/**  The extent a viewport draws around a placeable, in the map's space. */
+export type MapItemShape = 
+/**  The reach of a point light around its position. */
+{ type: "sphere"; radius: number | null } | 
+/**  The frustum of a spotlight, along the -Z axis of its transform. Angles are in degrees. */
+{ type: "frustum"; fov: number | null; aspect: number | null; near: number | null; far: number | null; orthographic: boolean; orthoHeight: number | null } | 
+/**  An axis-aligned box: a probe's region or a banner's box. */
+{ type: "box"; min: [(number | null), (number | null), (number | null)]; max: [(number | null), (number | null), (number | null)] } | 
+/**  The points of a motion path: its position, then the end of each segment. */
+{ type: "path"; points: ([(number | null), (number | null), (number | null)])[] } | 
+/**  A lighting volume: the cube from -0.5 to 0.5 on each axis under its transform. */
+{ type: "volume" } | 
+/**  The closed polygon of a light region, in the space of its transform. */
+{ type: "polygon"; points: ([(number | null), (number | null), (number | null)])[] };
 
 /**
  *  One map's materials, one per path asked for and in that order, its visibility controllers, and
@@ -3994,6 +4147,11 @@ export type MapModel = {
 	 *  `LTKM` buffer and a placeable reference a controller by its path hash.
 	 */
 	controllers: MapController[],
+	/**
+	 *  The visibility flags that the map's `Map` object names. Empty if nothing holds that
+	 *  object or it names none.
+	 */
+	flags: MapFlag[],
 	/**  Null where the map's container states no sun, which a backdrop lights with a default. */
 	sun: MapSun | null,
 	/**  Null where the map's container states no post effects, which no shipped map does. */
@@ -4005,6 +4163,23 @@ export type MapModel = {
 	 *  none or nothing holds it.
 	 */
 	lightGrid: AssetRef | null,
+	/**
+	 *  The grass tint of each skin that links the map, in file order. Empty until the caller
+	 *  reads the map's own bin, which holds the skins.
+	 */
+	grassTints: MapGrassTint[],
+	/**  Null where the map's container states no bounds. */
+	bounds: MapBounds | null,
+};
+
+/**  One string field that names a placeable, addressed as a property edit addresses it. */
+export type MapNameReference = {
+	/**  The object that holds the field, as `0x` and eight hex digits. */
+	entry: string,
+	/**  The hash path of the struct that holds the field. Empty for a field of the object. */
+	holder: string,
+	/**  The field, as `0x` and eight hex digits. */
+	field: string,
 };
 
 /**  The number of visible parents that makes a child controller visible. */
@@ -4065,6 +4240,31 @@ export type MapPostEffects = {
 	depthOfField: MapDepthOfField,
 };
 
+/**  A created map project and the container that its map shell opens. */
+export type MapProject = {
+	project: WorkshopProject,
+	container: MapProjectContainer,
+};
+
+/**  The `MapContainer` object that a new map project opens. */
+export type MapProjectContainer = {
+	/**  The `.materials.bin` that declares the container. */
+	asset: AssetRef,
+	/**  The container's path hash, `0x` and eight hex digits. */
+	entry: string,
+	path: MapPath,
+	/**  The path of the `.materials.bin`. */
+	file: string,
+};
+
+/**  One `MapSkin` of a game map and the container that it links. */
+export type MapSkinContainer = {
+	/**  The `MapSkin`'s `name`. */
+	skin: string,
+	/**  `MapSkin.mMapContainerLink`. */
+	container: MapPath,
+};
+
 /**  Which map skin every game shows, whatever skin the server names. */
 export type MapSkinMode = 
 /**  The skin the server names. */
@@ -4096,6 +4296,25 @@ export type MapSsao = {
 	/**  `EdgeAwareBlur`, the blur keeps a nearer surface's occlusion off the one behind it. */
 	edgeAwareBlur: boolean,
 };
+
+/**  A supported map and its skins that link a shipped container. */
+export type MapStart = {
+	/**  The map id, such as `Map11`. */
+	map: string,
+	skins: MapSkinContainer[],
+};
+
+/**  The initial content of a map project. */
+export type MapStartingPoint = 
+/**  Nothing until the first edit. */
+"shipped" | 
+/**  A copy of the skin's container, and declarations that link every skin to it. */
+"skin" | 
+/**
+ *  A copy of the skin's container with only the meshes that have a controller or a region,
+ *  and the same declarations.
+ */
+"geometry";
 
 /**
  *  A map's sun, sky and fog, as its `MapSunProperties` states them.
@@ -4138,6 +4357,10 @@ export type MapVariant = {
 	skin: string | null,
 	/**  The map that skin draws. */
 	map: MapPath,
+	/**  The `MapSkin` object, and none for a map a container states itself. */
+	skinEntry: HexBinHash | null,
+	/**  The `Map` object of the same file that lists the skin, and none where no `Map` lists it. */
+	mapEntry: HexBinHash | null,
 };
 
 /**  One entry of `mMaskDataMap`. */
@@ -4149,6 +4372,19 @@ export type Mask = {
 	id: number,
 	/**  `mWeightList`, one weight per joint of the skeleton in the skeleton's order. */
 	weights: (number | null)[],
+};
+
+/**  A `StaticMaterialDef` that an import creates for one material of a model file. */
+export type MaterialImport = {
+	/**  The entry path, which is also the material's `name`. */
+	name: string,
+	template: MaterialTemplate,
+	/**  The model file. */
+	model: string,
+	/**  The material of the model file, by index. */
+	material: number,
+	/**  An image file that replaces the texture of the model's material. */
+	texture: string | null,
 };
 
 /**  `StaticMaterialDef.type`, the family a material's shader belongs to. */
@@ -4243,6 +4479,13 @@ export type MaterialTarget =
  */
 { kind: "embedded"; entry: string; path: string };
 
+/**  The stock static mesh shader that a created map material links. */
+export type MaterialTemplate = 
+/**  `Shaders/StaticMesh/DefaultEnv_Flat`. */
+"flat" | 
+/**  `Shaders/StaticMesh/DefaultEnv_Flat_AlphaTest`. */
+"flatAlphaTest";
+
 /**  Something the engine does silently that a preview says out loud. */
 export type MaterialWarning = 
 /**  The shader defs were not opened, so no default texture, parameter or switch is known. */
@@ -4267,7 +4510,13 @@ export type MaterialWarning =
  *  A shader texture neither the material nor the def gives a path, so the engine's
  *  fallback texture is what draws.
  */
-{ kind: "noTexturePath"; name: string };
+{ kind: "noTexturePath"; name: string } | 
+/**
+ *  The define list selects no compiled permutation, so the shader def preview draws the
+ *  nearest compiled one. `set` holds each changed define as `NAME=VALUE`, and `unset` each
+ *  removed name.
+ */
+{ kind: "nearestPermutation"; set: string[]; unset: string[] };
 
 /**  Which typed view writes a member. */
 export type MemberScalar = "float" | "int" | "uint" | "bool";
@@ -4289,6 +4538,28 @@ export type MenuStatus =
 "external" | 
 /**  Registrations changed or an operation was interrupted. */
 "changed";
+
+/**
+ *  One change to the meshes a viewport draws, in the order a change applies them.
+ * 
+ *  The indices of each delta are the ones the meshes hold once every delta before it applied.
+ */
+export type MeshDelta = 
+/**  The mesh at `mesh` now reads as `record`. `from` is the transform it was drawn with. */
+{ kind: "update"; mesh: number; from: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)]; record: MapGeometryMesh } | 
+/**  The mesh at `mesh` is gone, and the meshes after it moved down by one. */
+{ kind: "remove"; mesh: number } | 
+/**
+ *  A mesh landed at `mesh`, and the meshes from there on moved up by one. Its vertices
+ *  are read with [`MapGeometryDocument::preview_meshes`].
+ */
+{ kind: "insert"; mesh: number };
+
+/**  One mesh's transform, column major with the translation last. */
+export type MeshTransform = {
+	mesh: number,
+	transform: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+};
 
 /**
  *  What one meta schema database is, as the cache card names it.
@@ -4316,12 +4587,50 @@ export type MigrationProgress = {
 	currentFile: string,
 };
 
-/**  The movement class and its written speed or duration. */
+/**  The missile's `verticalFacing`, which sets how it pitches. */
+export type MissileFacing = 
+/**  `VeritcalFacingMatchVelocity`: the missile pitches along its travel. */
+{ kind: "matchVelocity" } | 
+/**  `VerticalFacingFaceTarget`: the missile pitches toward its target. */
+{ kind: "faceTarget" } | 
+/**  A class whose facing is not implemented. */
+{ kind: "unsupported"; class_hash: string };
+
+/**  The missile's `heightSolver`, which replaces the height that the movement gives. */
+export type MissileHeight = 
+/**  `BlendedLinearHeightSolver`. */
+{ kind: "blendedLinear" } | 
+/**  `GravityHeightSolver`: an arc under `gravity` in units per second squared. */
+{ kind: "gravity"; gravity: number | null } | 
+/**  `FollowTerrainHeightSolver`: a height above the ground. */
+{ kind: "followTerrain"; heightOffset: number | null; maxSlope: number | null } | 
+/**  `SinusoidalHeightSolver`: a wave over the straight line. */
+{ kind: "sinusoidal"; amplitude: number | null; periods: number | null; verticalOffset: number | null; phase: number | null } | 
+/**  `CurveTheDifferenceHeightSolver`. */
+{ kind: "curveTheDifference"; initialTargetHeightOffset: number | null } | 
+/**  A class whose height is not implemented. */
+{ kind: "unsupported"; class_hash: string };
+
+/**  The movement class and its written fields, each absent where the spell omits it. */
 export type MissileMovement = 
-/**  Constant speed in engine units per second. */
+/**  `FixedSpeedMovement`: constant speed in engine units per second. */
 { kind: "fixedSpeed"; speed: number | null } | 
-/**  A fixed travel duration in seconds. */
+/**  `FixedTimeMovement`: a fixed travel duration in seconds. */
 { kind: "fixedTime"; duration: number | null } | 
+/**  `AcceleratingMovement`: a speed that changes by `acceleration` within its clamps. */
+{ kind: "accelerating"; initialSpeed: number | null; acceleration: number | null; minSpeed: number | null; maxSpeed: number | null } | 
+/**  `DecelToLocationMovement`: the accelerating fields, braking to stop on the target. */
+{ kind: "decelToLocation"; initialSpeed: number | null; acceleration: number | null; minSpeed: number | null; maxSpeed: number | null } | 
+/**  `FixedSpeedSplineMovement`: a Hermite curve travelled at a constant speed. */
+{ kind: "fixedSpeedSpline"; speed: number | null; spline: MissileSpline | null } | 
+/**  `FixedTimeSplineMovement`: a Hermite curve travelled in a fixed duration. */
+{ kind: "fixedTimeSpline"; duration: number | null; spline: MissileSpline | null } | 
+/**  `PhysicsMovement`: a launch speed that drag slows for `lifetime` seconds. */
+{ kind: "physics"; initialSpeed: number | null; drag: number | null; lifetime: number | null } | 
+/**  `CircleMovement`: a circle about the target that turns and widens. */
+{ kind: "circle"; angularVelocity: number | null; linearVelocity: number | null; radialVelocity: number | null; lifetime: number | null } | 
+/**  `SyncCircleMovement`: a circle whose angle follows the time since the cast. */
+{ kind: "syncCircle"; angularVelocity: number | null; lifetime: number | null; axis: number | null } | 
 /**  A class whose trajectory is not implemented. */
 { kind: "unsupported"; class_hash: string } | 
 /**  No movement component was written. */
@@ -4341,6 +4650,40 @@ export type MissileSpec = {
 	targetHeight: number | null,
 	/**  The initial target-height offset. */
 	initialTargetHeight: number | null,
+	/**  `mUseHeightOffsetAtEnd`. */
+	heightOffsetAtEnd: boolean | null,
+	/**  The height solver, absent where the spec writes none. */
+	height: MissileHeight | null,
+	/**  The vertical facing, absent where the spec writes none. */
+	facing: MissileFacing | null,
+};
+
+/**  One spell that fires a system as its missile. */
+export type MissileSpell = {
+	/**  The spell object's hash, as `0x` and eight hex digits. */
+	objectHash: string,
+	/**  The spell object's path, or its hash where no table names it. */
+	path: string,
+	/**  The path below `Characters/{character}/Spells`, or the whole path outside it. */
+	name: string,
+	/**  The spell's missile specification. */
+	missile: MissileSpec,
+	/**  The spell's rank-one cast range, in engine units. */
+	range: number | null,
+	/**  The spell's `missileSpeed`, in engine units per second. */
+	missileSpeed: number | null,
+};
+
+/**  A spline movement's `HermiteSplineInfo`, with omitted values kept absent. */
+export type MissileSpline = {
+	/**  `mStartPositionOffset`, in the frame that faces the target. */
+	startOffset: [(number | null), (number | null), (number | null)] | null,
+	/**  `mControlPoint1`, the start tangent as a share of the travel distance. */
+	control1: [(number | null), (number | null), (number | null)] | null,
+	/**  `mControlPoint2`, the end tangent as a share of the travel distance. */
+	control2: [(number | null), (number | null), (number | null)] | null,
+	/**  `mUseMissilePositionAsOrigin`. */
+	fromMissile: boolean | null,
 };
 
 /**
@@ -4580,6 +4923,39 @@ export type ModWadReport = {
 	derived?: DerivedCategorization,
 };
 
+/**  One material of a model file, as the import dialog lists it. */
+export type ModelMaterialSummary = {
+	name: string,
+	/**  The texture file, and none for an embedded texture or no texture. */
+	texture: string | null,
+	/**  The texture is stored inside the model file. */
+	embedded: boolean,
+	/**  The material names a texture file that does not exist. */
+	missing: boolean,
+	alpha: boolean,
+};
+
+/**  One mesh of a model file, as the import dialog lists it. */
+export type ModelMeshSummary = {
+	name: string,
+	vertices: number,
+	triangles: number,
+	/**  The source materials that the mesh draws with, by index. */
+	materials: number[],
+	/**  The map mesh that the glTF mesh was exported from. `None` if the extras have none. */
+	exported: ExportedMesh | null,
+};
+
+/**  What a model file holds, as the import dialog shows it. */
+export type ModelSummary = {
+	meshes: ModelMeshSummary[],
+	materials: ModelMaterialSummary[],
+	/**  Engine units per file unit, from the file's unit setting, else 1. */
+	scale: number | null,
+	up: UpAxis,
+	skipped: SkippedItems[],
+};
+
 /**
  *  One module action on a layer's manifest, each module named by its index in `modules`.
  *  ADR-0048, ADR-0054.
@@ -4661,7 +5037,14 @@ class: string } |
  */
 { type: "template"; 
 /**  The template's catalog id. */
-template: string };
+template: string } | 
+/**
+ *  An object that clipboard `text` carries as a struct value: `class` and a `set` of each
+ *  of its properties.
+ */
+{ type: "paste"; 
+/**  The clipboard text of a copied object. */
+text: string };
 
 /**  A property Add property writes: a field the schema declares, or one the reader shapes. */
 export type NewProperty = 
@@ -4771,6 +5154,12 @@ export type ObjectClassHit = {
 	rows: number,
 };
 
+/**  A new object of [`BinDocument::create_and_edit`]: its name and where it starts. */
+export type ObjectCreation = {
+	name: string,
+	origin: NewObject,
+};
+
 /**  One declaration of an object: the file that declares it and the class it carries. */
 export type ObjectDeclaration = {
 	/**  The declaring file, as an open reads it. */
@@ -4795,16 +5184,19 @@ export type ObjectDirListing = {
 	objects: ObjectNodeEntry[],
 };
 
-/**  An object edit of a declared document. ADR-0049. */
+/**
+ *  An object edit. A declared document declares it (ADR-0049), and any other document takes it
+ *  as an undoable edit.
+ */
 export type ObjectEdit = 
 /**
- *  Declare a new object named `name`, answering [`EditOutcome::Object`].
+ *  Add a new object named `name`, answering [`EditOutcome::Object`].
  *  [`BinDocument::create_object`].
  */
 { kind: "create"; name: string; origin: NewObject } | 
-/**  Declare the removal of `entry`. [`BinDocument::remove_object`]. */
+/**  Remove `entry`. [`BinDocument::remove_object`]. */
 { kind: "remove"; entry: string } | 
-/**  Take back the removal of `entry`. [`BinDocument::restore_object`]. */
+/**  Take back a declared removal of `entry`. [`BinDocument::restore_object`]. */
 { kind: "restore"; entry: string };
 
 /**  One object the full search matched, with the runs its path marks. */
@@ -5424,6 +5816,14 @@ path: string;
 /**  The modifier's class as the tables name it, and its hash where none does. */
 class: string };
 
+/**  A `StaticMaterialDef` that a shader def's preview draws the def through. */
+export type PreviewMaterial = {
+	/**  The bin that declares the material. */
+	asset: AssetRef,
+	/**  The material's object hash, `0x` and eight hex digits, or its path. */
+	entry: string,
+};
+
 /**  One finding, at one site, from one rule. */
 export type Problem = Problem_Serialize | Problem_Deserialize;
 
@@ -5718,6 +6118,13 @@ export type ReferenceWalkProgress = {
 	hits: number,
 };
 
+/**  The summary of a model file and the index of the mesh that replaces a map mesh in a reimport. */
+export type ReimportInspection = {
+	summary: ModelSummary,
+	/**  The index of the matching mesh. `None` if no mesh matches and the user picks one. */
+	source: number | null,
+};
+
 /**  One published release, as the changelog reads it. */
 export type ReleaseNote = {
 	/**  The tag without its leading `v`. */
@@ -5988,6 +6395,8 @@ export type RuleInfo_Deserialize = {
 	 *  [`RuleMeta::severity`].
 	 */
 	severity?: ProblemSeverity | null,
+	/**  The `ltk://` deep link that a panel offers beside this rule's findings. */
+	link?: string | null,
 	/**  Whether this project is one the rule speaks about yet. */
 	state: RuleState,
 };
@@ -6012,6 +6421,8 @@ export type RuleInfo_Serialize = {
 	 *  [`RuleMeta::severity`].
 	 */
 	severity?: ProblemSeverity | null,
+	/**  The `ltk://` deep link that a panel offers beside this rule's findings. */
+	link?: string | null,
 	/**  Whether this project is one the rule speaks about yet. */
 	state: RuleState,
 };
@@ -6571,6 +6982,17 @@ export type ShaderFailure = {
 	missingPipeline: string | null,
 };
 
+/**  A shader def's program, and the defines that select among its permutations. */
+export type ShaderProgram = {
+	/**  The program that the preview draws. */
+	program: MaterialProgram,
+	/**
+	 *  The defines that the shader's two TOCs declare, sorted by name. Empty if a TOC cannot
+	 *  be read.
+	 */
+	declared: DeclaredDefine[],
+};
+
 /**
  *  The parameters, textures and switches a `CustomShaderDef` declares, with its defaults.
  * 
@@ -6616,6 +7038,16 @@ export type SheetSprite = {
 	 *  nine-slice. None for a plain sprite.
 	 */
 	slice: [number, number, number, number] | null,
+};
+
+/**  A skin bin that a layer ships, and the skin object in it. */
+export type ShippedSkin = {
+	/**  The project directory that the skin and its files are read from first. */
+	project: string,
+	/**  The layer file of `data/characters/<champion>/skins/skin<n>.bin`. */
+	asset: AssetRef,
+	/**  The `SkinCharacterDataProperties` object's hash, `0x` and eight hex digits. */
+	entry: string,
 };
 
 /**  What a translated stage binds. */
@@ -6702,6 +7134,17 @@ export type SkippedArchive = {
 	wad: string,
 	why: string,
 };
+
+/**  A count of content of one kind that the importer skipped. */
+export type SkippedItems = {
+	kind: SkippedKind,
+	count: number,
+};
+
+/**  A kind of content that the importer does not convert. */
+export type SkippedKind = "skin" | "blendShape" | "camera" | "light" | "animation" | 
+/**  Points and lines, which draw no triangle. */
+"line";
 
 /**  One entry of `SocketDefinitions`, of any kind of `SocketDefinitionBase`. */
 export type Socket = 
@@ -6791,6 +7234,8 @@ export type SpellPreview = {
 	animationName: string | null,
 	/**  The missile specification, absent for spells without one. */
 	missile: MissileSpec | null,
+	/**  The written `missileSpeed`, in engine units per second. */
+	missileSpeed: number | null,
 	/**  A resource key, never a system-object identity. */
 	effectKey: string | null,
 	/**  The written fallback effect name, retained for inspection. */
@@ -7705,6 +8150,9 @@ export type UniformBlock = {
 	members: BlockMember[],
 };
 
+/**  The axis that points up in a model file. */
+export type UpAxis = "y" | "z";
+
 /**  Validation result for a project. */
 export type ValidationResult = {
 	valid: boolean,
@@ -7726,16 +8174,18 @@ export type ValueEdit =
 /**  Insert an item into a list, map or option. */
 { type: "insertItem"; path: string; item: NewItem } | 
 /**
- *  Insert a copy of the item at `from` into the list at `path`, at `index` or the end.
- *  `unique` names a string field whose text the copy makes unique among the object's
+ *  Insert a copy of the item at `from` into the list or map at `path`, at `index` or the
+ *  end. `unique` names a string field whose text the copy makes unique among the object's
  *  list items.
  */
-{ type: "copyItem"; from: string; path: string; index: number | null; unique: string | null } | 
+{ type: "copyItem"; from: string; path: string; index: number | null; unique: string | null; 
+/**  The copy's key where `path` is a map, spelled as [`NewItem::key`] spells one. */
+key?: string | null } | 
 /**
- *  Insert the value clipboard `text` carries into the list at `path`, at `index` or the
- *  end, with `unique` as for [`ValueEdit::CopyItem`].
+ *  Insert the value clipboard `text` carries into the list or map at `path`, at `index` or
+ *  the end, with `unique` and `key` as for [`ValueEdit::CopyItem`].
  */
-{ type: "pasteItem"; path: string; index: number | null; text: string; unique: string | null } | 
+{ type: "pasteItem"; path: string; index: number | null; text: string; unique: string | null; key?: string | null } | 
 /**  Remove an item from a list, map or option. */
 { type: "removeItem"; path: string } | 
 /**

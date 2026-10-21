@@ -55,6 +55,46 @@ fn module() -> Vec<u32> {
     words
 }
 
+/// A vertex module that reads `SV_InstanceID` as dxbc-spirv writes it: `InstanceIndex` as
+/// variable 20 and `BaseInstance` as variable 21, both of pointer type 11 to the int 10,
+/// loaded and subtracted into 32.
+fn instanced_module() -> Vec<u32> {
+    let mut words = vec![MAGIC, 0x0001_0500, 0, 40, 0];
+    words.extend(inst(OP_CAPABILITY, &[1]));
+    words.extend(inst(OP_CAPABILITY, &[CAPABILITY_DRAW_PARAMETERS]));
+    let mut entry_point = vec![0, 1];
+    entry_point.extend(spirv_string("main"));
+    entry_point.extend([20, 21]);
+    words.extend(inst(OP_ENTRY_POINT, &entry_point));
+    words.extend(name(20, "SV_InstanceID"));
+    words.extend(name(21, "BaseInstance"));
+    words.extend(inst(OP_DECORATE, &[20, DECORATION_BUILT_IN, 43]));
+    words.extend(inst(
+        OP_DECORATE,
+        &[21, DECORATION_BUILT_IN, BUILT_IN_BASE_INSTANCE],
+    ));
+    words.extend(inst(OP_TYPE_POINTER, &[11, STORAGE_INPUT, 10]));
+    words.extend(inst(OP_VARIABLE, &[11, 20, STORAGE_INPUT]));
+    words.extend(inst(OP_VARIABLE, &[11, 21, STORAGE_INPUT]));
+    words.extend(inst(OP_LOAD, &[10, 30, 20]));
+    words.extend(inst(OP_LOAD, &[10, 31, 21]));
+    words.extend(inst(128, &[12, 32, 30, 31]));
+    words
+}
+
+/// A pixel module with two level queries of image 20 in function 40, of result type 10 and
+/// result ids 30 and 31.
+fn level_query_module() -> Vec<u32> {
+    let mut words = vec![MAGIC, 0x0001_0500, 0, 50, 0];
+    words.extend(inst(OP_CAPABILITY, &[1]));
+    words.extend(inst(OP_FUNCTION, &[2, 40, 0, 3]));
+    words.extend(inst(OP_LABEL, &[41]));
+    words.extend(inst(OP_IMAGE_QUERY_LEVELS, &[10, 30, 20]));
+    words.extend(inst(OP_IMAGE_QUERY_LEVELS, &[10, 31, 20]));
+    words.extend(inst(OP_KILL, &[]));
+    words
+}
+
 fn reflection() -> Reflection {
     let resource = |name: &str, kind, bind| Resource {
         name: name.to_owned(),
@@ -87,6 +127,41 @@ fn ops(words: &[u32]) -> Vec<u32> {
         .into_iter()
         .map(|(_, op, _)| op)
         .collect()
+}
+
+#[test]
+fn patch_replaces_image_query_levels_with_one_constant_per_type() {
+    let patched = patch(&level_query_module(), &reflection(), Stage::Pixel).unwrap();
+
+    assert_eq!(patched.words[3], 51);
+    assert_eq!(
+        ops(&patched.words),
+        [
+            OP_CAPABILITY,
+            OP_CONSTANT,
+            OP_FUNCTION,
+            OP_LABEL,
+            OP_COPY_OBJECT,
+            OP_COPY_OBJECT,
+            OP_KILL
+        ]
+    );
+    let words = &patched.words;
+    assert!(
+        words
+            .windows(4)
+            .any(|w| w == [(4 << 16) | OP_CONSTANT, 10, 50, 1])
+    );
+    assert!(
+        words
+            .windows(4)
+            .any(|w| w == [(4 << 16) | OP_COPY_OBJECT, 10, 30, 50])
+    );
+    assert!(
+        words
+            .windows(4)
+            .any(|w| w == [(4 << 16) | OP_COPY_OBJECT, 10, 31, 50])
+    );
 }
 
 #[test]
@@ -128,6 +203,41 @@ fn a_demote_becomes_a_kill_and_a_fresh_label() {
     let kill_at = ops.iter().position(|&op| op == OP_KILL).unwrap();
     assert_eq!(ops[kill_at + 1], OP_LABEL);
     assert_eq!(patched.words[3], 41);
+}
+
+#[test]
+fn patch_replaces_base_instance_with_zero_constant() {
+    let patched = patch(&instanced_module(), &reflection(), Stage::Vertex).unwrap();
+    let instructions: Vec<Vec<u32>> = instructions(&patched.words)
+        .unwrap()
+        .into_iter()
+        .map(|(at, _, count)| patched.words[at..at + count].to_vec())
+        .collect();
+    let of = |op: u32| -> Vec<&[u32]> {
+        instructions
+            .iter()
+            .filter(|inst| inst[0] & 0xFFFF == op)
+            .map(|inst| &inst[1..])
+            .collect()
+    };
+
+    assert_eq!(of(OP_CONSTANT_NULL), [[10, 21]]);
+    assert_eq!(of(OP_COPY_OBJECT), [[10, 31, 21]]);
+    assert_eq!(of(OP_VARIABLE), [[11, 20, STORAGE_INPUT]]);
+    assert_eq!(of(OP_LOAD), [[10, 30, 20]]);
+    assert_eq!(of(OP_DECORATE), [[20, DECORATION_BUILT_IN, 43]]);
+    assert_eq!(of(OP_CAPABILITY), [[1]]);
+
+    let mut entry_point = vec![0, 1];
+    entry_point.extend(spirv_string("main"));
+    entry_point.push(20);
+    assert_eq!(of(OP_ENTRY_POINT), [entry_point.as_slice()]);
+
+    let names: Vec<String> = of(OP_NAME)
+        .into_iter()
+        .map(|operands| read_string(&operands[1..]))
+        .collect();
+    assert_eq!(names, ["SV_InstanceID"]);
 }
 
 #[test]

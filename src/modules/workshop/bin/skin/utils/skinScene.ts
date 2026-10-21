@@ -21,6 +21,7 @@ import {
 import { assetKey } from "../../../preview/utils/assetRef";
 import { nameHash } from "../../shared/utils/binHash";
 import type { SystemModel } from "../../vfx/engine/model/model";
+import { EFFECTS_QUALITY, type EffectsQuality } from "../../vfx/engine/model/quality";
 import type { Anchor, Joints, RigModel } from "../../vfx/engine/model/rig";
 import { readVfxSystem } from "../../vfx/engine/parsing/readVfxSystem";
 import type { ParticleCue } from "./clipEvents";
@@ -285,7 +286,7 @@ export function jointSlot(pose: Pose, ref: HashRef | null): number {
 }
 
 /** `pose`'s joints by name without regard to case, each anchor built once, `shift` seconds late. */
-function jointsOf(pose: Pose, scale: number, shift = 0): Joints {
+export function jointsOf(pose: Pose, scale: number, shift = 0): Joints {
   const cache = new Map<string, Anchor | null>();
   return (name) => {
     const key = name.toLowerCase();
@@ -306,13 +307,25 @@ function jointsOf(pose: Pose, scale: number, shift = 0): Joints {
   };
 }
 
-const MODELS = new WeakMap<VfxSystem, SystemModel>();
+const MODELS = new WeakMap<VfxSystem, SystemModel[]>();
 
-/** The renderer's model of one read, the same object for as long as the read is. */
-export function systemModel(read: VfxSystem): SystemModel {
-  const held = MODELS.get(read);
+/**
+ * Returns the renderer's model of `read` at `quality`, the same object for as long as the
+ * read is.
+ */
+export function systemModel(
+  read: VfxSystem,
+  quality: EffectsQuality = EFFECTS_QUALITY.veryHigh,
+): SystemModel {
+  let models = MODELS.get(read);
+  if (models === undefined) {
+    models = [];
+    MODELS.set(read, models);
+  }
+
+  const held = models[quality];
   if (held !== undefined) return held;
-  const model = readVfxSystem(read);
-  MODELS.set(read, model);
+  const model = readVfxSystem(read, quality);
+  models[quality] = model;
   return model;
 }

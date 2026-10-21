@@ -27,6 +27,17 @@ pub const CLIPBOARD_FORMAT: &str = "ltk-manager/bin-value";
 /// The version of the clipboard text's shape.
 const CLIPBOARD_VERSION: u32 = 1;
 
+/// Where a copied or pasted item lands in its holder.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct Landing<'a> {
+    /// The position in the holder, or `None` for the end.
+    pub index: Option<usize>,
+    /// The entry's key where the holder is a map, spelled as [`super::NewItem::key`] spells one.
+    pub key: Option<&'a str>,
+    /// A string field of the item whose text [`BinDocument::unique_name`] makes unique.
+    pub unique: Option<BinHash>,
+}
+
 /// What a name made unique ends in, before its counter.
 const COPY_SUFFIX: &str = "_copy";
 
@@ -48,7 +59,7 @@ struct Copied {
 
 impl BinDocuments {
     /// The value at `path` under the object `entry` of the document under `id`, as
-    /// clipboard text.
+    /// clipboard text. An empty `path` copies the object itself.
     ///
     /// # Errors
     ///
@@ -70,7 +81,8 @@ impl BinDocuments {
 }
 
 impl BinDocument {
-    /// The value at `path` under `entry` as clipboard text.
+    /// Returns the value at `path` under `entry` as clipboard text. An empty `path` copies the
+    /// object as a struct value of its class.
     ///
     /// # Errors
     ///
@@ -81,29 +93,41 @@ impl BinDocument {
         path: &str,
         schema: SchemaAt<'_>,
     ) -> Result<String, BinDocumentError> {
-        let value = self.property_value(entry, path)?;
+        let whole;
+        let value = if path.is_empty() {
+            let object = self
+                .object_at(entry)
+                .ok_or_else(|| BinDocumentError::NodeNotFound {
+                    address: hex(entry),
+                })?;
+            whole = PropertyValueEnum::from(values::Struct {
+                class_hash: object.class_hash,
+                properties: object.properties.clone(),
+            });
+            &whole
+        } else {
+            self.property_value(entry, path)?
+        };
         let class = as_struct(value).and_then(|inner| schema.class_name(inner.class_hash));
 
         Ok(clipboard_text(value, class))
     }
 
-    /// Put a copy of the item at `from` into the list at `holder`, answering the copy's path.
-    ///
-    /// `unique` is a string field of the copy whose text [`BinDocument::unique_name`] makes
-    /// unique. Both stacks are left alone, so the caller records the edit.
+    /// Put a copy of the item at `from` into the list or map at `holder`, answering the copy's
+    /// path. Both stacks are left alone, so the caller records the edit.
     pub(super) fn copy_item(
         &mut self,
         entry: BinHash,
         from: &str,
         holder: &str,
-        index: Option<usize>,
-        unique: Option<BinHash>,
+        landing: Landing<'_>,
     ) -> Result<String, BinDocumentError> {
         let value = self.property_value(entry, from)?.clone();
-        self.land_item(entry, holder, index, value, unique)
+        self.land_item(entry, holder, landing, value)
     }
 
-    /// Put the value clipboard `text` carries into the list at `holder`, answering its path.
+    /// Put the value clipboard `text` carries into the list or map at `holder`, answering its
+    /// path.
     ///
     /// A struct value lands only where the holder takes its class: a class an item holds,
     /// the one `schema` declares for the holder, or one deriving from it. Both stacks are
@@ -112,9 +136,8 @@ impl BinDocument {
         &mut self,
         entry: BinHash,
         holder: &str,
-        index: Option<usize>,
+        landing: Landing<'_>,
         text: &str,
-        unique: Option<BinHash>,
         schema: SchemaAt<'_>,
     ) -> Result<String, BinDocumentError> {
         let refuse = |rejection| BinDocumentError::EditRejected {
@@ -126,22 +149,26 @@ impl BinDocument {
             return Err(refuse(EditRejection::ForeignClass));
         }
 
-        self.land_item(entry, holder, index, value, unique)
+        self.land_item(entry, holder, landing, value)
     }
 
     fn land_item(
         &mut self,
         entry: BinHash,
         holder: &str,
-        index: Option<usize>,
+        landing: Landing<'_>,
         value: PropertyValueEnum,
-        unique: Option<BinHash>,
     ) -> Result<String, BinDocumentError> {
-        let Edit::RemoveItem { path, .. } = self.put_item(entry, holder, index, None, value)?
+        let key = landing
+            .key
+            .map(|text| self.free_key(entry, holder, text))
+            .transpose()?;
+        let Edit::RemoveItem { path, .. } =
+            self.put_item(entry, holder, landing.index, key, value)?
         else {
             unreachable!("an insert is reverted by a removal");
         };
-        if let Some(field) = unique {
+        if let Some(field) = landing.unique {
             self.unique_name(entry, &path, field)?;
         }
 
@@ -222,6 +249,15 @@ pub fn clipboard_text(value: &PropertyValueEnum, class: Option<&str>) -> String 
 /// The value clipboard `text` carries, and `None` for text that is no sound copy.
 pub fn clipboard_value(text: &str) -> Option<PropertyValueEnum> {
     parse_copied(text).ok()
+}
+
+/// Reads the struct value of an object that clipboard `text` carries. Fails with
+/// [`EditRejection::InvalidShape`] if the value is not a struct of a class.
+pub(super) fn copied_object(text: &str) -> Result<values::Struct, EditRejection> {
+    match parse_copied(text)? {
+        PropertyValueEnum::Struct(inner) if !is_null(&inner) => Ok(inner),
+        _ => Err(EditRejection::InvalidShape),
+    }
 }
 
 /// The value clipboard `text` carries, rebuilt through the checked constructors.

@@ -77,9 +77,6 @@ pub struct Config {
     /// Whether to block mods from patching Scripts.wad.client. Default: true.
     #[serde(default = "default_true")]
     pub block_scripts_wad: bool,
-    /// Whether to run the linked-bin dependency check before starting the patcher. Default: true.
-    #[serde(default = "default_true")]
-    pub linked_bin_check_enabled: bool,
     /// Additional WAD files to exclude from overlay building.
     #[serde(
         default = "default_wad_blocklist",
@@ -101,6 +98,11 @@ pub struct Config {
     /// the user sets themselves are used. Default: true.
     #[serde(default = "default_true")]
     pub auto_categorization_enabled: bool,
+    /// Whether the library sweep checks mod health at startup, after a hashtable
+    /// sync and after an install. A check the user starts runs either way.
+    /// Default: true.
+    #[serde(default = "default_true")]
+    pub auto_health_check_enabled: bool,
     /// Enabling a mod moves it to the front of its folder. Off by default.
     #[serde(default)]
     pub promote_enabled_mods: bool,
@@ -122,6 +124,10 @@ pub struct Config {
     /// takes effect on the next start. Default: false.
     #[serde(default)]
     pub verbose_patcher_logging: bool,
+    /// Whether the patcher runs builds from the beta delivery channel instead of
+    /// the stable channel. Default: false.
+    #[serde(default)]
+    pub beta_patcher: bool,
     /// Whether to set the `FULL_WAD_SCAN` hook flag, which scans every archive
     /// up front instead of the DLL's default of verifying each one as the game
     /// loads it. The overlay makes lazy scanning crash-prone, so the DLL only
@@ -236,14 +242,15 @@ impl Default for Config {
             workshop_path: None,
             patch_tft: false,
             block_scripts_wad: true,
-            linked_bin_check_enabled: true,
             wad_blocklist: default_wad_blocklist(),
             elevate_injector: false,
             auto_categorization_enabled: true,
+            auto_health_check_enabled: true,
             promote_enabled_mods: false,
             enforce_skinhack_scan: true,
             apply_string_overrides_to_all_locales: false,
             verbose_patcher_logging: false,
+            beta_patcher: false,
             full_wad_scan: false,
             disable_crash_reporting: true,
             hide_riot_client_on_launch: true,
@@ -266,7 +273,6 @@ mod tests {
         assert!(config.workshop_path.is_none());
         assert!(!config.patch_tft);
         assert!(config.block_scripts_wad);
-        assert!(config.linked_bin_check_enabled);
         assert!(config.wad_blocklist.is_empty());
         assert!(!config.elevate_injector);
         assert!(config.auto_categorization_enabled);
@@ -274,6 +280,7 @@ mod tests {
         assert!(config.enforce_skinhack_scan);
         assert!(!config.apply_string_overrides_to_all_locales);
         assert!(!config.verbose_patcher_logging);
+        assert!(!config.beta_patcher);
         assert!(!config.full_wad_scan);
         assert!(config.disable_crash_reporting);
         assert!(config.hide_riot_client_on_launch);

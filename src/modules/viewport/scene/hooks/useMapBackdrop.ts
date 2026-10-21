@@ -6,6 +6,7 @@ import {
   api,
   type AssetRef,
   type BinDocumentId,
+  type MapBounds,
   type MapController,
   type MapModel,
   type MapPath,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/tauri";
 
 import { BACKDROP_ROOT } from "../../assets/api/placements";
-import { viewportQueries } from "../../assets/api/queries";
+import { type EditedGeometry, viewportQueries } from "../../assets/api/queries";
 import type { LightGrid } from "../../assets/parsing/lightGridBuffer";
 import {
   type ControllerUse,
@@ -36,6 +37,12 @@ import {
 import { programTextureAssets } from "../../hexshade/programTextures";
 import { useAssetTextures } from "../../shared/hooks/useAssetTextures";
 import { type AmbientOcclusion, ambientOcclusionOf } from "../utils/ambientOcclusion";
+import {
+  type GrassTextures,
+  grassTextures,
+  grassTintAssets,
+  grassTintOf,
+} from "../utils/grassTint";
 import { type PostEffects, postEffectsOf } from "../utils/postEffects";
 import { type SunLight, sunLightOf } from "../utils/sunLight";
 
@@ -73,10 +80,10 @@ const FULL_WIDTH = 1024;
 /**
  * How many of a map's textures are in flight at once.
  *
- * Each costs a decode in the backend and an upload on the render thread, so a whole
- * set asked for at once lands in bursts no frame absorbs.
+ * A block chain needs no decode, but each still costs an upload on the render thread, so a
+ * whole set asked for at once lands in bursts no frame absorbs.
  */
-const CONCURRENT = 4;
+const CONCURRENT = 8;
 
 /** Which map a backdrop draws, and the project whose layer answers before the install. */
 export interface BackdropSource {
@@ -96,9 +103,16 @@ export interface BackdropSource {
    * ships. Absent, the install's is looked up.
    */
   readonly geometry?: AssetRef;
+  /** The `.mapgeo` open for edits that the backdrop draws in place of the file. */
+  readonly edited?: EditedGeometry | null;
   /** The map's materials draw with the game's own shaders, translated. */
   readonly shaders?: boolean;
+  /** The `MapSkin` whose grass tint the brush draws with. Absent or null selects `Default`. */
+  readonly skin?: string | null;
 }
+
+/** The query arguments of an edited map that no source names, which never runs. */
+const NOT_EDITED: EditedGeometry = { document: -1 };
 
 /** Who answers a map's reads through a document, which is what two sources share them by. */
 type ReadScope = { readonly project: string | null } | { readonly document: BinDocumentId | null };
@@ -228,10 +242,13 @@ export const backdropQueries = {
           return {
             materials: [],
             controllers: [],
+            flags: [],
             sun: null,
             postEffects: null,
             ssao: null,
             lightGrid: null,
+            grassTints: [],
+            bounds: null,
           };
         const answer = await api.bin.readMap(document, map, [...paths]);
         if (!answer.ok) throw answer.error;
@@ -308,6 +325,10 @@ export interface Backdrop {
   readonly ambientOcclusion: AmbientOcclusion | null;
   /** The ambient the map lights its characters with, and null where it bakes none. */
   readonly lightGrid: LightGrid | null;
+  /** The shown skin's grass tints, and null where no skin states one. */
+  readonly grassTint: GrassTextures | null;
+  /** The rectangle that a map-wide texture covers, and null where the container states none. */
+  readonly bounds: MapBounds | null;
   /** The bytes are on their way. One map is 73 to 93 MiB, so this is seconds. */
   readonly loading: boolean;
   /** Why there is nothing to draw, for the one line a disabled option carries. */
@@ -337,6 +358,8 @@ const EMPTY: Backdrop = {
   postEffects: null,
   ambientOcclusion: null,
   lightGrid: null,
+  grassTint: null,
+  bounds: null,
   loading: false,
   failure: null,
 };
@@ -380,6 +403,20 @@ export function useMapBackdrop(source: BackdropSource | null): Backdrop {
   );
 
   const lightGrid = useQuery(viewportQueries.lightGrid(model.data?.lightGrid ?? null)).data;
+
+  const tint = useMemo(
+    () => grassTintOf(model.data?.grassTints ?? [], source?.skin ?? null),
+    [model.data, source?.skin],
+  );
+  const tintAssets = useMemo(() => grassTintAssets(tint), [tint]);
+  const tintTextures = useAssetTextures(tintAssets, {
+    fullWidth: FULL_WIDTH,
+    concurrency: CONCURRENT,
+    mips: true,
+    colorSpace: NoColorSpace,
+    wrap: ClampToEdgeWrapping,
+  });
+  const grassTint = useMemo(() => grassTextures(tint, tintTextures), [tint, tintTextures]);
 
   const assets = useMemo(() => {
     const held = new Map<string, AssetRef>();
@@ -465,6 +502,8 @@ export function useMapBackdrop(source: BackdropSource | null): Backdrop {
     postEffects,
     ambientOcclusion,
     lightGrid: lightGrid ?? null,
+    grassTint,
+    bounds: model.data?.bounds ?? null,
     loading: false,
     failure: null,
   };
@@ -477,8 +516,16 @@ function useBackdropGeometry(source: BackdropSource | null) {
     backdropQueries.chunk(given === undefined ? (source?.map ?? null) : null, GEOMETRY_SUFFIX),
   );
   const asset = given ?? located.data ?? null;
-  const geometry = useQuery(viewportQueries.map(asset));
-  return { given, located, asset, geometry };
+  const edited = source?.edited ?? null;
+  const geometry = useQuery({
+    ...viewportQueries.map(asset),
+    enabled: edited === null,
+  });
+  const editedGeometry = useQuery({
+    ...viewportQueries.editedMap(asset, edited ?? NOT_EDITED),
+    enabled: edited !== null,
+  });
+  return { given, located, asset, geometry: edited === null ? geometry : editedGeometry };
 }
 
 /** The materials, sun and screen effects of `source`'s map, asked for once `geometry` lands. */
@@ -525,6 +572,8 @@ export interface BackdropFlags {
   readonly setLayer: (index: number, on: boolean) => void;
   /** The controllers that the map declares. Empty until the model is loaded. */
   readonly controllers: readonly MapController[];
+  /** The name of each layer bit that the map's `Map` object names. Empty until the model is loaded. */
+  readonly flagNames: ReadonlyMap<number, string>;
   /** The meshes that reference each controller, keyed by controller path hash. */
   readonly uses: ReadonlyMap<string, ControllerUse>;
   /** The controller states that the reader set, keyed by controller path hash. */
@@ -541,12 +590,20 @@ export interface BackdropFlags {
  * The visibility flags `source`'s backdrop draws, opening on the map's own and toggled after.
  *
  * A toggle is held against the geometry it was made on, so another map opens on its own
- * flags. The geometry and the model are the ones [`useMapBackdrop`] reads, so asking here
+ * flags. An edited geometry holds it against the map path, so a toggle outlives each
+ * edit. The geometry and the model are the ones [`useMapBackdrop`] reads, so asking here
  * fetches nothing.
  */
 export function useBackdropFlags(source: BackdropSource | null): BackdropFlags {
   const map = useBackdropGeometry(source).geometry.data;
-  const controllers = useBackdropModel(source, map).data?.controllers ?? NO_CONTROLLERS;
+  const key: object | string | undefined = source?.edited == null ? map : source.map;
+  const model = useBackdropModel(source, map).data;
+  const controllers = model?.controllers ?? NO_CONTROLLERS;
+  const modelFlags = model?.flags;
+  const flagNames = useMemo(
+    () => new Map((modelFlags ?? []).map((flag) => [flag.bit, flag.name])),
+    [modelFlags],
+  );
   const layers = useMemo(
     () => (map === undefined ? NO_LAYERS : mapLayers(map, controllers)),
     [map, controllers],
@@ -554,7 +611,7 @@ export function useBackdropFlags(source: BackdropSource | null): BackdropFlags {
   const uses = useMemo(() => (map === undefined ? NO_USES : controllerUses(map)), [map]);
   const opening = useMemo(() => (map === undefined ? 0 : openingFlags(map)), [map]);
   const [toggled, setToggled] = useState<Toggled | null>(null);
-  const held = toggled !== null && toggled.map === map ? toggled : null;
+  const held = toggled !== null && toggled.key === key ? toggled : null;
   const flags = held?.flags ?? opening;
   const overrides = held?.overrides ?? NO_OVERRIDES;
 
@@ -562,27 +619,27 @@ export function useBackdropFlags(source: BackdropSource | null): BackdropFlags {
     (index: number, on: boolean) => {
       if (map === undefined) return;
       setToggled((last) => {
-        const from = last !== null && last.map === map ? last : null;
+        const from = last !== null && last.key === key ? last : null;
         const before = from?.flags ?? opening;
         const bit = 1 << index;
         return {
-          map,
+          key,
           flags: on ? before | bit : before & ~bit,
           overrides: from?.overrides ?? NO_OVERRIDES,
         };
       });
     },
-    [map, opening],
+    [map, key, opening],
   );
 
   const setController = useCallback(
     (hash: string, visible: boolean) => {
       if (map === undefined) return;
       setToggled((last) => {
-        const from = last !== null && last.map === map ? last : null;
+        const from = last !== null && last.key === key ? last : null;
         const before = from?.flags ?? opening;
         return {
-          map,
+          key,
           flags: before,
           overrides: withControllerState(
             controllers,
@@ -594,7 +651,7 @@ export function useBackdropFlags(source: BackdropSource | null): BackdropFlags {
         };
       });
     },
-    [map, opening, controllers],
+    [map, key, opening, controllers],
   );
 
   const reset = useCallback(() => setToggled(null), []);
@@ -610,6 +667,7 @@ export function useBackdropFlags(source: BackdropSource | null): BackdropFlags {
     visibility,
     setLayer,
     controllers,
+    flagNames,
     uses,
     overrides,
     setController,
@@ -620,7 +678,8 @@ export function useBackdropFlags(source: BackdropSource | null): BackdropFlags {
 
 /** The flags and controller overrides that the reader set on one map. */
 interface Toggled {
-  readonly map: MapGeometry;
+  /** The geometry the toggles were made on, or the map path of an edited geometry. */
+  readonly key: object | string | undefined;
   readonly flags: number;
   readonly overrides: ControllerOverrides;
 }

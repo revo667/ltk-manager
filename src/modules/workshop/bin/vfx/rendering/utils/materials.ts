@@ -1,10 +1,12 @@
 import {
   type Color,
   DoubleSide,
+  Matrix4,
   NoBlending,
   ShaderMaterial,
   type Side,
   type Texture,
+  Vector3,
   Vector4,
 } from "three";
 
@@ -33,16 +35,20 @@ import {
   distortionUniforms,
   erosionDefines,
   erosionUniforms,
-  groundDefines,
   layerDefines,
   layerUniforms,
   multiplies,
   offsets,
   OVERLAY,
+  paletteDefines,
+  paletteUniforms,
   polygonOffsetOf,
   type QuadLayers,
   SHEEN,
   sheenDefines,
+  SLICE,
+  sliceDefines,
+  sliceUniforms,
   sheenUniforms,
   softDefines,
   softUniforms,
@@ -140,15 +146,16 @@ export function quadMaterial(
     uniforms: {
       ...layerUniforms(texture, layers, tests),
       ...softUniforms(layers.soft),
+      ...sliceUniforms(layers),
       pushPull: { value: depth.pushPull },
       ...orientationUniforms(orientation),
     },
     defines: {
       ...layerDefines(texture, layers),
       ...softDefines(layers.soft),
+      ...sliceDefines(layers, SLICE.quad),
       FALLOFF: "",
       ...orientationDefines(orientation),
-      ...groundDefines(layers),
     },
     side: DoubleSide,
     depthTest: tests.depthTest,
@@ -163,7 +170,7 @@ export function quadMaterial(
     ...polygonOffsetOf(depth.bias),
   });
 
-  return customMaterial(material, layers.customMaterial);
+  return customMaterial(material, layers.customMaterial, layers.ground);
 }
 
 /**
@@ -192,13 +199,14 @@ export function meshMaterial(
       ...layerUniforms(texture, { ...layers, colorTexture: null }, tests),
       ...sheenUniforms(layers.reflection, layers.reflectionTexture),
       ...softUniforms(layers.soft),
+      ...sliceUniforms(layers),
     },
     defines: {
       ...layerDefines(texture, { ...layers, colorTexture: null }),
       ...sheenDefines(layers.reflection, layers.reflectionTexture, SHEEN.drawn),
       ...softDefines(layers.soft),
+      ...sliceDefines(layers, SLICE.mesh),
       LOCK_ALPHA: layers.mode === UV_MODE.lockAlpha ? ALPHA_LOCK.unscrolled : ALPHA_LOCK.none,
-      ...groundDefines(layers),
     },
     side,
     depthTest: tests.depthTest,
@@ -213,7 +221,7 @@ export function meshMaterial(
     ...polygonOffsetOf(bias),
   });
 
-  return customMaterial(material, layers.customMaterial);
+  return customMaterial(material, layers.customMaterial, layers.ground);
 }
 
 /**
@@ -286,6 +294,7 @@ export function ribbonMaterial(
       ...erosionUniforms(layers.erosion, layers.erosionTexture),
       ...distortionUniforms(layers.distortion, layers.normalTexture),
       ...softUniforms(layers.soft),
+      ...sliceUniforms(layers),
     },
     defines: {
       ...(texture !== null ? { HAS_MAP: "" } : {}),
@@ -295,7 +304,7 @@ export function ribbonMaterial(
       ...erosionDefines(layers.erosion, layers.erosionTexture),
       ...distortionDefines(layers.distortion, layers.normalTexture),
       ...softDefines(layers.soft),
-      ...groundDefines(layers),
+      ...sliceDefines(layers, SLICE.quad),
     },
     side: DoubleSide,
     depthTest: tests.depthTest,
@@ -310,7 +319,7 @@ export function ribbonMaterial(
     ...polygonOffsetOf(bias),
   });
 
-  return customMaterial(material, layers.customMaterial);
+  return customMaterial(material, layers.customMaterial, layers.ground);
 }
 
 /**
@@ -366,12 +375,14 @@ export function maskMaterial(solid: ShaderMaterial, colour: Color): ShaderMateri
  *
  * The texture spans the footprint once whatever the emitter's uv fields say, since the decal
  * shader takes its uv from the projection alone. A footprint authoring no depth bias takes
- * `OVERLAY`, which holds it over the ground plane it lies on.
+ * `OVERLAY`, which holds it over the ground plane it lies on. The palette is the particle
+ * shader's, under `PALETTIZE_TEXTURES` of `UNLIT_DECAL_PS`.
  */
 export function projectionMaterial(
   emitter: EmitterModel,
   texture: Texture | null,
   ramp: Texture | null,
+  palette: Texture | null,
   tests: FragmentTests,
 ): ShaderMaterial {
   const state = drawState(emitter.blendMode, false);
@@ -384,12 +395,14 @@ export function projectionMaterial(
       map: { value: texture },
       address: { value: emitter.uv.addressMode },
       mapRamp: { value: ramp },
+      ...paletteUniforms(emitter.palette, palette),
       alphaRef: { value: tests.alphaRef },
       heightFade: { value: [projection?.yRange ?? 0, projection?.fading ?? 0] },
     },
     defines: {
       ...(texture !== null ? { HAS_MAP: "" } : {}),
       ...(ramp !== null ? { HAS_RAMP: "" } : {}),
+      ...paletteDefines(emitter.palette, palette),
     },
     side: DoubleSide,
     depthTest: tests.depthTest,
@@ -421,5 +434,33 @@ export function pickMaterial(solid: ShaderMaterial): ShaderMaterial {
     depthTest: true,
     depthWrite: true,
     blending: NoBlending,
+  });
+}
+
+/**
+ * `solid` drawn into the sun's shadow map, over its uniforms.
+ *
+ * The client's shadow pass writes depth alone, with blending off and the depth test and write
+ * on, and keeps the emitter's `depthBiasFactors`. `eyeView` and `eyePosition` are the scene
+ * camera's, which the pass writes before it draws.
+ */
+export function shadowMaterial(solid: ShaderMaterial): ShaderMaterial {
+  return new ShaderMaterial({
+    vertexShader: solid.vertexShader,
+    fragmentShader: solid.fragmentShader,
+    uniforms: {
+      ...solid.uniforms,
+      eyeView: { value: new Matrix4() },
+      eyePosition: { value: new Vector3() },
+    },
+    defines: { ...solid.defines, SHADOW: "" },
+    side: solid.side,
+    depthTest: true,
+    depthWrite: true,
+    colorWrite: false,
+    blending: NoBlending,
+    polygonOffset: solid.polygonOffset,
+    polygonOffsetFactor: solid.polygonOffsetFactor,
+    polygonOffsetUnits: solid.polygonOffsetUnits,
   });
 }

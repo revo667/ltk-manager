@@ -54,6 +54,8 @@ import {
   maskMaterial,
   meshMaterial,
   pickMaterial,
+  shadowMaterial,
+  projectionMaterial,
   quadMaterial,
   type QuadOrientation,
   ribbonMaterial,
@@ -226,6 +228,7 @@ const PLAIN_LAYERS: QuadLayers = {
   reflectionTexture: null,
   soft: null,
   ground: false,
+  slice: 0,
 };
 
 const PASSING = { alphaRef: 0, depthTest: true };
@@ -452,6 +455,16 @@ describe("ribbonMaterial", () => {
       PASSING,
     );
     expect(unloaded.defines).not.toHaveProperty("HAS_PALETTE");
+
+    const decal = projectionMaterial(
+      emitterFixture(0, { palette }),
+      null,
+      null,
+      new Texture(),
+      PASSING,
+    );
+    expect(decal.defines).toHaveProperty("HAS_PALETTE");
+    expect(decal.uniforms.paletteRow.value).toBe(0.375);
   });
 });
 
@@ -602,6 +615,29 @@ describe("maskMaterial", () => {
   });
 });
 
+describe("shadowMaterial", () => {
+  it("draws the solid's shaders and uniforms under SHADOW, writing depth alone", () => {
+    const solid = quadMaterial(BLEND_MODE.add, null, FLAT, BILLBOARD, PLAIN_LAYERS, PASSING);
+    const shadow = shadowMaterial(solid);
+
+    expect(shadow.vertexShader).toBe(solid.vertexShader);
+    expect(shadow.uniforms.map).toBe(solid.uniforms.map);
+    expect(shadow.defines).toHaveProperty("SHADOW");
+    expect(shadow.defines).toHaveProperty("BILLBOARD");
+    expect(shadow.uniforms).toHaveProperty("eyeView");
+    expect(shadow.uniforms).toHaveProperty("eyePosition");
+    expect(shadow.blending).toBe(NoBlending);
+    expect(shadow.colorWrite).toBe(false);
+    expect(shadow.depthWrite).toBe(true);
+  });
+
+  it("casts in every fragment pass a particle draws with", () => {
+    for (const fragment of [FRAGMENT, RIBBON_FRAGMENT, CUSTOM_FRAGMENT]) {
+      expect(fragment).toContain("#ifdef SHADOW");
+    }
+  });
+});
+
 describe("pickMaterial", () => {
   it("draws the solid's shader and uniform objects under PICK, with a pickId uniform", () => {
     const solid = quadMaterial(BLEND_MODE.add, null, FLAT, BILLBOARD, PLAIN_LAYERS, PASSING);
@@ -683,7 +719,7 @@ describe("quadMaterial defines", () => {
     ).not.toHaveProperty("DIRECTED");
   });
 
-  it("lays a ground-layer emitter on the ground on every draw path", () => {
+  it("draws a ground-layer emitter opaque and in place on every draw path", () => {
     const ground = { ...PLAIN_LAYERS, ground: true };
 
     for (const material of [
@@ -692,11 +728,29 @@ describe("quadMaterial defines", () => {
       attachedMaterial(BLEND_MODE.add, null, [0, 0], ground, PASSING, FrontSide),
       ribbonMaterial(BLEND_MODE.add, null, [0, 0], ground, PASSING),
     ]) {
-      expect(material.defines).toHaveProperty("GROUND_LAYER");
+      expect(material.transparent).toBe(false);
+      expect(material.defines).not.toHaveProperty("GROUND_LAYER");
     }
     expect(
+      quadMaterial(BLEND_MODE.add, null, FLAT, BILLBOARD, PLAIN_LAYERS, PASSING).transparent,
+    ).toBe(true);
+  });
+
+  it("compiles the quad slice on quads and ribbons and the mesh slice on meshes", () => {
+    const sliced = { ...PLAIN_LAYERS, slice: 0.2 };
+
+    expect(
+      quadMaterial(BLEND_MODE.add, null, FLAT, BILLBOARD, sliced, PASSING).defines,
+    ).toMatchObject({ SLICE: 1 });
+    expect(ribbonMaterial(BLEND_MODE.add, null, [0, 0], sliced, PASSING).defines).toMatchObject({
+      SLICE: 1,
+    });
+    expect(
+      meshMaterial(BLEND_MODE.add, null, [0, 0], sliced, PASSING, FrontSide).defines,
+    ).toMatchObject({ SLICE: 2 });
+    expect(
       quadMaterial(BLEND_MODE.add, null, FLAT, BILLBOARD, PLAIN_LAYERS, PASSING).defines,
-    ).not.toHaveProperty("GROUND_LAYER");
+    ).not.toHaveProperty("SLICE");
   });
 
   it("carries HAS_MAP once its texture has arrived", () => {
@@ -774,12 +828,18 @@ describe("layersOf", () => {
 
   describe("under LOCK_ALPHA", () => {
     const erosion = {} as ErosionModel;
+    /* A beam that names a mesh draws as a mesh, so a ribbon beam carries none. */
+    const meshOf = (quadType: QuadType) => (quadType === QUAD_TYPE.beam ? null : EMITTER.mesh);
     const layersFor = (quadType: QuadType, uvMode: UvMode) =>
-      layersOf({ ...EMITTER, erosion, quadType, uvMode } as EmitterModel, SAMPLERS, {
-        ramp: true,
-        sheen: false,
-        fade: true,
-      });
+      layersOf(
+        { ...EMITTER, erosion, quadType, uvMode, mesh: meshOf(quadType) } as EmitterModel,
+        SAMPLERS,
+        {
+          ramp: true,
+          sheen: false,
+          fade: true,
+        },
+      );
 
     it("erodes no quad or ribbon, and draws its ramp instead", () => {
       for (const kind of [

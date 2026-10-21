@@ -4,12 +4,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { Spinner } from "@/components";
-import {
-  useOverscrollSpring,
-  useReducedMotion,
-  useSurfaceLinkedBinWarning,
-  useZoomHotkeys,
-} from "@/hooks";
+import { useOverscrollSpring, useReducedMotion, useZoomHotkeys } from "@/hooks";
 import {
   loadMonoFace,
   loadSansFace,
@@ -29,7 +24,6 @@ import {
 } from "@/modules/launcher";
 import {
   LibraryMigrationDialog,
-  LinkedBinWarningDialog,
   ModHealthSweepListener,
   useLibraryWatcher,
   useModStorageToast,
@@ -98,7 +92,6 @@ function RootLayout() {
   useLibraryWatcher();
   useModStorageToast();
   useAutoStartPatcher();
-  useSurfaceLinkedBinWarning();
   useClearTestingProjectsOnIdle();
   useClearStoppingOnIdle();
   useIncidentListeners();
@@ -108,13 +101,15 @@ function RootLayout() {
   useOverscrollSpring();
   useZoomHotkeys();
 
-  /* Mounted for the rest of the session once the switch has been on, since the
-     lifecycle drops the index when it goes off and cannot do that unmounted. */
+  /* Mounted for the rest of the session once the Workshop has been open with the
+     switch on, since the lifecycle drops the index when the switch goes off and
+     cannot do that unmounted. */
   const searchObjects = useSearchObjects();
-  const [tracksObjectIndex, setTracksObjectIndex] = useState(searchObjects);
+  const inWorkshop = location.pathname.startsWith("/workshop");
+  const [tracksObjectIndex, setTracksObjectIndex] = useState(false);
   useEffect(() => {
-    if (searchObjects) setTracksObjectIndex(true);
-  }, [searchObjects]);
+    if (searchObjects && inWorkshop) setTracksObjectIndex(true);
+  }, [inWorkshop, searchObjects]);
 
   const updateAtLaunch = useUpdaterFoundAtLaunch();
 
@@ -243,7 +238,6 @@ function RootLayout() {
       <ModHealthSweepListener />
       <WadScanFailedDialog />
       <InstallMismatchDialog />
-      <LinkedBinWarningDialog />
       <DiagnosticsNoticeDialog />
       <Suspense fallback={null}>
         <ProtocolInstallDialogLazy />

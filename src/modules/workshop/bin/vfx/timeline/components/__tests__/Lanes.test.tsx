@@ -64,6 +64,7 @@ function system(...emitters: EmitterModel[]): SystemModel {
     hudLayer: false,
     dragMotion: DRAG_MOTION.stepped,
     buildUpTime: 0,
+    stepping: { rate: 30, oncePerFrame: false, everyFrame: true },
   };
 }
 
@@ -129,8 +130,12 @@ function choice(over: Partial<EmitterChoice> = {}): EmitterChoice {
     shown: [],
     aim: vi.fn(),
     chooseCard: vi.fn(),
+    selected: new Set(),
+    pickCards: vi.fn(),
     chooseGroup: vi.fn(),
     chooseChild: vi.fn(),
+    revealed: null,
+    revealRows: vi.fn(),
     mode: "cards",
     setMode: vi.fn(),
     marked: [],
@@ -252,6 +257,14 @@ describe("Lanes", () => {
     await user.click(screen.getByRole("button", { name: /Sparkles/ }));
 
     expect(emitters.chooseCard).toHaveBeenCalledWith("sparkles");
+  });
+
+  it("adds an emitter to the selection on Ctrl", () => {
+    const { emitters } = renderLanes(fakeRun(), choice({ selected: new Set(["sparkles"]) }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Glow/ }), { ctrlKey: true });
+
+    expect(emitters.pickCards).toHaveBeenLastCalledWith(new Set(["sparkles", "glow"]), "glow");
   });
 
   it("hides and solos an emitter by its pool index", async () => {

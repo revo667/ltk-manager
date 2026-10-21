@@ -100,6 +100,50 @@ export function alongInto(direction: Float32Array, at: number, out: Float32Array
 /** How near the world's up a direction comes before its cross stops being a direction. */
 const DEGENERATE = 1e-5;
 
+/**
+ * Writes the row-major 3x3 basis of a beam mesh into `out`, with local `+Z` along `direction`.
+ *
+ * Matches the engine's right-handed look-at between the beam's ends. Local `+X` is the up
+ * vector crossed with `direction`, and local `+Y` completes the frame. The up vector is world
+ * `+Y`. If the squared cross product of `direction` and world `+Y` is at most `BEAM_UPRIGHT`,
+ * the up vector is world `+X`. Writes the identity if `direction` has zero length.
+ */
+export function beamInto(direction: ArrayLike<number>, out: Float32Array): Float32Array {
+  const length = Math.hypot(direction[0], direction[1], direction[2]);
+  if (length === 0) return identityInto(out);
+
+  const zx = direction[0] / length;
+  const zy = direction[1] / length;
+  const zz = direction[2] / length;
+
+  let xx = zz;
+  let xy = 0;
+  let xz = -zx;
+  if (xx * xx + xz * xz <= BEAM_UPRIGHT) {
+    xx = 0;
+    xy = -zz;
+    xz = zy;
+  }
+  const across = Math.hypot(xx, xy, xz);
+  xx /= across;
+  xy /= across;
+  xz /= across;
+
+  out[0] = xx;
+  out[1] = zy * xz - zz * xy;
+  out[2] = zx;
+  out[3] = xy;
+  out[4] = zz * xx - zx * xz;
+  out[5] = zy;
+  out[6] = xz;
+  out[7] = zx * xy - zy * xx;
+  out[8] = zz;
+  return out;
+}
+
+/** Squared cross product length at or below which a beam look-at uses world `+X` as its up vector. */
+const BEAM_UPRIGHT = 1e-9;
+
 /** The unit vector a basis sends `axis` to, written to `out` from `at`. */
 export function axisInto(basis: Float32Array, axis: number, out: Float32Array, at: number): void {
   out[at] = basis[axis];
@@ -158,8 +202,11 @@ export function yawInto(direction: Point, out: Float32Array): Float32Array {
 }
 
 /**
- * The basis a missile flies on, into `out`: local `Y` along `direction` laid flat, local
- * `Z` up and local `X` to its left.
+ * The basis a missile flies on, into `out`: local `Y` along `direction`, local `X` level and
+ * to its left, and local `Z` square to both, which is up for level flight.
+ *
+ * `VfxProxy_SetOrientationFromDirection` of the 16.17 client builds the same rows, so a
+ * missile pitches with its travel. Section 2.56 of docs/plans/vfx-particle-renderer.md.
  *
  * A missile-attached system takes the game object's own matrix rather than one the VFX
  * code builds, so the rig stands in for that object and has to carry its convention.
@@ -171,10 +218,22 @@ export function yawInto(direction: Point, out: Float32Array): Float32Array {
  * is down. A direction with no reach in the plane flies forward.
  */
 export function flightInto(direction: Point, out: Float32Array): Float32Array {
-  const length = Math.hypot(direction[0], direction[2]);
-  const x = length === 0 ? 0 : direction[0] / length;
-  const z = length === 0 ? 1 : direction[2] / length;
-  out.set([-z, x, 0, 0, 0, 1, x, z, 0]);
+  const across = Math.hypot(direction[0], direction[2]);
+  const length = Math.hypot(across, direction[1]);
+  if (length === 0) {
+    out.set([-1, 0, 0, 0, 0, 1, 0, 1, 0]);
+    return out;
+  }
+  if (across === 0 && direction[1] > 0) {
+    out.set([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    return out;
+  }
+
+  /* Local X is level, so a missile flying straight up keeps the last facing's left. */
+  const [dx, dy, dz] = [direction[0] / length, direction[1] / length, direction[2] / length];
+  const [lx, lz] = across === 0 ? [-1, 0] : [-direction[2] / across, direction[0] / across];
+  const [ux, uy, uz] = [-dy * lz, lz * dx - lx * dz, lx * dy];
+  out.set([lx, dx, ux, 0, dy, uy, lz, dz, uz]);
   return out;
 }
 

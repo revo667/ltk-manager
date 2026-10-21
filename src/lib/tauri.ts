@@ -10,6 +10,7 @@ import type {
   MaterialSource,
   ParticleDefine,
   ParticleShader,
+  PreviewMaterial,
   ProgramOptions,
   SandboxRef,
   ProjectMetadata,
@@ -156,7 +157,6 @@ export const api = {
   stopPatcher: patcher.stopPatcher,
   rebuildOverlay: patcher.rebuildOverlay,
   getPatcherStatus: patcher.getPatcherStatus,
-  getLinkedBinOffenders: patcher.getLinkedBinOffenders,
   getChecksumMismatches: patcher.getChecksumMismatches,
 
   // Launcher
@@ -281,6 +281,8 @@ export const api = {
     classDocs: bin.classDocs,
     syncMetaDocs: bin.syncMetaDocs,
     readVfxSystem: preview.readVfxSystem,
+    vfxChildTargets: preview.vfxChildTargets,
+    vfxMissileSpells: preview.vfxMissileSpells,
     vfxTemplates: preview.vfxTemplates,
     readUiView: atlas.readUiView,
     readUiSceneView: atlas.readUiSceneView,
@@ -309,6 +311,7 @@ export const api = {
     ) => atlas.atlasPatchSprite(document, page, [...uv], source),
     atlasSheet: atlas.atlasSheet,
     readSkin: preview.readSkin,
+    locateModSkin: preview.locateModSkin,
     readMaterialPrograms: (
       source: MaterialSource,
       entries: readonly string[],
@@ -319,6 +322,13 @@ export const api = {
         entries.map((entry) => ({ kind: "object" as const, entry })),
         options,
       ),
+    readShaderProgram: (
+      document: BinDocumentId,
+      entry: string,
+      material: PreviewMaterial | null,
+      defines: readonly string[],
+      options: ProgramOptions,
+    ) => preview.readShaderProgram(document, entry, material, [...defines], options),
     readEmbeddedMaterialProgram: (
       source: MaterialSource,
       entry: string,
@@ -347,6 +357,17 @@ export const api = {
     readMapCharacters: preview.readMapCharacters,
     readMapVariants: preview.readMapVariants,
     readMapOutline: preview.readMapOutline,
+    readMapNameReferences: preview.readMapNameReferences,
+    mapGeometryOpen: preview.mapGeometryOpen,
+    mapGeometryClose: preview.mapGeometryClose,
+    mapGeometryMeshes: preview.mapGeometryMeshes,
+    mapGeometryEdit: preview.mapGeometryEdit,
+    mapGeometryStep: preview.mapGeometryStep,
+    mapGeometrySave: preview.mapGeometrySave,
+    mapGeometryExport: preview.mapGeometryExport,
+    mapGeometryReimportInspect: preview.mapGeometryReimportInspect,
+    mapImportInspect: preview.mapImportInspect,
+    mapImportMaterials: preview.mapImportMaterials,
     locateFilesNear: (sandbox: SandboxRef, paths: readonly string[]) =>
       preview.locateFilesNear(sandbox, [...paths]),
     locateMapFiles: preview.locateMapFiles,
@@ -448,6 +469,8 @@ export const api = {
   // Workshop
   getWorkshopProjects: workshop.getWorkshopProjects,
   createWorkshopProject: (args: CreateProjectArgs) => workshop.createProject({ kind: "new", args }),
+  listMapStarts: workshop.listMapStarts,
+  createMapProject: workshop.createMapProject,
   getWorkshopProject: workshop.getWorkshopProject,
   getProjectContentTree: workshop.getProjectContentTree,
   saveProjectConfig: ({ projectPath, ...metadata }: SaveProjectConfigArgs) =>

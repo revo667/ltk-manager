@@ -13,8 +13,10 @@ import type { BinRow, FieldSchema } from "@/lib/tauri";
 import { twMerge } from "@/utils";
 
 import { useClassSchema } from "../../../classes/hooks/useClassSchema";
+import { CHILD_SET } from "../../children/childModel";
 import { DefaultProperty } from "../../inspector/components/DefaultProperty";
 import type { HeldClass } from "../../inspector/components/PrimitivePicker";
+import { SHAPE_FIELD } from "../../inspector/utils/emissionSource";
 import { defaultField } from "../../inspector/utils/emitterGroups";
 import { emitterLabel } from "../../inspector/utils/emitterLabels";
 import { PRIMITIVE_FIELD } from "../../inspector/utils/primitives";
@@ -28,9 +30,9 @@ import { fieldAlias, groupTitle, inputSummary, itemSubtitle, itemTitle } from ".
 import { outputTop } from "../utils/outputSocket";
 import { componentInput, componentOf, drawnInSection } from "../utils/renderSection";
 import { embeddedLists, embeddedValues, embedsList } from "../utils/socketEmbed";
+import { PendingChildrenLine } from "./ChildLines";
 import { ClassAction } from "./ClassAction";
 import { EmitterRunToggles, useRunPresence } from "./EmitterRunToggles";
-import { EmitterToggle } from "./EmitterToggle";
 import {
   ClassLine,
   EntryLines,
@@ -55,6 +57,7 @@ import { EMBED_TONE, hueStyle, NodeFrame } from "./NodeFrame";
 import { PrimitiveSketch } from "./NodePreviews";
 import { useCardFollowsPick } from "./paneSync";
 import { ShapeInViewButton } from "./ShapeOverlay";
+import { ShapeLine } from "./ShapeSection";
 import { EmbedBackButton, PopOutButton } from "./SocketEmbed";
 import { ShapePreview } from "./SpawnPreview";
 import { AddItemLine } from "./StructureLines";
@@ -96,7 +99,6 @@ export function MasterNodeView({ data, selected }: NodeProps<MasterFlowNode>) {
           <>
             <EmitterAdd item={item} />
             <EmitterRunToggles presence={presence} />
-            <EmitterToggle wire={item.wire} disabled={item.disabled} />
           </>
         }
       />
@@ -197,9 +199,13 @@ export function MasterLine({
   const list = field.input === null ? undefined : lists?.get(field.input.id);
   if (list !== undefined) return <EmbeddedList list={list} label={label} nameWidth={nameWidth} />;
   if (field.input !== null) return <SocketLine input={field.input} label={label} />;
+  if (field.pending && field.hash === CHILD_SET)
+    return <PendingChildrenLine emitterPath={holder.path} />;
   if (field.pending && field.hash === PRIMITIVE_FIELD) {
     return <PrimitiveLine label={label} holder={holder} held={null} />;
   }
+  if (field.pending && field.hash === SHAPE_FIELD)
+    return <ShapeLine label={label} holder={holder} />;
   if (field.pending && declared?.declared?.kind === "pointer") {
     return (
       <ClassLine

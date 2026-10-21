@@ -13,6 +13,7 @@ import type { ParticleDefine, ParticleShader, PassParam, PassProgram } from "@/l
 import {
   blackCube,
   blackTexel,
+  borderProgramTexture,
   createProgramMaterial,
   type EngineEnvironment,
   type ReadyProgram,
@@ -71,7 +72,7 @@ export function particleShaderOf(emitter: EmitterModel): ParticlePair {
 
   if (emitter.erosion !== null) defines.push("ALPHA_EROSION");
   if (emitter.multUv !== null) defines.push("MULT_PASS");
-  if (emitter.palette !== null) defines.push("PALETTIZE_TEXTURES");
+  if (drawsPalette(emitter.palette)) defines.push("PALETTIZE_TEXTURES");
   if (emitter.soft !== null) defines.push("SOFT_PARTICLES");
   if (emitter.reflection !== null) defines.push("REFLECTIVE");
 
@@ -114,8 +115,8 @@ const PATH_PAIRS: Readonly<Record<ParticlePath, readonly ParticleShader[]>> = {
 /**
  * The emitter's particles can draw on `path` through the translated `pair`.
  *
- * A custom material draws through the programs it names. A palette without rows or a texture has
- * no engine texture to replace it.
+ * A custom material draws through the programs it names. A slice draws through the
+ * hand-written material, since no slice pair is translated.
  */
 export function drawsProgram(
   emitter: EmitterModel,
@@ -123,9 +124,8 @@ export function drawsProgram(
   path: ParticlePath,
 ): boolean {
   if (!PATH_PAIRS[path].includes(pair.shader)) return false;
-  if (emitter.customMaterial != null && !emitter.customMaterial.missing) return false;
-
-  return emitter.palette === null || drawsPalette(emitter.palette);
+  if (emitter.sliceRange > 0) return false;
+  return emitter.customMaterial == null || emitter.customMaterial.missing;
 }
 
 /**
@@ -149,54 +149,94 @@ export interface ParticleDraw {
  * A pair names the ones it samples. An erosion with no map reads white and a named map
  * that is missing reads transparent black, as does a missing normal map, which warps
  * nothing.
+ *
+ * Each samples at its layer's address mode. The colour ramp is always clamped, and the
+ * normal map takes the base layer's mode.
  */
 export function particleTextures(
   emitter: EmitterModel,
   samplers: EmitterSamplers,
 ): ReadonlyMap<string, Texture> | null {
   if (samplers.base === null) return null;
-  if (emitter.palette !== null && samplers.palette === null) return null;
+  if (drawsPalette(emitter.palette) && samplers.palette === null) return null;
 
+  const modes = addressModes(emitter);
   const erosion =
     emitter.erosion === null || emitter.erosion.map === null
       ? whiteTexel()
-      : (samplers.erosion ?? blackTexel());
-  const textures: Record<string, Texture> = {
-    TEXTURE: samplers.base,
-    TEXTUREMULT: samplers.mult ?? whiteTexel(),
-    PARTICLE_COLOR_TEXTURE: samplers.color ?? whiteTexel(),
-    sPalettesTexture: samplers.palette ?? whiteTexel(),
+      : (addressed(samplers.erosion, modes.sAlphaErosionTexture) ?? blackTexel());
+  const textures: Record<keyof typeof modes, Texture> = {
+    TEXTURE: addressed(samplers.base, modes.TEXTURE),
+    TEXTUREMULT: addressed(samplers.mult, modes.TEXTUREMULT) ?? whiteTexel(),
+    PARTICLE_COLOR_TEXTURE: addressed(samplers.color, modes.PARTICLE_COLOR_TEXTURE) ?? whiteTexel(),
+    sPalettesTexture: addressed(samplers.palette, modes.sPalettesTexture) ?? whiteTexel(),
     sAlphaErosionTexture: erosion,
-    NORMAL_MAP: samplers.normal ?? blackTexel(),
+    NORMAL_MAP: addressed(samplers.normal, modes.NORMAL_MAP) ?? blackTexel(),
   };
   return new Map(Object.entries(textures));
 }
 
-/**
- * Each layer's texture sampled at the layer's address mode, which the engine sets on the
- * sampler and the hand-written quad folds into the coordinate itself.
- *
- * Only the address changes, since a filter asking for mipmaps would leave a texture loaded
- * without them incomplete. Border has no GL mode and clamps to the edge. The texture cache
- * shares a texture across emitters, so one two emitters address differently takes the last
- * emitter's mode.
- */
-function applyAddressModes(emitter: EmitterModel, samplers: EmitterSamplers): void {
-  const layers: readonly (readonly [Texture | null, AddressMode | undefined])[] = [
-    [samplers.base, emitter.uv.addressMode],
-    [samplers.mult, emitter.multUv?.addressMode],
-    [samplers.palette, emitter.palette?.addressMode],
-    [samplers.erosion, emitter.erosion?.addressMode],
-  ];
-  for (const [texture, mode] of layers) {
-    if (texture === null || mode === undefined) continue;
+/** The address mode each engine texture of `emitter` samples at, by the bytecode's name. */
+function addressModes(emitter: EmitterModel) {
+  const base = emitter.uv.addressMode;
+  return {
+    TEXTURE: base,
+    TEXTUREMULT: emitter.multUv?.addressMode ?? ADDRESS_MODE.wrap,
+    PARTICLE_COLOR_TEXTURE: ADDRESS_MODE.clamp,
+    sPalettesTexture: emitter.palette?.addressMode ?? ADDRESS_MODE.mirror,
+    sAlphaErosionTexture: emitter.erosion?.addressMode ?? ADDRESS_MODE.clamp,
+    NORMAL_MAP: base,
+  } satisfies Record<string, AddressMode>;
+}
 
-    const wrap = WRAPPING[mode];
-    if (texture.wrapS === wrap && texture.wrapT === wrap) continue;
-    texture.wrapS = wrap;
-    texture.wrapT = wrap;
-    texture.needsUpdate = true;
+/** The engine textures `emitter` samples under a border address mode, by the bytecode's name. */
+export function borderedTextures(emitter: EmitterModel): string[] {
+  return Object.entries(addressModes(emitter))
+    .filter(([, mode]) => mode === ADDRESS_MODE.border)
+    .map(([name]) => name);
+}
+
+/** The copies of a cached texture, one per wrap other than the texture's own. */
+const ADDRESSED = new WeakMap<Texture, Map<Wrapping, Texture>>();
+
+/**
+ * `texture` sampled at `mode`, which the engine sets on the sampler and the hand-written
+ * quad folds into the coordinate itself.
+ *
+ * The texture cache shares one texture across every emitter and slot naming its file, so a
+ * mode other than the texture's own samples a copy that shares its image. The copy is
+ * disposed when the cached texture is disposed. Only the address changes, since a filter
+ * asking for mipmaps would leave a texture loaded without them incomplete.
+ *
+ * Border has no GL mode. It clamps to the edge here, and `borderProgramTexture` makes the
+ * pixel stage read transparent black outside the texture.
+ */
+function addressed(texture: Texture, mode: AddressMode): Texture;
+function addressed(texture: Texture | null, mode: AddressMode): Texture | null;
+function addressed(texture: Texture | null, mode: AddressMode): Texture | null {
+  const wrap = WRAPPING[mode];
+  if (texture === null || (texture.wrapS === wrap && texture.wrapT === wrap)) return texture;
+
+  const copies = ADDRESSED.get(texture) ?? new Map<Wrapping, Texture>();
+  if (!ADDRESSED.has(texture)) {
+    ADDRESSED.set(texture, copies);
+    texture.addEventListener("dispose", () => {
+      for (const copy of copies.values()) copy.dispose();
+      copies.clear();
+    });
   }
+
+  const held = copies.get(wrap);
+  if (held !== undefined) return held;
+
+  /* shortcut: the image uploads once more per wrap where the hand-written material also drew
+     the cached texture, key the texture cache by wrap when that memory matters. */
+  const copy = texture.clone();
+  copy.wrapS = wrap;
+  copy.wrapT = wrap;
+  copy.needsUpdate = true;
+  copies.set(wrap, copy);
+  return copy;
 }
 
 const WRAPPING: Record<AddressMode, Wrapping> = {
@@ -312,12 +352,12 @@ export function particleProgramMaterial(
 ): RawShaderMaterial {
   const layers = layersOf(emitter, samplers, EVERY_LAYER);
   const pass = { ...read.pass, params: particleParams(emitter, layers) };
-  applyAddressModes(emitter, samplers);
   const material = createProgramMaterial(
     { material: "", index: 0, pass, program: read.program, textures },
     environment,
     draw.prelude,
   );
+  for (const name of borderedTextures(emitter)) borderProgramTexture(material, name);
 
   const bound: Record<string, Texture | null> = {
     [SCENE_DEPTH_SAMPLER]: depth,

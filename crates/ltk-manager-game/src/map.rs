@@ -20,23 +20,34 @@ use crate::material::{MaterialPreview, resolve_material};
 mod characters;
 mod component;
 mod controllers;
+mod custom_skin;
 #[cfg(test)]
 mod fixtures;
+mod flags;
+mod grass;
 mod lighting;
 mod outline;
 mod particles;
 mod placeable;
 mod post_effects;
+mod references;
 mod ssao;
 mod sun;
 mod variants;
 
 pub use characters::{MapCharacter, map_characters};
 pub use controllers::{MapController, MapControllerRule, MapParentMode, map_controllers};
+pub use custom_skin::{
+    MapSkinContainer, custom_skin_path, map_skin_containers, moved_container, shipping_bin_path,
+    skin_link_declarations, state_meshes,
+};
+pub use flags::{MapFlag, map_bin_path, map_flags};
+pub use grass::{MapBounds, MapGrassAlternate, MapGrassTint, map_bounds, map_grass_tints};
 pub use lighting::light_grid_path;
-pub use outline::{MapChunk, MapChunkItem, MapItemKind, map_outline};
+pub use outline::{MapChunk, MapChunkItem, MapItemKind, MapItemShape, map_outline};
 pub use particles::{MapParticle, map_particles};
 pub use post_effects::{MapDepthOfField, MapFog, MapPostEffects, map_post_effects};
+pub use references::{MapNameReference, map_name_references};
 pub use ssao::{MapSsao, map_ssao};
 pub use sun::{MapSun, map_sun};
 pub use variants::{MapVariant, map_variants};
@@ -124,6 +135,9 @@ pub struct MapModel {
     /// Every visibility controller that the map's `.materials.bin` declares. A mesh of the
     /// `LTKM` buffer and a placeable reference a controller by its path hash.
     pub controllers: Vec<MapController>,
+    /// The visibility flags that the map's `Map` object names. Empty if nothing holds that
+    /// object or it names none.
+    pub flags: Vec<MapFlag>,
     /// Null where the map's container states no sun, which a backdrop lights with a default.
     pub sun: Option<MapSun>,
     /// Null where the map's container states no post effects, which no shipped map does.
@@ -133,6 +147,11 @@ pub struct MapModel {
     /// The `LightGrid.dat` the map lights its characters with, and null where it bakes
     /// none or nothing holds it.
     pub light_grid: Option<AssetRef>,
+    /// The grass tint of each skin that links the map, in file order. Empty until the caller
+    /// reads the map's own bin, which holds the skins.
+    pub grass_tints: Vec<MapGrassTint>,
+    /// Null where the map's container states no bounds.
+    pub bounds: Option<MapBounds>,
 }
 
 /// The materials `paths` name, the visibility controllers and the lighting and screen effects of
@@ -159,10 +178,13 @@ pub fn resolve_map(
             })
             .collect(),
         controllers: map_controllers(materials, names),
+        flags: Vec::new(),
         sun: map_sun(materials, map),
         post_effects: map_post_effects(materials, map),
         ssao: map_ssao(materials, map),
         light_grid: light_grid_path(materials, map).and_then(|path| assets.locate(path)),
+        grass_tints: Vec::new(),
+        bounds: map_bounds(materials, map),
     }
 }
 
@@ -173,10 +195,13 @@ pub fn unresolved_map(paths: &[String]) -> MapModel {
     MapModel {
         materials: paths.iter().map(|_| None).collect(),
         controllers: Vec::new(),
+        flags: Vec::new(),
         sun: None,
         post_effects: None,
         ssao: None,
         light_grid: None,
+        grass_tints: Vec::new(),
+        bounds: None,
     }
 }
 

@@ -7,12 +7,13 @@ use ltk_hash::BinHash;
 use ltk_meta::{Bin, BinFile, PropertyValueEnum};
 use serde::{Deserialize, Serialize};
 
+use super::clipboard::Landing;
 use super::edit::Edit;
 use super::properties::{field_path, with_holder};
 use super::typed_names::TypedNames;
 use super::{
-    BinDocument, BinDocumentError, EditRejection, LeafValue, NewItem, NewProperty, Node, Step,
-    descend, hex, parse_steps,
+    BinDocument, BinDocumentError, EditRejection, LeafValue, NewItem, NewObject, NewProperty, Node,
+    Step, descend, hex, parse_steps,
 };
 use crate::meta_schema::SchemaAt;
 use crate::object_index::parse_hash;
@@ -34,6 +35,15 @@ pub struct PropertyEdit {
     pub edits: Vec<ValueEdit>,
 }
 
+/// A new object of [`BinDocument::create_and_edit`]: its name and where it starts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct ObjectCreation {
+    pub name: String,
+    pub origin: NewObject,
+}
+
 /// One staged edit, addressed relative to its enclosing property.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -52,22 +62,29 @@ pub enum ValueEdit {
     ReplacePointer { path: String, class: Option<String> },
     /// Insert an item into a list, map or option.
     InsertItem { path: String, item: NewItem },
-    /// Insert a copy of the item at `from` into the list at `path`, at `index` or the end.
-    /// `unique` names a string field whose text the copy makes unique among the object's
+    /// Insert a copy of the item at `from` into the list or map at `path`, at `index` or the
+    /// end. `unique` names a string field whose text the copy makes unique among the object's
     /// list items.
     CopyItem {
         from: String,
         path: String,
         index: Option<usize>,
         unique: Option<String>,
+        /// The copy's key where `path` is a map, spelled as [`NewItem::key`] spells one.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts", specta(optional))]
+        key: Option<String>,
     },
-    /// Insert the value clipboard `text` carries into the list at `path`, at `index` or the
-    /// end, with `unique` as for [`ValueEdit::CopyItem`].
+    /// Insert the value clipboard `text` carries into the list or map at `path`, at `index` or
+    /// the end, with `unique` and `key` as for [`ValueEdit::CopyItem`].
     PasteItem {
         path: String,
         index: Option<usize>,
         text: String,
         unique: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts", specta(optional))]
+        key: Option<String>,
     },
     /// Remove an item from a list, map or option.
     RemoveItem { path: String },
@@ -105,7 +122,24 @@ impl BinDocument {
         edits: Vec<PropertyEdit>,
         schema: SchemaAt<'_>,
     ) -> Result<(), BinDocumentError> {
-        if edits.is_empty() || edits.len() > MAX_GROUPED_PROPERTIES {
+        self.create_and_edit(&[], edits, schema)
+    }
+
+    /// Creates `objects`, then stages `edits`, and records both as one undoable change. A
+    /// declared document folds their declarations into one step. If any edit is refused, every
+    /// object and edit of the call is reverted.
+    ///
+    /// # Errors
+    ///
+    /// As [`BinDocument::create_object`] and [`BinDocument::edit_properties`].
+    pub fn create_and_edit(
+        &mut self,
+        objects: &[ObjectCreation],
+        edits: Vec<PropertyEdit>,
+        schema: SchemaAt<'_>,
+    ) -> Result<(), BinDocumentError> {
+        let count = objects.len() + edits.len();
+        if count == 0 || count > MAX_GROUPED_PROPERTIES {
             return Err(BinDocumentError::EditRejected {
                 address: String::new(),
                 rejection: EditRejection::InvalidShape,
@@ -114,6 +148,9 @@ impl BinDocument {
 
         if self.declares() {
             return self.declared_group(|document| {
+                for object in objects {
+                    document.create_object(&object.name, &object.origin)?;
+                }
                 edits.into_iter().try_for_each(|edit| {
                     let entry = entry_of(&edit)?;
                     document.edit_property(entry, &edit.holder, &edit.field, edit.edits, schema)
@@ -121,24 +158,43 @@ impl BinDocument {
             });
         }
 
-        let mut inverses = Vec::with_capacity(edits.len());
-        for edit in edits {
-            let changed = entry_of(&edit).and_then(|entry| {
-                self.change_property(entry, &edit.holder, &edit.field, edit.edits, schema)
-            });
-            match changed {
-                Ok(inverse) => inverses.push(inverse),
-                Err(error) => {
-                    for inverse in inverses.into_iter().rev() {
-                        self.apply(inverse)?;
-                    }
-                    return Err(error);
-                }
+        let mut inverses = Vec::with_capacity(count);
+        if let Err(error) = self.stage_group(objects, edits, schema, &mut inverses) {
+            for inverse in inverses.into_iter().rev() {
+                self.apply(inverse)?;
             }
+            return Err(error);
         }
 
         inverses.reverse();
         self.record(Edit::Group { edits: inverses })
+    }
+
+    /// Creates `objects` and stages `edits` in a document that writes its own bytes, pushing
+    /// the edit that reverts each one onto `inverses`.
+    fn stage_group(
+        &mut self,
+        objects: &[ObjectCreation],
+        edits: Vec<PropertyEdit>,
+        schema: SchemaAt<'_>,
+        inverses: &mut Vec<Edit>,
+    ) -> Result<(), BinDocumentError> {
+        for object in objects {
+            let (_, inverse) = self.put_owned_object(&object.name, &object.origin)?;
+            inverses.push(inverse);
+        }
+
+        for edit in edits {
+            let entry = entry_of(&edit)?;
+            inverses.push(self.change_property(
+                entry,
+                &edit.holder,
+                &edit.field,
+                edit.edits,
+                schema,
+            )?);
+        }
+        Ok(())
     }
 
     /// Apply the staged edits under one property, answering the edit that reverts them.
@@ -206,20 +262,30 @@ impl BinDocument {
                     path,
                     index,
                     unique,
+                    key,
                 } => {
                     let path = relative_path(&scope, &path);
-                    let unique = unique_field(entry, &path, unique.as_deref())?;
-                    staged.copy_item(entry, &relative_path(&scope, &from), &path, index, unique)?;
+                    let landing = Landing {
+                        index,
+                        key: key.as_deref(),
+                        unique: unique_field(entry, &path, unique.as_deref())?,
+                    };
+                    staged.copy_item(entry, &relative_path(&scope, &from), &path, landing)?;
                 }
                 ValueEdit::PasteItem {
                     path,
                     index,
                     text,
                     unique,
+                    key,
                 } => {
                     let path = relative_path(&scope, &path);
-                    let unique = unique_field(entry, &path, unique.as_deref())?;
-                    staged.paste_item(entry, &path, index, &text, unique, schema)?;
+                    let landing = Landing {
+                        index,
+                        key: key.as_deref(),
+                        unique: unique_field(entry, &path, unique.as_deref())?,
+                    };
+                    staged.paste_item(entry, &path, landing, &text, schema)?;
                 }
                 ValueEdit::RemoveItem { path } => {
                     staged.remove_item(entry, &relative_path(&scope, &path))?;

@@ -51,6 +51,21 @@ fn schema() -> MetaSchema {
     MetaSchema::parse(json.as_bytes()).expect("the fixture is the published shape")
 }
 
+#[test]
+fn open_tree_reads_the_open_asset_and_none_for_another() {
+    let (store, _id) = open(layer());
+    let other = AssetRef::Layer {
+        project: "p".to_owned(),
+        layer: "base".to_owned(),
+        path: "b.bin".to_owned(),
+    };
+
+    let read = store.open_tree(&SandboxRef::Game, &layer());
+
+    assert!(read.is_some_and(|document| document.object_at(h(OBJECT)).is_some()));
+    assert!(store.open_tree(&SandboxRef::Game, &other).is_none());
+}
+
 /// A store holding the fixture over `asset`, and the id it answered.
 fn open(asset: AssetRef) -> (BinDocuments, BinDocumentId) {
     let store = BinDocuments::default();
@@ -228,7 +243,7 @@ fn a_dependency_edit_reaches_the_list() {
 }
 
 #[test]
-fn an_object_edit_and_a_module_action_refuse_as_their_store_methods_do() {
+fn an_object_restore_and_a_module_action_refuse_as_their_store_methods_do() {
     let schema = schema();
     let (store, id) = open(layer());
 
@@ -236,13 +251,13 @@ fn an_object_edit_and_a_module_action_refuse_as_their_store_methods_do() {
         .apply(
             id,
             BinEdit::Object {
-                edit: ObjectEdit::Remove { entry: entry() },
+                edit: ObjectEdit::Restore { entry: entry() },
             },
             schema.at(None),
         )
         .unwrap_err();
     let direct = store
-        .edit(id, |open| open.remove_object(h(OBJECT)))
+        .edit(id, |open| open.restore_object(h(OBJECT)))
         .unwrap_err();
     assert_eq!(routed.to_string(), direct.to_string());
 

@@ -36,7 +36,13 @@ vi.mock("../../state/emitterChoice", () => ({
   }),
 }));
 
-vi.mock("../../utils/emitterCards", () => ({ nameOf: () => "Spark" }));
+vi.mock("../../utils/emitterName", () => ({
+  emitterRef: (card: { row: { entry: string; path: string } }) => ({
+    entry: card.row.entry,
+    wire: card.row.path,
+    name: "Spark",
+  }),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -96,6 +102,8 @@ describe("InspectorActions", () => {
     expect(screen.getByRole("menuitem", { name: "Paste" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
 
-    expect(clipboard.remove).toHaveBeenCalledWith({ entry: "0x1", wire: "list[0]", name: "Spark" });
+    expect(clipboard.remove).toHaveBeenCalledWith([
+      { entry: "0x1", wire: "list[0]", name: "Spark" },
+    ]);
   });
 });

@@ -5,6 +5,7 @@ import type { SceneClock } from "@/modules/viewport";
 
 import { speedDetent } from "../../vfx/playback/components/Transport";
 import { FRAME } from "../../vfx/playback/state/run";
+import { ignoredKey } from "../../vfx/playback/utils/ignoredKey";
 
 /** How many frames Shift and an arrow move, which is a tenth of a second. */
 const SHIFT_FRAMES = 6;
@@ -50,7 +51,7 @@ export function useSkinKeys(keys: SkinKeys): RefObject<HTMLDivElement | null> {
   return useHotkeys<HTMLDivElement>(
     Object.keys(KEYS).join(", "),
     (_, handler) => KEYS[handler.hotkey]?.(keys),
-    { preventDefault: true },
+    { preventDefault: true, ignoreEventWhen: ignoredKey },
     [keys],
   );
 }
