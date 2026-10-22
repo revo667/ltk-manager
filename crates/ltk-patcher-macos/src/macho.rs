@@ -13,12 +13,25 @@ pub const CPU_TYPE_X86_64: u32 = 0x0100_0007;
 
 const LC_SEGMENT_64: u32 = 0x19;
 const LC_DYLD_INFO: u32 = 0x22;
+const LC_DYLD_CHAINED_FIXUPS: u32 = 0x8000_0034;
+
+const DYLD_CHAINED_IMPORT: u32 = 1;
+const DYLD_CHAINED_IMPORT_ADDEND: u32 = 2;
+const DYLD_CHAINED_IMPORT_ADDEND64: u32 = 3;
+
+const DYLD_CHAINED_PTR_ARM64E: u16 = 1;
+const DYLD_CHAINED_PTR_64: u16 = 2;
+const DYLD_CHAINED_PTR_64_OFFSET: u16 = 6;
+const DYLD_CHAINED_PTR_ARM64E_USERLAND: u16 = 9;
+const DYLD_CHAINED_PTR_ARM64E_USERLAND24: u16 = 12;
+const DYLD_CHAINED_PTR_START_NONE: u16 = 0xFFFF;
 
 #[derive(Debug)]
 pub enum MachOError {
     Truncated,
     NoSliceForArch,
     BadOpcode(u8),
+    UnsupportedChainFormat(u16),
 }
 
 impl std::fmt::Display for MachOError {
@@ -27,6 +40,9 @@ impl std::fmt::Display for MachOError {
             MachOError::Truncated => write!(f, "Mach-O truncated"),
             MachOError::NoSliceForArch => write!(f, "no Mach-O slice for this architecture"),
             MachOError::BadOpcode(op) => write!(f, "unknown bind opcode {op:#x}"),
+            MachOError::UnsupportedChainFormat(format) => {
+                write!(f, "unsupported chained pointer format {format}")
+            }
         }
     }
 }
@@ -58,6 +74,13 @@ impl<'a> Stream<'a> {
         let b = *self.data.get(self.pos).ok_or(MachOError::Truncated)?;
         self.pos += 1;
         Ok(b)
+    }
+
+    fn u16(&mut self) -> Result<u16> {
+        let end = self.pos + 2;
+        let bytes = self.data.get(self.pos..end).ok_or(MachOError::Truncated)?;
+        self.pos = end;
+        Ok(u16::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     fn u32(&mut self) -> Result<u32> {
@@ -139,6 +162,8 @@ pub struct MachO {
     slice: Vec<u8>,
     segments: Vec<Segment>,
     binding_lazy: HashMap<String, BindingLazy>,
+    /// The vmaddr of every pointer a chained fixup binds, by symbol name.
+    chained_binds: HashMap<String, u64>,
     /// Maps an imported-symbol pointer address to the `__stubs` entry that
     /// jumps through it.
     stub_refs: HashMap<u64, u64>,
@@ -179,6 +204,7 @@ impl MachO {
             slice,
             segments: Vec::new(),
             binding_lazy: HashMap::new(),
+            chained_binds: HashMap::new(),
             stub_refs: HashMap::new(),
         };
         this.read_load_commands(cputype)?;
@@ -202,6 +228,7 @@ impl MachO {
         let _sizeofcmds = s.u32()?;
         let _flags = s.u32()?;
         let _reserved = s.u32()?;
+        let mut chained_fixups: Option<(usize, usize)> = None;
 
         for _ in 0..ncmds {
             let cmd_start = s.pos;
@@ -282,6 +309,11 @@ impl MachO {
                         self.read_binding_lazy(bytes)?;
                     }
                 }
+                LC_DYLD_CHAINED_FIXUPS => {
+                    let dataoff = s.u32()? as usize;
+                    let datasize = s.u32()? as usize;
+                    chained_fixups = Some((dataoff, datasize));
+                }
                 _ => {}
             }
 
@@ -290,6 +322,117 @@ impl MachO {
             s.pos = cmd_start + cmdsize;
             if s.pos > slice.len() {
                 return Err(MachOError::Truncated);
+            }
+        }
+        if let Some((dataoff, datasize)) = chained_fixups {
+            let end = dataoff.checked_add(datasize).ok_or(MachOError::Truncated)?;
+            let bytes = slice.get(dataoff..end).ok_or(MachOError::Truncated)?;
+            self.read_chained_fixups(slice, bytes)?;
+        }
+        Ok(())
+    }
+
+    /// Walks every chain of an `LC_DYLD_CHAINED_FIXUPS` image and records where
+    /// each bind lands, the counterpart of the lazy bindings older linkers emit.
+    fn read_chained_fixups(&mut self, slice: &[u8], fixups: &[u8]) -> Result<()> {
+        let mut header = Stream::new(fixups);
+        let _fixups_version = header.u32()?;
+        let starts_offset = header.u32()? as usize;
+        let imports_offset = header.u32()? as usize;
+        let symbols_offset = header.u32()? as usize;
+        let imports_count = header.u32()? as usize;
+        let imports_format = header.u32()?;
+        let _symbols_format = header.u32()?;
+
+        let symbols = fixups.get(symbols_offset..).ok_or(MachOError::Truncated)?;
+        let mut imports = Stream::new(fixups.get(imports_offset..).ok_or(MachOError::Truncated)?);
+        let mut names = Vec::with_capacity(imports_count);
+        for _ in 0..imports_count {
+            let name_offset = match imports_format {
+                DYLD_CHAINED_IMPORT => imports.u32()? >> 9,
+                DYLD_CHAINED_IMPORT_ADDEND => {
+                    let import = imports.u32()?;
+                    let _addend = imports.u32()?;
+                    import >> 9
+                }
+                DYLD_CHAINED_IMPORT_ADDEND64 => {
+                    let import = imports.u64()?;
+                    let _addend = imports.u64()?;
+                    (import >> 32) as u32
+                }
+                _ => return Err(MachOError::Truncated),
+            };
+            let mut name = Stream::new(
+                symbols
+                    .get(name_offset as usize..)
+                    .ok_or(MachOError::Truncated)?,
+            );
+            names.push(name.zstring()?);
+        }
+
+        let mut starts = Stream::new(fixups.get(starts_offset..).ok_or(MachOError::Truncated)?);
+        let seg_count = starts.u32()? as usize;
+        let mut seg_info_offsets = Vec::with_capacity(seg_count);
+        for _ in 0..seg_count {
+            seg_info_offsets.push(starts.u32()? as usize);
+        }
+
+        for (seg_index, seg_info_offset) in seg_info_offsets.into_iter().enumerate() {
+            if seg_info_offset == 0 {
+                continue;
+            }
+            let Some(segment) = self.segments.get(seg_index) else {
+                continue;
+            };
+            let (vmaddr, fileoff) = (segment.vmaddr, segment.fileoff);
+            let mut info = Stream::new(
+                fixups
+                    .get(starts_offset + seg_info_offset..)
+                    .ok_or(MachOError::Truncated)?,
+            );
+            let _size = info.u32()?;
+            let page_size = u64::from(info.u16()?);
+            let pointer_format = info.u16()?;
+            let _segment_offset = info.u64()?;
+            let _max_valid_pointer = info.u32()?;
+            let page_count = info.u16()?;
+
+            let (stride, ordinal_bits) = match pointer_format {
+                DYLD_CHAINED_PTR_64 | DYLD_CHAINED_PTR_64_OFFSET => (4u64, 24u32),
+                DYLD_CHAINED_PTR_ARM64E | DYLD_CHAINED_PTR_ARM64E_USERLAND => (8, 16),
+                DYLD_CHAINED_PTR_ARM64E_USERLAND24 => (8, 24),
+                other => return Err(MachOError::UnsupportedChainFormat(other)),
+            };
+            let arm64e = stride == 8;
+
+            for page_index in 0..u64::from(page_count) {
+                let page_start = info.u16()?;
+                if page_start == DYLD_CHAINED_PTR_START_NONE {
+                    continue;
+                }
+                let mut offset = page_index * page_size + u64::from(page_start);
+                loop {
+                    let at = (fileoff + offset) as usize;
+                    let raw = slice.get(at..at + 8).ok_or(MachOError::Truncated)?;
+                    let value = u64::from_le_bytes(raw.try_into().unwrap());
+                    let (is_bind, next) = if arm64e {
+                        ((value >> 62) & 1 == 1, (value >> 51) & 0x7FF)
+                    } else {
+                        (value >> 63 == 1, (value >> 51) & 0xFFF)
+                    };
+                    if is_bind {
+                        let ordinal = (value & ((1u64 << ordinal_bits) - 1)) as usize;
+                        if let Some(name) = names.get(ordinal) {
+                            self.chained_binds
+                                .entry(name.clone())
+                                .or_insert(vmaddr + offset);
+                        }
+                    }
+                    if next == 0 {
+                        break;
+                    }
+                    offset += next * stride;
+                }
             }
         }
         Ok(())
@@ -404,8 +547,12 @@ impl MachO {
         None
     }
 
-    /// The vmaddr of the lazy-bound pointer for `func_name` (e.g. `_fopen`).
+    /// The vmaddr of the pointer `func_name` (e.g. `_fopen`) is bound through,
+    /// from chained fixups or, on older images, the lazy bindings.
     pub fn find_import_ptr(&self, func_name: &str) -> Option<u64> {
+        if let Some(&ptr) = self.chained_binds.get(func_name) {
+            return Some(ptr);
+        }
         let b = self.binding_lazy.get(func_name)?;
         if b.binding_type != 1 {
             return None;

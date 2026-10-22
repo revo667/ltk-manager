@@ -30,12 +30,13 @@ fn resolves_patch_targets_on_the_installed_game() {
     let (text_addr, text) = macho
         .find_section("__text")
         .expect("game has a __text section");
-    assert!(text_addr >= 0x1_0000_0000, "text vmaddr looks like a slide-free image base");
+    assert!(
+        text_addr >= 0x1_0000_0000,
+        "text vmaddr looks like a slide-free image base"
+    );
     assert!(!text.is_empty());
 
-    let fopen_ptr = macho
-        .find_import_ptr("_fopen")
-        .expect("game imports fopen lazily");
+    let fopen_ptr = macho.find_import_ptr("_fopen").expect("game imports fopen");
     assert!(fopen_ptr != 0);
 
     let stub = macho
