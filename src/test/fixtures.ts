@@ -19,6 +19,7 @@ export function createMockSettings(overrides?: Partial<Settings>): Settings {
     killLeagueHotkey: null,
     killLeagueStopsPatcher: true,
     trustedDomains: ["runeforge.dev", "divineskins.gg"],
+    runeforge: null,
     watcherEnabled: false,
     blockScriptsWad: true,
     wadBlocklist: [],
@@ -41,7 +42,6 @@ export function createMockSettings(overrides?: Partial<Settings>): Settings {
     autoHealthCheckEnabled: true,
     promoteEnabledMods: false,
     showModTags: true,
-    enforceSkinhackScan: true,
     applyStringOverridesToAllLocales: false,
     verbosePatcherLogging: false,
     betaPatcher: false,
@@ -57,6 +57,7 @@ export function createMockSettings(overrides?: Partial<Settings>): Settings {
       forcedMapSkin: "",
       mapDecorations: {},
     },
+    audio: { wwiseConsolePath: null },
     ...overrides,
   };
 }

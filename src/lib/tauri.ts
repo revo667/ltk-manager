@@ -21,6 +21,7 @@ import type {
 } from "@/lib/bindings";
 import { commands as appUpdate } from "@/lib/ipc/appUpdate";
 import { commands as atlas } from "@/lib/ipc/atlas";
+import { commands as audio } from "@/lib/ipc/audio";
 import { commands as bin } from "@/lib/ipc/bin";
 import { commands as desktop } from "@/lib/ipc/desktop";
 import { commands as diagnostics } from "@/lib/ipc/diagnostics";
@@ -34,6 +35,7 @@ import { commands as news } from "@/lib/ipc/news";
 import { commands as objects } from "@/lib/ipc/objects";
 import { commands as patcher } from "@/lib/ipc/patcher";
 import { commands as preview } from "@/lib/ipc/preview";
+import { commands as runeforge } from "@/lib/ipc/runeforge";
 import { commands as settings } from "@/lib/ipc/settings";
 import { commands as workshop } from "@/lib/ipc/workshop";
 import { map as mapResult } from "@/utils/result";
@@ -47,6 +49,7 @@ export type {
   Check_Serialize as Check,
   Config_Serialize as Config,
   DiagnosticReport_Serialize as DiagnosticReport,
+  FixAlternative_Serialize as FixAlternative,
   FixPreview_Serialize as FixPreview,
   HashtableUpdateCheck_Serialize as HashtableUpdateCheck,
   HealthCheckBasis_Serialize as HealthCheckBasis,
@@ -59,6 +62,7 @@ export type {
   ModLicense_Serialize as ModLicense,
   NodeAddress_Serialize as NodeAddress,
   ObjectInfo_Serialize as ObjectInfo,
+  OfferedAlternative_Serialize as OfferedAlternative,
   PatcherBinaries_Serialize as PatcherBinaries,
   Problem_Serialize as Problem,
   RuleBrief_Serialize as RuleBrief,
@@ -69,6 +73,14 @@ export type {
   Site_Serialize as Site,
   StoredVerdict_Serialize as StoredVerdict,
   Verdict_Serialize as Verdict,
+} from "@/lib/bindings";
+/* A request type is one the frontend builds and a command reads, so its deserialize side takes the
+plain name. */
+export type {
+  NewMod_Deserialize as NewMod,
+  NewRelease_Deserialize as NewRelease,
+  PublishAnswer_Deserialize as PublishAnswer,
+  PublishRequest_Deserialize as PublishRequest,
 } from "@/lib/bindings";
 export type { Result } from "@/utils/result";
 
@@ -92,6 +104,22 @@ export const api = {
   listReleases: news.listReleases,
   listAnnouncements: news.listAnnouncements,
   listNotices: news.listNotices,
+
+  // The RuneForge account and the publish of a project to it.
+  runeforge: {
+    status: runeforge.runeforgeStatus,
+    connect: runeforge.runeforgeConnect,
+    disconnect: runeforge.runeforgeDisconnect,
+    ownedMods: runeforge.runeforgeOwnedMods,
+    context: runeforge.runeforgeContext,
+    prepare: runeforge.runeforgePrepare,
+    cancel: runeforge.runeforgeCancel,
+    prefill: runeforge.runeforgePrefill,
+    discard: runeforge.runeforgeDiscard,
+    submit: runeforge.runeforgeSubmit,
+    publish: runeforge.runeforgePublish,
+    release: runeforge.runeforgeRelease,
+  },
 
   // Settings
   getSettings: settings.getSettings,
@@ -137,6 +165,7 @@ export const api = {
   /** Re-check `modIds`, or every mod in the library when none are named. */
   sweepModHealth: (modIds?: string[]) => library.sweepModHealth(modIds ?? null),
   repairMod: library.repairMod,
+  repairModAlternative: library.repairModAlternative,
   repairMods: library.repairMods,
   getModHealthVerdicts: library.getModHealthVerdicts,
   getHealthSweep: library.getHealthSweep,
@@ -234,6 +263,37 @@ export const api = {
   // Asset preview
   readAssetInfo: preview.readAssetInfo,
   saveAssetCopy: preview.saveAssetCopy,
+
+  // Audio files
+  readAudioMedia: audio.readAudioMedia,
+  exportAudioMedia: audio.exportAudioMedia,
+  readAudioEvents: (sandbox: SandboxRef, asset: AssetRef, document: number | null = null) =>
+    audio.readAudioEvents(sandbox, asset, document),
+  readAudioEvent: (
+    sandbox: SandboxRef,
+    asset: AssetRef,
+    event: number,
+    document: number | null = null,
+  ) => audio.readAudioEvent(sandbox, asset, event, document),
+  readBankReferences: audio.readBankReferences,
+  resolveSounds: audio.resolveSounds,
+
+  // Event bank documents
+  audioBankOpen: audio.audioBankOpen,
+  audioBankClose: audio.audioBankClose,
+  audioBankEdit: audio.audioBankEdit,
+  audioBankImport: audio.audioBankImport,
+  audioBankReplacePreview: audio.audioBankReplacePreview,
+  audioBankReplace: audio.audioBankReplace,
+  audioBankStep: audio.audioBankStep,
+  audioBankSave: audio.audioBankSave,
+  audioBankNodes: audio.audioBankNodes,
+  audioScopedEvents: audio.audioScopedEvents,
+  audioSearchEvents: audio.audioSearchEvents,
+
+  // Voice lines
+  audioVoiceLines: audio.audioVoiceLines,
+  audioVoiceRuleTemplate: audio.audioVoiceRuleTemplate,
 
   // Ritobin
   detectRitobinIntegration: preview.detectRitobinIntegration,
@@ -396,6 +456,7 @@ export const api = {
     dir: objects.objectDir,
     spells: objects.characterSpells,
     classCount: objects.classObjectCount,
+    moduleObjects: objects.moduleObjects,
     find: objects.findObjects,
     references: objects.findReferences,
     cancelWalk: objects.cancelReferenceWalk,
@@ -469,6 +530,7 @@ export const api = {
   // A project's game data declarations.
   declarations: {
     outline: workshop.declarationsOutline,
+    convert: workshop.convertProjectManifests,
     /** A module action with no document to undo it, for a view of the manifest itself. */
     moduleAction: bin.declarationsModuleAction,
   },

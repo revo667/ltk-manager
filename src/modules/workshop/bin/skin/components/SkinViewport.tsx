@@ -62,6 +62,7 @@ import {
   useSetPreviewDisplay,
 } from "@/stores";
 
+import { useViewportSound } from "../../../audio/hooks/useViewportSound";
 import { assetKey } from "../../../preview/utils/assetRef";
 import { useSandbox } from "../../../sandbox/state/SandboxContext";
 import { sandboxProject } from "../../../sandbox/utils/sandboxRef";
@@ -76,6 +77,8 @@ import { CameraMenu } from "../../shared/preview/CameraMenu";
 import { Notice } from "../../shared/preview/Notice";
 import { PreviewToggle, ShadersToggle } from "../../shared/preview/PreviewToggle";
 import { PreviewViewport } from "../../shared/preview/PreviewViewport";
+import { SoundCues } from "../../shared/preview/SoundCues";
+import { SoundToggle } from "../../shared/preview/SoundToggle";
 import { useFitRequest } from "../../shared/preview/useFitRequest";
 import { ViewModeMenu } from "../../shared/preview/ViewModeMenu";
 import {
@@ -84,6 +87,7 @@ import {
   SplitToggle,
   ViewportControls,
 } from "../../shared/preview/ViewportControls";
+import { runSoundCues } from "../../vfx/playback/utils/runSound";
 import { Passes } from "../../vfx/rendering/components/Passes";
 import { passesOf } from "../../vfx/rendering/utils/passes";
 import { skinQueries } from "../api/skinQueries";
@@ -92,6 +96,7 @@ import { DocumentOpener, type GraphSource, useSkinGraphSource } from "../hooks/u
 import { useJointPick } from "../hooks/useJointPick";
 import { useSkinDynamics } from "../hooks/useSkinDynamics";
 import { useSkinKeys } from "../hooks/useSkinKeys";
+import { useSkinOutlines } from "../hooks/useSkinOutlines";
 import { useSkinPrograms } from "../hooks/useSkinPrograms";
 import { useWornEffects } from "../hooks/useWornEffects";
 import { overriddenHidden, SkinChoiceContext, useSkinChoice } from "../state/skinChoice";
@@ -99,6 +104,7 @@ import {
   clipFrameSeconds,
   hiddenAt,
   snapCues,
+  soundCues,
   timedSteps,
   type VisibilityEntry,
   visibilityTimeline,
@@ -114,6 +120,8 @@ import {
   parameterValues,
   playableClips,
   playlistOf,
+  DATA_TEXTURES,
+  dataTextureAssets,
   textureAssets,
 } from "../utils/skinScene";
 import { socketDragEdits } from "../utils/socketEdits";
@@ -349,14 +357,26 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
     timed,
     conditions,
   );
+  const sounds = useMemo(() => soundCues(timed), [timed]);
+  const heardSounds = useMemo(
+    () => [
+      ...sounds,
+      ...cueModels.flatMap((system) => (system === null ? [] : runSoundCues(system))),
+    ],
+    [sounds, cueModels],
+  );
+  const sound = useViewportSound(document, heardSounds, playing && !scrubbing);
 
   const assets = useMemo(() => textureAssets(skin), [skin]);
   const textures = useAssetTextures(assets);
+  const dataAssets = useMemo(() => dataTextureAssets(skin), [skin]);
+  const maps = useAssetTextures(dataAssets, DATA_TEXTURES);
   const bindingFor = useCallback(
-    (submesh: string) => bindingOf(skin, textures, submesh),
-    [skin, textures],
+    (submesh: string) => bindingOf(skin, textures, submesh, maps),
+    [skin, textures, maps],
   );
   const programsFor = useSkinPrograms(document, skin, shaders);
+  const outlineFor = useSkinOutlines(document, skin, shaders);
   const heldValue = useHeldValue();
   const colors = useSceneColors();
   /* Where the subject stands: what the creator dragged it to on this backdrop, else the
@@ -447,6 +467,9 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
           onBackdropOrigin={setOrigin}
         >
           <Clock clock={clock} playing={playing && !scrubbing} speed={speed} />
+          {sound.on && (
+            <SoundCues clock={clock} cues={sounds} duration={duration} output={sound.output} />
+          )}
           <VisibilityCues
             timeline={timeline}
             clock={clock}
@@ -484,6 +507,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
               clock={clock}
               bindingOf={bindingFor}
               programsOf={programsFor}
+              outlineOf={outlineFor}
               held={heldValue}
               colors={colors}
               hidden={hidden}
@@ -521,6 +545,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
                       clock={clock}
                       scale={scale}
                       duration={duration}
+                      sound={sound.on ? sound.output : null}
                     />
                   );
                 })}
@@ -642,6 +667,7 @@ function SkinScene({ skin, document, asset, source, entry }: SkinSceneProps) {
                 />
               )}
               <ShadersToggle />
+              <SoundToggle unresolved={sound.unresolved} />
               <BakeTangentsButton
                 document={document}
                 entry={entry}

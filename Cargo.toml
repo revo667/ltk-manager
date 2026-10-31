@@ -6,12 +6,14 @@ members = [
     "crates/dxbc-spirv-sys",
     "crates/ltk-declarations",
     "crates/ltk-manager-assets",
+    "crates/ltk-manager-audio",
     "crates/ltk-manager-base",
     "crates/ltk-manager-bin",
     "crates/ltk-manager-core",
     "crates/ltk-manager-game",
     "crates/ltk-manager-library",
     "crates/ltk-manager-problems",
+    "crates/ltk-manager-runeforge",
     "crates/ltk-manager-runtime",
     "crates/ltk-manager-workshop",
     "crates/ltk-meta-docs",
@@ -66,12 +68,14 @@ atlas = { path = "crates/atlas" }
 hexshade = { path = "crates/hexshade" }
 ltk-declarations = { path = "crates/ltk-declarations" }
 ltk-manager-assets = { path = "crates/ltk-manager-assets" }
+ltk-manager-audio = { path = "crates/ltk-manager-audio" }
 ltk-manager-base = { path = "crates/ltk-manager-base" }
 ltk-manager-bin = { path = "crates/ltk-manager-bin" }
 ltk-manager-core = { path = "crates/ltk-manager-core" }
 ltk-manager-game = { path = "crates/ltk-manager-game" }
 ltk-manager-library = { path = "crates/ltk-manager-library" }
 ltk-manager-problems = { path = "crates/ltk-manager-problems" }
+ltk-manager-runeforge = { path = "crates/ltk-manager-runeforge" }
 ltk-manager-runtime = { path = "crates/ltk-manager-runtime" }
 ltk-manager-workshop = { path = "crates/ltk-manager-workshop" }
 ltk-meta-docs = { path = "crates/ltk-meta-docs" }
@@ -81,13 +85,21 @@ ltk_file = { version = "0.2.13", features = ["serde"] }
 ltk_hash = { version = "0.5.1", features = ["serde"] }
 ltk_meta = { version = "0.9.1", features = ["serde"] }
 
-ltk_fantome = "0.15.5"
-ltk_game_data = "0.9.3"
-ltk_mod_project = { version = "0.16.7", features = ["modpkg", "fantome"] }
+ltk_fantome = "0.18.1"
+ltk_game_data = "0.11.0"
+# `rayon` mounts the archives of a chunk index build in parallel.
+ltk_game_index = { version = "0.2.0", features = ["rayon"] }
+ltk_mod_project = { version = "0.20.0", features = ["modpkg", "fantome"] }
 ltk_hashtable = "0.2.2"
-ltk_modpkg = "0.12.14"
-ltk_overlay = "0.17.0"
+ltk_modpkg = "0.12.17"
+ltk_overlay = "0.21.0"
 ltk_wad = "0.5.10"
+# The files a `BankUnit` names: banks, media banks and packages.
+ltk_wwise = "0.2.0"
+# Wwise Vorbis WEM media to Ogg Vorbis, with the aoTuV codebooks built in.
+ww2ogg = "0.1.0"
+# Ogg Vorbis decoding, which checks the stream that `ww2ogg` writes.
+lewton = "0.10.2"
 
 ltk_anim = "0.3.12"
 ltk_mapgeo = "0.3.5"
@@ -109,6 +121,8 @@ image = "0.25.2"
 image_dds = { version = "0.6", default-features = false, features = ["ddsfile", "image"] }
 indexmap = { version = "2", features = ["serde"] }
 lru = "0.18"
+# The OS credential store API. The token store of each platform is its own crate.
+keyring-core = "1.0.1"
 minisign-verify = "0.2"
 parking_lot = { version = "0.12", features = ["arc_lock"] }
 notify = { version = "7", default-features = false }
@@ -141,6 +155,7 @@ uuid = { version = "1", features = ["v4"] }
 walkdir = "2.5"
 webp = "0.3"
 windows-sys = "0.59"
+windows-native-keyring-store = "1.1.0"
 zip = "2.2.0"
 # Lossless YAML: the declarations writer edits `game_data.yaml` in place (#626).
 # `rowan` is the tree it is built on, pinned to the same minor.
@@ -152,6 +167,7 @@ base64 = "0.22"
 sha2 = "0.10"
 
 assert_matches = "1.5"
+insta = "1.39"
 filetime = "0.2"
 ltk_primitives = "0.3.8"
 winreg = "0.55"

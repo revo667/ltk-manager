@@ -51,6 +51,17 @@ export type AddableFields = {
 	fields: AddableField[],
 };
 
+/**  A fact about one alternative fix, which the frontend words in the note of the repair. */
+export type AlternativeCaveat = 
+/**
+ *  The bank contains an Attenuation object, and the conversion writes the version 145 flag
+ *  that the bank has no value for as zero.
+ */
+"attenuationFlagZeroed";
+
+/**  The id of one alternative fix, unique among the alternatives of its rule. */
+export type AlternativeId = string;
+
 /**
  *  An animation graph, as a clip table and a viewport read it.
  * 
@@ -180,6 +191,10 @@ export type AppErrorResponse =
 { code: "OVERLAY"; category: OverlayErrorCategory; detail: string } | 
 /**  A download was asked for from a domain the trusted providers list omits. */
 { code: "UNTRUSTED_DOMAIN"; domain: string } | 
+/**  A call to RuneForge failed. The variant says which and carries what the dialog renders. */
+{ code: "RUNEFORGE"; error: RuneforgeError } | 
+/**  A file gives no WEM for a media replacement. The variant says why. */
+{ code: "AUDIO_CONVERT"; error: AudioConvertError } | 
 /**
  *  Something GitHub publishes could not be read. The kind says which
  *  remedy applies, and the feed says what was being read.
@@ -200,6 +215,14 @@ export type AreaUsage = {
 	bytes: number,
 };
 
+/**  The verdict of the deep scan on one artifact. */
+export type ArtifactHealth = {
+	/**  `pending` until a scan finishes, then the worst severity among the findings. */
+	status: HealthStatus,
+	/**  The findings of the scan. A pending artifact may have none stored. */
+	findings?: Finding[],
+};
+
 /**  What an asset holds, for a viewer that reports it beside the preview. */
 export type AssetInfo = 
 /**  A texture, in whichever container holds it. */
@@ -213,6 +236,10 @@ export type AssetInfo =
  *  the `<img>` reports.
  */
 ({ kind: "web"; format: WebImage; sizeBytes: number }) & { fileKind?: never; height?: never; width?: never } | 
+/**  A Wwise package, bank or WEM, which the audio file document lists. */
+{
+	kind: "audio",
+} & AudioInfo | 
 /**  Nothing here has a viewer. */
 ({ kind: "unsupported"; fileKind: WorkshopFileKind }) & { format?: never; height?: never; sizeBytes?: never; width?: never };
 
@@ -263,11 +290,305 @@ export type Attribute = {
 	mask: number,
 };
 
+/**  Who hears the event that a contextual rule plays. */
+export type Audience = 
+/**  `mSelfEventName`: the champion that the skin is on. */
+"owner" | 
+/**  `mAllyEventName`. */
+"ally" | 
+/**  `mEnemyEventName`. */
+"enemy" | 
+/**  `mSpectatorEventName`. */
+"spectator";
+
+/**  The short name of one audience, and the event it resolves to for the chosen skin. */
+export type AudienceLine = {
+	audience: Audience,
+	/**  The `m*EventName` string. Empty if the action does not write it. */
+	short: string,
+	/**  The first composed name that an event of the skin's banks hashes to. */
+	event: ResolvedEvent | null,
+	/**  The composed names, in [`compose_vo_names`] order. Empty for an empty short name. */
+	candidates: string[],
+};
+
+/**  The audio action of a rule. */
+export type AudioAction = {
+	/**  The class hash, `ContextualActionPlayVO` in every shipped rule. */
+	class: number,
+	/**  `mMaxOccurences`, the plays per unit per game. `0` is no limit. */
+	maxOccurrences: number,
+	/**  `mWaitForAnnouncerQueue`. */
+	waitForAnnouncer: boolean,
+	/**  `mWaitTimeout` in seconds. */
+	waitTimeout: number | null,
+	/**  One line per audience, in field order, empty names included. */
+	lines: AudienceLine[],
+};
+
+/**  Where an open event bank stands after a change. */
+export type AudioBankState = {
+	id: number,
+	/**  Counts every change. */
+	revision: number,
+	/**  The document holds changes that no save wrote. */
+	dirty: boolean,
+	/**  The bank is version 145 with a hierarchy, so it takes edits. */
+	editable: boolean,
+	/**  The version of the bank. */
+	version: number,
+	/**  The file that a save writes. A game chunk's copy in the project after the first edit. */
+	asset: AssetRef,
+	/**  The IDs of the objects whose bytes differ from the bank as it was opened, in file order. */
+	edited: number[],
+	/**  The source IDs of the media that a replacement changed. */
+	replaced: number[],
+	/**
+	 *  The media that the document imported from a file, by source ID. The list keeps a media
+	 *  that an undo removed, so a redo names it again.
+	 */
+	imported: ImportedMedia[],
+};
+
+/**  The kind of Wwise file. */
+export type AudioContainer = 
+/**  A package (`.wpk`) of streamed media. */
+"package" | 
+/**  A media bank or an event bank (`.bnk`). */
+"bank" | 
+/**  One WEM media file (`.wem`). */
+"media";
+
+/**  Why a file gives no WEM for a replacement. */
+export type AudioConvertError = 
+/**  The file needs the Wwise console, and the settings name none. */
+{ kind: "noConsole"; extension: string } | 
+/**  The file is neither a WEM nor of a format that the Wwise console converts. */
+{ kind: "format"; extension: string } | 
+/**  The Wwise console ran and wrote no Vorbis WEM. `detail` is its output. */
+{ kind: "failed"; detail: string };
+
+/**  One event of an event bank, without its tree. */
+export type AudioEvent = {
+	/**  The object ID of the event. */
+	id: number,
+	/**  The name that hashes to the ID, or `None` if no index names it. */
+	name: string | null,
+	/**  The number of actions of the event. */
+	actionCount: number,
+	/**  The number of sounds under the event's Play actions. */
+	mediaCount: number,
+	/**  Whether every object and media of the tree resolves. */
+	status: EventStatus,
+	/**  The contextual rules that play the event. */
+	contexts: EventContext[],
+	/**  The `events[i]` row of the first ranked bank unit that lists the event's name. */
+	listed: SiteRow | null,
+	/**
+	 *  The sounds and containers that the event's Play actions reach, each once, in the order
+	 *  that the event tree draws them. The frontend derives their names from it.
+	 */
+	nodes: ReachedNode[],
+};
+
+/**  The events of an opened event bank, and the files of its bank set. */
+export type AudioEventList = {
+	/**  Every event of the opened bank, in file order. */
+	events: AudioEvent[],
+	/**  The files of the bank set, the opened bank first. */
+	files: SetFile[],
+	/**  Where the files of the set beside the opened bank come from. */
+	origin: BankSetOrigin,
+};
+
+/**  The play tree of one event, and the slot of the game's audio index that resolved it. */
+export type AudioEventResponse = {
+	/**  The play tree of the event. */
+	tree: EventTree,
+	/**  The properties that an edit sets on the actions and nodes of the tree. */
+	properties: ObjectProperties[],
+	/**  Off `ready`, the tree has no media from the bank units of the game. */
+	index: AudioIndexStatus,
+};
+
+/**  The events of an event bank, and the slot of the game's audio index that named them. */
+export type AudioEventsResponse = {
+	/**  The events of the bank and the files of its bank set. */
+	list: AudioEventList,
+	/**  Off `ready`, the names and bank units of the game are missing from the list. */
+	index: AudioIndexStatus,
+};
+
+/**  The slot of the game's audio index, as a response reports it. */
+export type AudioIndexStatus = 
+/**  A build runs on a background thread. Names and bank units of the game are missing. */
+{ status: "building" } | 
+/**  The index is built, and the names and bank units of the game are in the answer. */
+{ status: "ready" } | 
+/**
+ *  The last build failed. A read after the game build changes or after a refresh of the
+ *  game index retries it.
+ */
+{ status: "failed"; 
+/**  The error of the build. */
+message: string };
+
+/**  The header facts of a Wwise package, bank or WEM. */
+export type AudioInfo = {
+	/**  The kind of Wwise file. */
+	container: AudioContainer,
+	/**  The size of the file itself. */
+	sizeBytes: number,
+	/**  The number of media in the file, 0 if the file cannot be read. */
+	mediaCount: number,
+	/**  The `BKHD` facts of a bank that reads. */
+	bank: BankFacts | null,
+	/**
+	 *  The reader's error if the file cannot be read. It names the offset where the reader
+	 *  knows one.
+	 */
+	failure: string | null,
+};
+
+/**  The tools that audio editing runs, none by default. */
+export type AudioSettings = {
+	/**
+	 *  `WwiseConsole.exe` of a Wwise install, which converts a `.wav`, `.ogg` or `.flac` into a
+	 *  Vorbis WEM. Default: none, and a replacement then takes a `.wem` only.
+	 */
+	wwiseConsolePath?: string | null,
+};
+
 /**  A saved author profile that can be reused across workshop projects. */
 export type AuthorProfile = {
 	id: string,
 	name: string,
 	role: string | null,
+};
+
+/**  One bin that declares a bank unit. */
+export type BankDeclaration = {
+	/**  The `BankUnit` row. */
+	row: SiteRow,
+	/**  The `ContextualActionData` object that the holder links, if an index declares it. */
+	contextual: SiteRow | null,
+};
+
+/**
+ *  One change to an open event bank, which is one undo step.
+ * 
+ *  Every ID is the decimal object ID or source ID, which the bank holds as a `u32`.
+ */
+export type BankEdit = 
+/**  Points the Play action `action` at the node `target`. */
+{ kind: "target"; action: number; target: number } | 
+/**  Moves the node `child` of the opened bank from its parent into `container`. */
+{ kind: "addChild"; container: number; child: number } | 
+/**  Moves the playlist item of `child` of the random container `container` to `index`. */
+{ kind: "moveChild"; container: number; child: number; index: number } | 
+/**  Sets the weight of the playlist item of `child`, and makes the random pick read weights. */
+{ kind: "weight"; container: number; child: number; weight: number } | 
+/**  Sets `property` of `object` to `value`. A default value removes the property. */
+{ kind: "property"; object: number; property: NodeProperty; value: number | null } | 
+/**  Points the sound `sound` at the media `source`. */
+{ kind: "source"; sound: number; source: number } | 
+/**  Creates the event `name`, whose ID is the hash of the name, with no action. */
+{ kind: "newEvent"; name: string } | 
+/**  Creates the event `name` with a copy of every action of `event` and of what they play. */
+{ kind: "copyEvent"; event: number; name: string } | 
+/**  Gives the event `event` the ID of `name`, with its actions. */
+{ kind: "renameEvent"; event: number; name: string } | 
+/**  Adds `node` under `parent`. */
+{ kind: "addNode"; parent: NodeParent; node: NewNode } | 
+/**
+ *  Adds a copy of `object` and of every object below it beside `object` under `parent`.
+ * 
+ *  `parent` is the container that lists the object, the Play action that plays it, or the
+ *  event that runs the action `object`.
+ */
+{ kind: "duplicate"; object: number; parent: number } | 
+/**
+ *  Unlinks `object` from `parent`, and removes it if nothing else references it.
+ * 
+ *  `parent` is as for [`BankEdit::Duplicate`]. `None` deletes the event `object`.
+ */
+{ kind: "delete"; object: number; parent: number | null } | 
+/**
+ *  Puts `objects` into a new container of `container` that takes their place under `parent`.
+ * 
+ *  `parent` is the container that lists every object, or the Play action of the one object.
+ */
+{ kind: "wrap"; objects: number[]; parent: number; container: ContainerKind } | 
+/**  Applies every edit of `edits`, in order, as one undo step. */
+{ kind: "batch"; edits: BankEdit[] };
+
+/**  The `BKHD` header of a bank, and whether the client loads the bank. */
+export type BankFacts = {
+	/**  The generator version of the bank. */
+	version: number,
+	/**  The `dwBankType` field of the header, zero below version 143. */
+	bankType: number,
+	/**  The `uAlignment` field as written. */
+	alignment: number,
+	/**  The bank ID of the header, which the client does not read. */
+	headerId: number,
+	/**
+	 *  The bank ID of the file name, which the client registers the bank under. `None` if the
+	 *  asset has no `.bnk` file name, as a game chunk has.
+	 */
+	nameId: number | null,
+	/**  The reason the client rejects the bank, in the words of `Bank::check`. */
+	rejection: string | null,
+	/**  The number of events of the hierarchy, or `None` if the bank has no hierarchy. */
+	eventCount: number | null,
+};
+
+/**  One sound or container of a bank set, which an edit adds as a child or a Play target. */
+export type BankNode = {
+	/**  The object ID. */
+	id: number,
+	/**  The object kind, the `HIRC` type byte. */
+	objectKind: number,
+	/**  The kind's name, such as `Sound`. */
+	kindName: string,
+	/**  The game path of the bank that holds the object. */
+	bank: string,
+};
+
+/**  The bank units and bank lists that name an audio file, and the slot of the game's index. */
+export type BankReferencesResponse = {
+	/**  The game path that the units name the file by. */
+	path: string,
+	/**  The bank units that name the file, grouped. */
+	units: BankUnitGroup[],
+	/**  The `AudioBankPaths` and `BankPaths` rows that list the file. */
+	lists: SiteRow[],
+	/**  Off `ready`, the units and lists of the game are missing. */
+	index: AudioIndexStatus,
+};
+
+/**  Which files the bank set of an opened event bank contains beside the bank. */
+export type BankSetOrigin = 
+/**  The files of every bank unit that names the bank. */
+"units" | 
+/**  No bank unit lists the bank. The set contains the `_audio` bank and package beside it. */
+"siblings" | 
+/**
+ *  No bank unit lists the bank, and its name has no `_events` stem. The set contains only
+ *  the bank.
+ */
+"alone";
+
+/**  The bank units with one name, one list of paths and one voice-over flag. */
+export type BankUnitGroup = {
+	/**  The `name` of the units. */
+	name: string,
+	/**  The `voiceOver` flag of the units. */
+	voiceOver: boolean,
+	/**  The `bankPath` files, in the unit's order. The opened file is marked. */
+	files: SetFile[],
+	/**  The bins that declare the unit, ranked. */
+	declarations: BankDeclaration[],
 };
 
 /**  The rule of section 10.2 that picked a base texture, in the order they are tried. */
@@ -707,6 +1028,12 @@ export type ChangeKind =
 /**  Both hold it, with different values. */
 "changed";
 
+/**  A post field that the package would change on the target post. */
+export type ChangedPostField = {
+	/**  The field that changes. */
+	field: PostField,
+};
+
 /**  One named spell and every file declaring its object. */
 export type CharacterSpell = {
 	/**  The object's path hash, as `0x` and eight hex digits. */
@@ -971,13 +1298,6 @@ export type Config_Deserialize = {
 	/**  Enabling a mod moves it to the front of its folder. Off by default. */
 	promoteEnabledMods?: boolean,
 	/**
-	 *  Whether to enforce the anti-skinhack scan while patching. When on
-	 *  (default), a champion WAD that fails the scan aborts patching. When off,
-	 *  the `CSLOL_HOOK_OPT_OUT_AH_V1` hook flag is set so failures are
-	 *  downgraded to warnings and flagged mods load anyway. Default: true.
-	 */
-	enforceSkinhackScan?: boolean,
-	/**
 	 *  Whether mods' string overrides are applied to every installed locale
 	 *  instead of only the locale the League client is configured to use.
 	 *  Default: false (current locale only).
@@ -1047,6 +1367,8 @@ export type Config_Deserialize = {
 	keepIncidents?: number,
 	/**  Which built-in mods the overlay injects above every other mod. */
 	builtinMods?: BuiltinModSettings,
+	/**  The tools that audio editing runs. */
+	audio?: AudioSettings,
 };
 
 /**
@@ -1091,13 +1413,6 @@ export type Config_Serialize = {
 	autoHealthCheckEnabled: boolean,
 	/**  Enabling a mod moves it to the front of its folder. Off by default. */
 	promoteEnabledMods: boolean,
-	/**
-	 *  Whether to enforce the anti-skinhack scan while patching. When on
-	 *  (default), a champion WAD that fails the scan aborts patching. When off,
-	 *  the `CSLOL_HOOK_OPT_OUT_AH_V1` hook flag is set so failures are
-	 *  downgraded to warnings and flagged mods load anyway. Default: true.
-	 */
-	enforceSkinhackScan: boolean,
 	/**
 	 *  Whether mods' string overrides are applied to every installed locale
 	 *  instead of only the locale the League client is configured to use.
@@ -1168,6 +1483,22 @@ export type Config_Serialize = {
 	keepIncidents: number,
 	/**  Which built-in mods the overlay injects above every other mod. */
 	builtinMods: BuiltinModSettings,
+	/**  The tools that audio editing runs. */
+	audio: AudioSettings,
+};
+
+/**  The account of the stored token. It holds nothing secret, so `settings.json` keeps it. */
+export type ConnectedAccount = {
+	/**  The id of the user on the site. */
+	userId: string,
+	/**  The user name. It is empty for an account that has not picked one. */
+	username: string,
+	/**  The name the site shows. */
+	displayName: string | null,
+	/**  The 8 characters after `rf_`, which the token page lists. */
+	tokenPrefix: string,
+	/**  The scopes of the token. */
+	scopes: Scope[],
 };
 
 /**
@@ -1189,6 +1520,18 @@ export type Consequence =
 "game-hung" | 
 /**  The game did not survive. */
 "game-stopped";
+
+/**  The kind of a new container. */
+export type ContainerKind = 
+/**  A random container, which plays one child that the client picks. */
+"random" | 
+/**  A sequence container, which plays its children in playlist order. */
+"sequence" | 
+/**
+ *  A switch container, with the switch group and the default switch of a switch container
+ *  of the set.
+ */
+"switch";
 
 /**  A single file entry in a layer's content directory. */
 export type ContentEntry = {
@@ -1233,6 +1576,12 @@ export type ConvertPlacement =
 "inPlace" | 
 /**  A copy in the workshop folder becomes the project, and the folder is left alone. */
 "copy";
+
+/**  The fields of `ContextualActionCooldownModifications`. */
+export type CooldownModifications = {
+	ignoreTimer: boolean,
+	dontResetTimer: boolean,
+};
 
 /**  How many problems a run holds at each severity. */
 export type Counts = {
@@ -1948,7 +2297,51 @@ export type EnginePass =
  *  the error value is gone. The Tauri shell maps it to its own `ErrorCode`, and
  *  a CLI could map the same names to exit codes.
  */
-export type ErrorKind = "IO" | "SERIALIZATION" | "MODPKG" | "LEAGUE_NOT_FOUND" | "INVALID_PATH" | "MOD_NOT_FOUND" | "VALIDATION_FAILED" | "INTERNAL_STATE" | "OTHER" | "WORKSHOP_NOT_CONFIGURED" | "PROJECT_NOT_FOUND" | "PROJECT_ALREADY_EXISTS" | "PACK_FAILED" | "FANTOME" | "WAD_ERROR" | "WAD_BUILDER_ERROR" | "PATCHER" | "LAUNCHER" | "ZIP_ERROR" | "SCHEMA_VERSION_TOO_NEW" | "WORKSHOP" | "HASHTABLE" | "PREVIEW" | "BIN_DOCUMENT" | "OVERLAY" | "UNTRUSTED_DOMAIN";
+export type ErrorKind = "IO" | "SERIALIZATION" | "MODPKG" | "LEAGUE_NOT_FOUND" | "INVALID_PATH" | "MOD_NOT_FOUND" | "VALIDATION_FAILED" | "INTERNAL_STATE" | "OTHER" | "WORKSHOP_NOT_CONFIGURED" | "PROJECT_NOT_FOUND" | "PROJECT_ALREADY_EXISTS" | "PACK_FAILED" | "FANTOME" | "WAD_ERROR" | "WAD_BUILDER_ERROR" | "PATCHER" | "LAUNCHER" | "ZIP_ERROR" | "SCHEMA_VERSION_TOO_NEW" | "WORKSHOP" | "HASHTABLE" | "PREVIEW" | "BIN_DOCUMENT" | "OVERLAY" | "UNTRUSTED_DOMAIN" | "RUNEFORGE";
+
+/**  One action of an event. */
+export type EventAction = {
+	/**  The object ID of the action. */
+	id: number,
+	/**  The class of the action, `0x0400` for Play. `None` if no bank contains the action. */
+	class: number | null,
+	/**  The name of the class, or `0x` and four hex digits for a class without a name. */
+	label: string | null,
+	/**  The object ID that the action targets. */
+	target: number | null,
+	/**
+	 *  The tree under a Play action. `None` for another class, and for a target that the walk
+	 *  visited before.
+	 */
+	node: EventNode | null,
+	/**  The milliseconds that the client waits before it runs the action. */
+	delay: number,
+};
+
+/**
+ *  One contextual rule that plays an event, matched by a composed name.
+ * 
+ *  The composition is observed in shipped data, so the match is an inference.
+ */
+export type EventContext = {
+	/**  The situation's name, such as `SpellCast`, or its hash if no table names it. */
+	situation: string,
+	/**  The `mSituations` key of the situation. */
+	situationKey: number,
+	/**  `mRuleName`, such as `Basic 1`. */
+	rule: string | null,
+	/**
+	 *  The percent of the rule's one `ContextualConditionChanceToPlay`, or `None` if it has none
+	 *  or several.
+	 */
+	chance: number | null,
+	/**  The audience whose event name matched. */
+	audience: Audience,
+	/**  `true` if another composition of the rule is an event of the bank too. */
+	ambiguous: boolean,
+	/**  The rule row of the `ContextualActionData` object. */
+	row: SiteRow,
+};
 
 /**  What a clip event does, for the kinds a viewport plays, and nothing for the rest. */
 export type EventKind = 
@@ -1972,6 +2365,23 @@ isLoop: boolean;
 isKill: boolean; 
 /**  `scale`, which the meta defaults to one. */
 scale: number | null } | 
+/**
+ *  `SoundEventData`: a Wwise event posted at the start frame.
+ * 
+ *  The end frame does not stop the sound. `mIsKillEvent` stops it when the clip stops,
+ *  and `mIsLoop` fires it again on each loop of the clip.
+ */
+{ kind: "sound"; 
+/**  `mSoundName`, the event name. */
+name: string; 
+/**  `mIsLoop`, true by default. */
+isLoop: boolean; 
+/**  `mIsKillEvent`, true by default. */
+isKill: boolean; 
+/**  `mSkipIfPastEndFrame`, false by default. */
+skipIfPastEnd: boolean; 
+/**  `ConditionClipTransitionType`, from 0 to 3 and 1 by default. */
+conditionTransition: number } | 
 /**  `JointSnapEventData`: one joint stands where another does, from the start frame on. */
 { kind: "jointSnap"; 
 /**  `mJointNameToOverride`, the joint moved, and none for an event naming no joint. */
@@ -2023,12 +2433,99 @@ blendOut: number | null } |
 /**  Any other kind, which the viewport draws nothing for. */
 { kind: "other" };
 
+/**  One object under a Play action. */
+export type EventNode = 
+/**  A sound: one media that plays. */
+{ kind: "sound"; 
+/**  The object ID of the sound. */
+id: number; 
+/**  The source ID of the media. */
+source: number; 
+/**  Where the media of the sound is stored. */
+stream: SoundStream; 
+/**  The file that contains the media, or `None` if no file of the set contains it. */
+media: MediaLocation | null } | 
+/**  A random or sequence container: one item of `playlist` plays. */
+{ kind: "random"; id: number; children: EventNode[]; mode: PlayMode; 
+/**  The items of the playlist that name a child of `children`, in playlist order. */
+playlist: EventPlaylistItem[] } | 
+/**  A switch container: the children of `pick` play. */
+{ kind: "switch"; id: number; children: EventNode[]; 
+/**  The ID of the switch group or the state group, the FNV-1 hash of its name. */
+group: number; 
+/**  The switch that plays when the game sets no switch of the group. */
+defaultSwitch: number; pick: EventSwitchPick } | 
+/**  A layer container: every child plays. */
+{ kind: "layer"; id: number; children: EventNode[] } | 
+/**  An actor-mixer: every child plays. */
+{ kind: "mixer"; id: number; children: EventNode[] } | 
+/**  An object of a kind that does not play. */
+{ kind: "unsupported"; id: number; 
+/**  The object kind, the `HIRC` type byte. */
+objectKind: number; 
+/**  The kind's name, such as `MusicSegment`. */
+kindName: string; 
+/**  `true` for a music object. */
+music: boolean } | 
+/**  No bank of the set contains the ID. */
+{ kind: "missing"; id: number };
+
+/**  One item of the playlist of a random or sequence container. */
+export type EventPlaylistItem = {
+	/**  The index of the child in the `children` of the container. */
+	child: number,
+	/**  The weight of the item in a random pick, relative to the other items. */
+	weight: number,
+};
+
+/**  The event names of the game that a search matches. */
+export type EventSearch = {
+	/**  The first matches, shortest name first. */
+	names: string[],
+	/**  How many names matched, including those past `names`. */
+	total: number,
+};
+
 /**  One pair of a particle event: the joint the system rides, and the joint it aims at. */
 export type EventSpawn = {
 	/**  `mBoneName`, and none for a pair riding the skeleton's own origin. */
 	bone: HashRef | null,
 	/**  `mTargetBoneName`, and none for a pair aiming at nothing. */
 	targetBone: HashRef | null,
+};
+
+/**  Whether every object and media of an event's tree resolves. */
+export type EventStatus = 
+/**  Every object and every media resolves. */
+{ kind: "resolved" } | 
+/**  A sound names a media that no file of the set contains. */
+{ kind: "mediaMissing" } | 
+/**  An action or a node names an object that no bank of the set contains. */
+{ kind: "objectMissing" } | 
+/**  An object of the tree cannot be decoded. */
+{ kind: "decodeError"; 
+/**  The ID of the object that does not decode. */
+object: number; 
+/**  The game path of the bank that contains the object. */
+bank: string; 
+/**  The error of the decode. */
+message: string };
+
+/**  The children of a switch container that play. */
+export type EventSwitchPick = 
+/**  The nodes of the default switch, as indexes into the `children` of the container. */
+{ kind: "default"; nodes: number[] } | 
+/**  The default switch names no child of the container, so the first child plays. */
+{ kind: "firstChild" };
+
+/**  The play tree of one event, as the event tree draws it. */
+export type EventTree = {
+	/**  The object ID of the event. */
+	event: number,
+	/**  The name that hashes to the ID, or `None` if no index names it. */
+	name: string | null,
+	/**  The actions of the event, in the order that the client runs them. */
+	actions: EventAction[],
 };
 
 /**  One line the verdict rests on. */
@@ -2350,14 +2847,30 @@ export type FieldSchema = {
 	revisions: FieldRevision[],
 };
 
+/**  Where a prefilled value came from. */
+export type FieldSource = 
+/**  The package. */
+"package" | 
+/**  The target post as it is. */
+"current-post" | 
+/**  The default of the site. */
+"default";
+
 /**
  *  What one fix run did to a file, as against how much of it.
  * 
  *  The counts beside this say how much a rule changed. This says whether the
- *  file survived, which is what an archive edit has to know before it can state
- *  the repair as a chunk write.
+ *  file was written, removed or left unchanged, which is what an archive edit
+ *  has to know before it can state the repair as a chunk write. A file written
+ *  beside the file of a finding counts no finding and is still written.
  */
-export type FileChange = "written" | "removed";
+export type FileChange = 
+/**  The run wrote the file. */
+"written" | 
+/**  The run deleted the file. */
+"removed" | 
+/**  The run read the file and wrote nothing over it. */
+"unchanged";
 
 /**  What one fix run did to one file. */
 export type FileOutcome = {
@@ -2395,6 +2908,76 @@ export type FilesOpened = {
 	paths: string[],
 };
 
+/**  One thing that an inspection or a scan found in a package. */
+export type Finding = {
+	/**  How serious the finding is. */
+	severity: FindingSeverity,
+	/**  The stable code of the finding. */
+	code: string,
+	/**  The text that the server wrote for the finding. */
+	message: string,
+	/**  The path inside the package that the finding is about. */
+	path: string | null,
+};
+
+/**  How serious a [`Finding`] is. */
+export type FindingSeverity = 
+/**  The server refuses the package. */
+"error" | 
+/**  The package is accepted with a problem. */
+"warning" | 
+/**  A note without a problem. */
+"info";
+
+/**
+ *  A repair that a problem offers beside its fix, which only an explicit press applies.
+ * 
+ *  [`Run::live_fixable`] leaves every alternative out, so neither the repair of a mod nor
+ *  "Repair all" applies one. [`apply_alternative`] applies one alternative of one problem.
+ */
+export type FixAlternative = FixAlternative_Serialize | FixAlternative_Deserialize;
+
+/**
+ *  A repair that a problem offers beside its fix, which only an explicit press applies.
+ * 
+ *  [`Run::live_fixable`] leaves every alternative out, so neither the repair of a mod nor
+ *  "Repair all" applies one. [`apply_alternative`] applies one alternative of one problem.
+ */
+export type FixAlternative_Deserialize = {
+	/**  The id that the frontend keys the title and the note of the repair by, with the rule id. */
+	id: AlternativeId,
+	/**  `true` while the repair is not proven in a match. */
+	experimental: boolean,
+	/**  The facts that the note of the repair states, beside the note that its id keys. */
+	caveats?: AlternativeCaveat[],
+	/**  The values that the repair would change. */
+	fix: FixPreview_Deserialize,
+};
+
+/**
+ *  A repair that a problem offers beside its fix, which only an explicit press applies.
+ * 
+ *  [`Run::live_fixable`] leaves every alternative out, so neither the repair of a mod nor
+ *  "Repair all" applies one. [`apply_alternative`] applies one alternative of one problem.
+ */
+export type FixAlternative_Serialize = {
+	/**  The id that the frontend keys the title and the note of the repair by, with the rule id. */
+	id: AlternativeId,
+	/**  `true` while the repair is not proven in a match. */
+	experimental: boolean,
+	/**  The facts that the note of the repair states, beside the note that its id keys. */
+	caveats?: AlternativeCaveat[],
+	/**  The values that the repair would change. */
+	fix: FixPreview_Serialize,
+};
+
+/**  The facts of one repair, which the frontend words as the note of the repair. */
+export type FixFacts = 
+/**  The `bin/skinhack` repair that removes the audio of another skin. */
+{
+	kind: "skinAudio",
+} & SkinAudioRepair;
+
 /**
  *  What a repair would change, in the words a row draws.
  * 
@@ -2412,6 +2995,8 @@ export type FixPreview = FixPreview_Serialize | FixPreview_Deserialize;
 export type FixPreview_Deserialize = {
 	/**  What the values alone do not say, such as `3 items`. */
 	note?: string | null,
+	/**  The facts of the repair that the frontend words as its note, keyed by the rule id. */
+	facts?: FixFacts | null,
 	/**  The value now, rendered. `None` where a container draws its count instead. */
 	before: string | null,
 	/**  The value after, rendered. `None` for the same reason as `before`. */
@@ -2427,6 +3012,8 @@ export type FixPreview_Deserialize = {
 export type FixPreview_Serialize = {
 	/**  What the values alone do not say, such as `3 items`. */
 	note?: string | null,
+	/**  The facts of the repair that the frontend words as its note, keyed by the rule id. */
+	facts?: FixFacts | null,
 	/**  The value now, rendered. `None` where a container draws its count instead. */
 	before: string | null,
 	/**  The value after, rendered. `None` for the same reason as `before`. */
@@ -2614,6 +3201,14 @@ export type GameSearchHit = {
 	pathRanges: ([number, number])[],
 };
 
+/**  A game version that a release may target. */
+export type GameVersion = {
+	/**  The id that a release request names. */
+	id: string,
+	/**  The patch, such as `25.21`. */
+	version: string,
+};
+
 /**  One chunk of a WAD archive. */
 export type GameWadEntry = {
 	/**  Chunk path hash as 16 lowercase hex digits. */
@@ -2725,6 +3320,12 @@ export type HashRef = {
 	name: string,
 	/**  The hash, `0x` and eight hex digits. */
 	hash: string,
+};
+
+/**  A hash value and the name a table gives it. */
+export type HashText = {
+	hash: number,
+	name: string | null,
 };
 
 /**  What the shared hashtable cache currently holds. */
@@ -2971,6 +3572,17 @@ export type HealthCheckReadiness =
 /**  No tables, and nothing fetching them but a sync the user starts. */
 "unsynced";
 
+/**  Where an artifact is with the deep scan. */
+export type HealthStatus = 
+/**  The scan found no problem. */
+"ok" | 
+/**  The scan found warnings. */
+"warnings" | 
+/**  The scan found errors. */
+"errors" | 
+/**  The scan has not finished. A status that this build does not know reads as pending. */
+"pending";
+
 /**
  *  Progress of a mod health sweep, emitted per mod.
  * 
@@ -3165,6 +3777,14 @@ export type ImportFantomeArgs = {
 export type ImportGitRepoArgs = {
 	url: string,
 	branch?: string | null,
+};
+
+/**  A media that an open event bank imported, and the file name of the WEM file it came from. */
+export type ImportedMedia = {
+	/**  The source ID of the media. */
+	source: number,
+	/**  The file name of the WEM file, with its extension. */
+	file: string,
 };
 
 /**  The record the manager keeps for one game that went wrong. */
@@ -3592,6 +4212,16 @@ export type KindShape = {
 	value: PropertyKind | null,
 };
 
+/**  The newest release of an owned post. */
+export type LatestRelease = {
+	/**  The id of the release. */
+	id: string,
+	/**  The tag of the release. */
+	tag: string,
+	/**  When the release was created, as an ISO 8601 timestamp. */
+	createdAt: string,
+};
+
 /**
  *  Whether a launch is possible right now, and why not if it isn't.
  * 
@@ -3625,9 +4255,8 @@ export type LaunchKind = "match" | "replay" | "spectator" | "pbe";
  *  build the overlay, start the patcher, then ask the Riot Client to start
  *  League. Both actions stay reachable from the button's menu either way.
  * 
- *  Classic is the default while the launcher is experimental: it is the
- *  behaviour every existing install already has, and it depends on nothing
- *  outside this app.
+ *  Classic is the default because it is the behaviour every existing install
+ *  already has, and it depends on nothing outside this app.
  */
 export type LaunchMode = "classic" | "modern";
 
@@ -3922,6 +4551,22 @@ export type LinkChange =
 "added" | 
 /**  A `-links` item of a dependency of the game's list the applied one lacks. */
 "removed";
+
+/**  A layer whose declaration files could not be converted to YAML. */
+export type ManifestConversionFailure = {
+	/**  The name of the layer. */
+	layer: string,
+	/**  The conversion error, with the file it is about. */
+	message: string,
+};
+
+/**  The layers that [`ProjectDir::convert_manifests`] converted and the ones it could not. */
+export type ManifestConversions = {
+	/**  The names of the layers whose files were converted. */
+	converted: string[],
+	/**  The layers that keep their JSON or TOML files. */
+	failed: ManifestConversionFailure[],
+};
 
 /**  The world rectangle on X and Z that a map-wide texture covers, in engine units. */
 export type MapBounds = {
@@ -4612,6 +5257,72 @@ export type MaterialWarning =
  */
 { kind: "nearestPermutation"; set: string[]; unset: string[] };
 
+/**  The kind of file that contains a media. */
+export type MediaContainer = 
+/**  A media bank or an event bank, in its media index. */
+"bank" | 
+/**  A package, in one of its entries. */
+"package";
+
+/**  What a media export writes. */
+export type MediaExport = 
+/**  The decoded media: Ogg Vorbis for Vorbis, WAV for PCM. */
+"decoded" | 
+/**  The WEM bytes as the file contains them. */
+"original";
+
+/**  The format facts of one WEM media, from its `fmt ` and `data` chunk headers. */
+export type MediaFormat = {
+	/**  The `wFormatTag` of the media. */
+	codec: number,
+	/**  The number of channels. */
+	channels: number,
+	/**  Samples per second. */
+	sampleRate: number,
+	/**  The `nAvgBytesPerSec` of the media, which the duration divides by. */
+	averageBytesPerSecond: number,
+	/**  The size of the `data` chunk in bytes. */
+	dataSize: number,
+	/**  The length in seconds, or `None` if the byte rate is 0. An estimate for Vorbis. */
+	durationSeconds: number | null,
+};
+
+/**  The file that contains the media of a sound, and the source ID that a preview URL reads. */
+export type MediaLocation = {
+	/**  The layer file or game chunk that contains the media. */
+	asset: AssetRef,
+	/**  The game path of the file. */
+	path: string,
+	/**  The source ID of the media. */
+	source: number,
+	/**  The kind of file that contains the media. */
+	container: MediaContainer,
+};
+
+/**  A media of the bank set, the WEM that replaces it, and the sounds that play it. */
+export type MediaReplacement = {
+	/**  The game path of the file that holds the media. */
+	path: string,
+	/**  The media as the file holds it now. */
+	before: MediaRow,
+	/**  The WEM that replaces it. */
+	after: MediaRow,
+	/**  The sounds of the bank set that play the media, those of the opened bank first. */
+	sounds: ReplacedSound[],
+};
+
+/**  One media of a package, a media bank or a WEM. */
+export type MediaRow = {
+	/**  The source ID of the media, which is 0 for a WEM file. */
+	sourceId: number,
+	/**  The bytes that the media takes in the file. */
+	sizeBytes: number,
+	/**  The `fmt ` and `data` facts, or `None` if the media is not a readable WEM. */
+	format: MediaFormat | null,
+	/**  Whether the media decodes for playback, and why not. */
+	playback: Playback,
+};
+
 /**  Which typed view writes a member. */
 export type MemberScalar = "float" | "int" | "uint" | "bool";
 
@@ -5074,6 +5785,30 @@ export type ModuleAction =
  */
 { kind: "dropKeys"; module: number; entry: string; path: string };
 
+/**  An object that one module of a layer's game data declarations creates, removes or edits. */
+export type ModuleObject = {
+	/**  The object's path hash, as `0x` and eight hex digits. */
+	objectHash: string,
+	/**  The object's path as the declaration spells it, else as a table names it, else its hash. */
+	path: string,
+	/**  The layer whose declarations hold the module. */
+	layer: string,
+	/**  The module's position in the layer's declarations. */
+	module: number,
+	/**  The module's name, if the author gave one. */
+	moduleName: string | null,
+	action: ModuleObjectAction,
+};
+
+/**  What one module of a layer's game data declarations does to an object. */
+export type ModuleObjectAction = 
+/**  The module creates the object in its target chunk, which `declaration` names. */
+{ kind: "create"; declaration: ObjectDeclaration } | 
+/**  The module removes the object from its target chunk. */
+{ kind: "remove" } | 
+/**  The module edits properties of the object. */
+{ kind: "edit" };
+
 /**  Which selector a module holds. */
 export type ModuleSelector = 
 /**  One chunk, named by `target`. */
@@ -5107,6 +5842,41 @@ export type NewItem = {
 	 */
 	class: string | null,
 };
+
+/**  The body of `POST /api/v1/mods`: the uploads and the overrides of the prefill. */
+export type NewMod = NewMod_Serialize | NewMod_Deserialize;
+
+/**  The body of `POST /api/v1/mods`: the uploads and the overrides of the prefill. */
+export type NewMod_Deserialize = {
+	/**  The inspected uploads. The first becomes the primary artifact. */
+	uploadIds: string[],
+	/**  The post fields that differ from the prefill. */
+	post?: PostOverrides_Deserialize,
+	/**  The release fields that differ from the prefill. */
+	release?: ReleaseOverrides_Deserialize,
+};
+
+/**  The body of `POST /api/v1/mods`: the uploads and the overrides of the prefill. */
+export type NewMod_Serialize = {
+	/**  The inspected uploads. The first becomes the primary artifact. */
+	uploadIds: string[],
+	/**  The post fields that differ from the prefill. */
+	post?: PostOverrides_Serialize,
+	/**  The release fields that differ from the prefill. */
+	release?: ReleaseOverrides_Serialize,
+};
+
+/**  The node that [`BankEdit::AddNode`] adds. */
+export type NewNode = 
+/**  A new sound that plays the media `source` of the bank set. */
+{ kind: "sound"; source: number } | 
+/**  A new, empty container. */
+{ kind: "container"; container: ContainerKind } | 
+/**
+ *  The node `node`. Under a container it moves from its parent, and under an event a new
+ *  Play action plays it.
+ */
+{ kind: "existing"; node: number };
 
 /**  Where a new object of a declared document starts. */
 export type NewObject = 
@@ -5152,6 +5922,41 @@ field: string } |
 field: string; shape: KindShape; 
 /**  The class an embed holds, as a name or `0x` and eight hex digits. */
 class: string | null };
+
+/**  The body of `POST /api/v1/mods/:modId/releases`. */
+export type NewRelease = NewRelease_Serialize | NewRelease_Deserialize;
+
+/**  The body of `POST /api/v1/mods/:modId/releases`. */
+export type NewRelease_Deserialize = {
+	/**  The inspected uploads. The first becomes the primary artifact. */
+	uploadIds: string[],
+	/**  The tag. The server uses the tag of the package if it is `None`. */
+	tag?: string | null,
+	/**  The release notes. */
+	description?: string | null,
+	/**  The game version that the release targets. */
+	gameVersion?: string | null,
+	/**  The post fields to refresh from the package. */
+	updatePost: PostField[],
+	/**  Whether the status of the post becomes working. */
+	markAsWorking: boolean,
+};
+
+/**  The body of `POST /api/v1/mods/:modId/releases`. */
+export type NewRelease_Serialize = {
+	/**  The inspected uploads. The first becomes the primary artifact. */
+	uploadIds: string[],
+	/**  The tag. The server uses the tag of the package if it is `None`. */
+	tag?: string | null,
+	/**  The release notes. */
+	description?: string | null,
+	/**  The game version that the release targets. */
+	gameVersion?: string | null,
+	/**  The post fields to refresh from the package. */
+	updatePost: PostField[],
+	/**  Whether the status of the post becomes working. */
+	markAsWorking: boolean,
+};
 
 /**
  *  One node of one bin: which object, and where inside it.
@@ -5215,6 +6020,52 @@ export type NodeAddress_Serialize = {
 	 */
 	label?: string | null,
 };
+
+/**
+ *  The object that a new node joins: a container lists it, or an event plays it through a new
+ *  Play action.
+ */
+export type NodeParent = 
+/**  A container of the opened bank. */
+{ kind: "container"; container: number } | 
+/**  An event of the opened bank. */
+{ kind: "event"; event: number };
+
+/**
+ *  A property of a sound, a container or a Play action that an edit sets.
+ * 
+ *  Each property is edited in the unit of Wwise's property table.
+ */
+export type NodeProperty = 
+/**  `Volume`, in decibels. */
+"volume" | 
+/**  `Pitch`, in cents. */
+"pitch" | 
+/**  `LPF`, the low-pass filter from 0 to 100. */
+"lpf" | 
+/**  `HPF`, the high-pass filter from 0 to 100. */
+"hpf" | 
+/**  `MakeUpGain`, in decibels. */
+"makeUpGain" | 
+/**  The delay in seconds: `InitialDelay` of a node, `DelayTime` of a Play action. */
+"delay" | 
+/**  `Loop` of a sound: the number of plays, where zero loops forever. */
+"loopCount";
+
+/**  What a node does in a play tree: a sound, or a container of one kind. */
+export type NodeRole = 
+/**  A sound, kind 2. */
+"sound" | 
+/**  A random container, kind 5, whose pick is random. */
+"random" | 
+/**  A random container, kind 5, that plays its playlist in order. */
+"sequence" | 
+/**  A switch container, kind 6. */
+"switch" | 
+/**  A layer container, kind 9. */
+"layer" | 
+/**  An actor-mixer, kind 7. */
+"mixer";
 
 /**  One notice that concerns the running build, and has not expired. */
 export type Notice = {
@@ -5398,6 +6249,18 @@ export type ObjectPrefixEntry = {
 	count: number,
 };
 
+/**  The properties of one action or node of an event tree that an edit sets. */
+export type ObjectProperties = {
+	/**  The object ID. */
+	id: number,
+	/**  `true` for an object of the opened bank at version 145, which an edit changes. */
+	editable: boolean,
+	/**  Every property that the object takes, in the unit of [`NodeProperty`]. */
+	values: PropertyValue[],
+	/**  The playlist weights of a random or sequence container. */
+	weights: PlaylistWeights | null,
+};
+
 /**
  *  One row a search matched, with the runs its path marks.
  * 
@@ -5440,6 +6303,25 @@ export type ObjectSearchResult = {
 /**  Why an object edit does not apply, as `ltk_game_data` names it. */
 export type ObjectSkip = "objectExists" | "sourceMissing" | "unknownClass" | "removalUnmatched" | "unknown";
 
+/**  One alternative of one finding, which a press applies by the finding's id. */
+export type OfferedAlternative = OfferedAlternative_Serialize | OfferedAlternative_Deserialize;
+
+/**  One alternative of one finding, which a press applies by the finding's id. */
+export type OfferedAlternative_Deserialize = {
+	problem: ProblemId,
+	/**  The file name of the finding's site, which tells two findings of one rule apart. */
+	file: string,
+	alternative: FixAlternative_Deserialize,
+};
+
+/**  One alternative of one finding, which a press applies by the finding's id. */
+export type OfferedAlternative_Serialize = {
+	problem: ProblemId,
+	/**  The file name of the finding's site, which tells two findings of one rule apart. */
+	file: string,
+	alternative: FixAlternative_Serialize,
+};
+
 /**  The page the window opens on. */
 export type OpenOn = "home" | "mods" | "workshop";
 
@@ -5456,6 +6338,34 @@ export type OpenedProjectFolder = {
 
 /**  What the session was started for, without the paths a workshop one carries. */
 export type OriginKind = "library" | "workshop";
+
+/**
+ *  An outline material, as a viewport draws the outline without the game's shader.
+ * 
+ *  The shader moves each vertex of the submesh `depth_offset` units toward the camera and
+ *  `width * distance / camera_distance` units along its normal, with culling off. A negative
+ *  offset puts the shell behind the submesh, so the shell shows at the silhouette alone.
+ */
+export type OutlineMaterial = {
+	/**  The material's path hash, `0x` and eight hex digits. */
+	hash: string,
+	/**  The material's path, where a table names it. */
+	name: string | null,
+	/**  `Outline_Color`. The shader does not read its alpha. */
+	color: [(number | null), (number | null), (number | null), (number | null)],
+	/**  `Outline_Width`, in world units at `camera_distance` from the camera. */
+	width: number | null,
+	/**  `Outline_CameraDistanceMod`, the camera distance at which the outline is `width` wide. */
+	cameraDistance: number | null,
+	/**  `Outline_CameraDepthOffset`, in world units toward the camera. */
+	depthOffset: number | null,
+	/**  `Outline_FinalAlphaMult`, which scales the masked alpha. */
+	alpha: number | null,
+	/**  `Outline_Mask`, and none if neither the material nor the shader names one. */
+	mask: NamedAsset | null,
+	/**  `Outline_Mask_ChannelMask`, the weight of each channel of the mask in the alpha. */
+	maskChannels: [(number | null), (number | null), (number | null), (number | null)],
+};
 
 /**
  *  Which way an overlay build failed, as the remedy a consumer picks between.
@@ -5508,6 +6418,32 @@ export type OverlayProgress = {
 
 /**  Stage of an overlay build. */
 export type OverlayStage = "indexing" | "collecting" | "patching" | "strings" | "complete";
+
+/**  One post of `GET /api/v1/me/mods`, with its newest release. */
+export type OwnedModPost = {
+	/**  The id of the post. */
+	id: string,
+	/**  The name of the post. */
+	name: string,
+	/**  `public`, `private` or `unlisted`. */
+	visibility: string,
+	/**  Whether the post is published. */
+	isPublished: boolean,
+	/**  When the post last changed, as an ISO 8601 timestamp. */
+	updatedAt: string,
+	/**  The newest release, or `None` for a post without one. */
+	latestRelease: LatestRelease | null,
+};
+
+/**  An owned post as the target picker offers it. */
+export type OwnedPostOption = {
+	/**  The id of the post. */
+	id: string,
+	/**  The name of the post. */
+	name: string,
+	/**  The tag of its latest semver release. */
+	latestTag: string | null,
+};
 
 export type PackFormat = "modpkg" | "fantome";
 
@@ -5786,6 +6722,37 @@ export type PlatformSupport = {
 	hotkeysAvailable: boolean,
 };
 
+/**  How a random or sequence container picks the item of its playlist that plays. */
+export type PlayMode = 
+/**  One item, picked by weight. A mode that `ltk_wwise` does not name picks this way too. */
+"random" | 
+/**  The items in playlist order, so the first press plays the first item. */
+"sequence";
+
+/**  Whether the decoder of the crate plays a media. */
+export type Playback = 
+/**  The codec is Vorbis or PCM. */
+{ kind: "playable" } | 
+/**  The codec has no decoder in the crate. */
+{ kind: "unsupportedCodec" } | 
+/**  The media is not a readable WEM. */
+{ kind: "unreadable"; message: string };
+
+/**  The weight of one playlist item. Wwise shows the weight divided by 1000. */
+export type PlaylistWeight = {
+	/**  The object ID of the child. */
+	child: number,
+	weight: number,
+};
+
+/**  The weights of the playlist of a random or sequence container, as the bank holds them. */
+export type PlaylistWeights = {
+	/**  `true` if a random pick reads the weights. */
+	weighted: boolean,
+	/**  The items of the playlist, in playlist order. */
+	items: PlaylistWeight[],
+};
+
 /**  One entry of `rigPoseModifierData`, of any kind of `BaseRigPoseModifierData`. */
 export type PoseModifier = 
 /**  `SpringPhysicsRigPoseModifierData`: one joint lags the unit's movement or turning. */
@@ -5925,6 +6892,96 @@ path: string;
 /**  The modifier's class as the tables name it, and its hash where none does. */
 class: string };
 
+/**  A field of a mod post that a prefill proposes. */
+export type PostField = 
+/**  The name of the post. A release never refreshes it. */
+"name" | 
+/**  The one-line description. */
+"shortDescription" | 
+/**  The long description. */
+"description" | 
+/**  The category. */
+"category" | 
+/**  The license. */
+"license" | 
+/**  The thumbnail. */
+"thumbnailImageId" | 
+/**  The champions. */
+"championIds" | 
+/**  The maps. */
+"mapIds" | 
+/**  The themes. A release never refreshes them. */
+"themes" | 
+/**  The features. A release never refreshes them. */
+"features" | 
+/**  A field that this build does not know. */
+"unknown";
+
+/**  The post fields of a new post that differ from the prefill. */
+export type PostOverrides = PostOverrides_Serialize | PostOverrides_Deserialize;
+
+/**  The post fields of a new post that differ from the prefill. */
+export type PostOverrides_Deserialize = {
+	/**  The name of the post. */
+	name?: string | null,
+	/**  The category of the post. */
+	category?: string | null,
+};
+
+/**  The post fields of a new post that differ from the prefill. */
+export type PostOverrides_Serialize = {
+	/**  The name of the post. */
+	name?: string | null,
+	/**  The category of the post. */
+	category?: string | null,
+};
+
+/**  The post and the release that the server proposes, with where each value came from. */
+export type Prefill = {
+	/**  The proposed post fields. */
+	post: PrefillPost,
+	/**  The proposed release fields. */
+	release: PrefillRelease,
+	/**  Where each release field came from. */
+	sources: PrefillSources,
+	/**  The findings of the package plus those of the site. */
+	findings: Finding[],
+	/**  The next free tag if the tag of the package is taken. */
+	suggestedTag: string | null,
+	/**  The post fields that the package would change on the target post. */
+	changedPostFields: ChangedPostField[],
+};
+
+/**  The post fields that a prefill proposes. */
+export type PrefillPost = {
+	/**  The name of the post. */
+	name: string,
+	/**  The one-line description. */
+	shortDescription: string | null,
+	/**  The category of the post. */
+	category: string,
+	/**  The staged thumbnail image, or the current one of the target post. */
+	thumbnailImageId: string | null,
+};
+
+/**  The release fields that a prefill proposes. */
+export type PrefillRelease = {
+	/**  The tag of the release. */
+	tag: string,
+	/**  The release notes. */
+	notes: string,
+	/**  The game version that the release targets. */
+	gameVersionId: string | null,
+	/**  The label of the package artifact. */
+	artifactLabel: string,
+};
+
+/**  Where each release field of a prefill came from. */
+export type PrefillSources = {
+	/**  The sources of the release fields. */
+	release: ReleaseSources,
+};
+
 /**  A `StaticMaterialDef` that a shader def's preview draws the def through. */
 export type PreviewMaterial = {
 	/**  The bin that declares the material. */
@@ -5968,6 +7025,8 @@ export type Problem_Deserialize = {
 	message?: string | null,
 	/**  What a repair would change, drawn before it is applied. */
 	fix: FixPreview_Deserialize | null,
+	/**  The repairs offered beside `fix`, each applied only when it is pressed. */
+	alternatives?: FixAlternative_Deserialize[],
 };
 
 /**  One finding, at one site, from one rule. */
@@ -5983,6 +7042,8 @@ export type Problem_Serialize = {
 	message?: string | null,
 	/**  What a repair would change, drawn before it is applied. */
 	fix: FixPreview_Serialize | null,
+	/**  The repairs offered beside `fix`, each applied only when it is pressed. */
+	alternatives?: FixAlternative_Serialize[],
 };
 
 /**  A mod profile for organizing different mod configurations. */
@@ -6128,6 +7189,12 @@ export type PropertyEdit = {
  */
 export type PropertyKind = "none" | "bool" | "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" | "vec2" | "vec3" | "vec4" | "mtx44" | "rgba" | "string" | "hash" | "file" | "list" | "list2" | "pointer" | "embed" | "link" | "option" | "map" | "flag";
 
+/**  The value of one property, in the unit of [`NodeProperty`]. */
+export type PropertyValue = {
+	property: NodeProperty,
+	value: number | null,
+};
+
 /**  Progress payload emitted during protocol install download. */
 export type ProtocolInstallProgress = {
 	stage: ProtocolInstallStage,
@@ -6138,6 +7205,141 @@ export type ProtocolInstallProgress = {
 
 /**  Where a protocol install has got to. */
 export type ProtocolInstallStage = "downloading" | "validating" | "complete" | "error";
+
+/**  The body of `POST /api/v1/mods/:modId/publish`: the AI content answer, when the site asks. */
+export type PublishAnswer = PublishAnswer_Serialize | PublishAnswer_Deserialize;
+
+/**  The body of `POST /api/v1/mods/:modId/publish`: the AI content answer, when the site asks. */
+export type PublishAnswer_Deserialize = {
+	/**  Whether the post content is AI generated. */
+	hasAiGeneratedPostContent?: boolean | null,
+	/**  The `aiContentDisclosureVersion` of the checklist that the answer replies to. */
+	expectedVersion?: string | null,
+};
+
+/**  The body of `POST /api/v1/mods/:modId/publish`: the AI content answer, when the site asks. */
+export type PublishAnswer_Serialize = {
+	/**  Whether the post content is AI generated. */
+	hasAiGeneratedPostContent?: boolean | null,
+	/**  The `aiContentDisclosureVersion` of the checklist that the answer replies to. */
+	expectedVersion?: string | null,
+};
+
+/**  Why `POST /api/v1/mods/:modId/publish` did not publish. */
+export type PublishChecklist = {
+	/**  Whether the account publishes directly or through a review. */
+	path: PublishPath,
+	/**  What the post still lacks. */
+	missing: PublishRequirement[],
+	/**  The version that an AI content answer replies to. */
+	aiContentDisclosureVersion: string,
+	/**  A moderator label is active, so only a yes answer is accepted. */
+	aiModeratorEnforced: boolean,
+	/**  The site path where the creator requests a review, such as `/mods/<id>`. */
+	reviewPath: string | null,
+};
+
+/**  What a submit created, and how the steps after the create went. */
+export type PublishOutcome = {
+	/**  The id of the post. */
+	modId: string,
+	/**  The id of the release. */
+	releaseId: string,
+	/**  The page of the post on the site. */
+	modUrl: string,
+	/**  The result of the publish call, or `None` if none was asked for. */
+	publish: PublishResult | null,
+	/**  The result of the stamp write. */
+	stamp: StampResult,
+	/**  Why the release did not refresh every post field that it was asked to. */
+	postUpdateError: string | null,
+};
+
+/**  How an account gets a post published. */
+export type PublishPath = 
+/**  The account publishes without a review. */
+"publish" | 
+/**  The post goes live only through a review that the creator requests on the site. */
+"review";
+
+/**  What the publish dialog asks the server to create. */
+export type PublishRequest = PublishRequest_Serialize | PublishRequest_Deserialize;
+
+/**  What the publish dialog asks the server to create. */
+export type PublishRequest_Deserialize = 
+/**  A new post with its first release, published after the create if `publish` is set. */
+({ kind: "newMod"; newMod: NewMod_Deserialize; publish: PublishAnswer_Deserialize | null }) & { modId?: never; release?: never } | 
+/**  A release of the post `mod_id`. */
+({ kind: "release"; modId: string; release: NewRelease_Deserialize }) & { newMod?: never; publish?: never };
+
+/**  What the publish dialog asks the server to create. */
+export type PublishRequest_Serialize = 
+/**  A new post with its first release, published after the create if `publish` is set. */
+({ kind: "newMod"; newMod: NewMod_Serialize; publish: PublishAnswer_Serialize | null }) & { modId?: never; release?: never } | 
+/**  A release of the post `mod_id`. */
+({ kind: "release"; modId: string; release: NewRelease_Serialize }) & { newMod?: never; publish?: never };
+
+/**  A requirement of publishing that a post does not meet yet. */
+export type PublishRequirement = 
+/**  The post has no thumbnail. */
+"thumbnail" | 
+/**  The post has no release. */
+"release" | 
+/**  The post has no license. */
+"license" | 
+/**  The AI content question has no answer. */
+"ai_disclosure" | 
+/**  A requirement that this build does not know. */
+"unknown";
+
+/**  The result of a publish call. */
+export type PublishResult = 
+/**  The post is public. */
+{ kind: "published" } | 
+/**  The post lacks what `checklist` lists. `review_url` is the page that requests a review. */
+{ kind: "refused"; checklist: PublishChecklist; reviewUrl: string | null } | 
+/**  The publish call failed with `error`. The post and the release exist. */
+{ kind: "failed"; error: RuneforgeError };
+
+/**  What the server read from a packed and uploaded project, and the post it targets first. */
+export type PublishReview = {
+	/**  The project directory that was packed. */
+	projectPath: string,
+	/**  The file name of the package. */
+	fileName: string,
+	/**  The size of the package in bytes. */
+	size: number,
+	/**  The validation warnings of the project. */
+	warnings: string[],
+	/**  The inspection, the findings and the prefill for the target of `choice`. */
+	review: UploadReview,
+	/**  The post that the dialog selects first. */
+	choice: TargetChoice,
+	/**  The posts of the account, for the target picker. */
+	owned: OwnedModPost[],
+};
+
+/**  `GET /api/v1/publishing-context`: the values a release and a new post may take. */
+export type PublishingContext = {
+	/**  The posts that the account may upload to. */
+	ownedPosts: OwnedPostOption[],
+	/**  The game versions a release may target, newest first. */
+	gameVersions: GameVersion[],
+	/**  Whether a new post may be published without a review. */
+	canPublishWithoutReview: boolean,
+	/**  The categories a new post may take. */
+	categories: string[],
+};
+
+/**  A sound or container that a Play action of an event reaches. */
+export type ReachedNode = {
+	/**  The object ID of the node. */
+	id: number,
+	/**  The kind of the node. */
+	role: NodeRole,
+	/**  The source ID of a sound's media, and `None` for a container. */
+	source: number | null,
+};
 
 /**  Why a document takes no edit. "Where editing is allowed" in docs/ux/BIN_EDITOR.md. */
 export type ReadOnly = 
@@ -6234,6 +7436,30 @@ export type ReimportInspection = {
 	source: number | null,
 };
 
+/**  `GET /api/v1/mods/:modId/releases/:releaseId`: the release and its artifacts. */
+export type Release = {
+	/**  The id of the release. */
+	id: string,
+	/**  The tag of the release. */
+	tag: string,
+	/**  The files of the release. */
+	artifacts: ReleaseArtifact[],
+};
+
+/**  One file of a release. */
+export type ReleaseArtifact = {
+	/**  The id of the artifact. */
+	id: string,
+	/**  The file name. */
+	filename: string,
+	/**  The package format, `modpkg` or `fantome`. */
+	format: string | null,
+	/**  The hex sha256 of the package, once the deep scan has read it. */
+	contentHash: string | null,
+	/**  The verdict of the deep scan, once it has read the package. */
+	health: ArtifactHealth | null,
+};
+
 /**  One published release, as the changelog reads it. */
 export type ReleaseNote = {
 	/**  The tag without its leading `v`. */
@@ -6247,11 +7473,44 @@ export type ReleaseNote = {
 	url: string,
 };
 
+/**  The release fields of a new post that differ from the prefill. */
+export type ReleaseOverrides = ReleaseOverrides_Serialize | ReleaseOverrides_Deserialize;
+
+/**  The release fields of a new post that differ from the prefill. */
+export type ReleaseOverrides_Deserialize = {
+	/**  The tag of the release. */
+	tag?: string | null,
+	/**  The release notes. */
+	notes?: string | null,
+	/**  The game version that the release targets. */
+	gameVersionId?: string | null,
+};
+
+/**  The release fields of a new post that differ from the prefill. */
+export type ReleaseOverrides_Serialize = {
+	/**  The tag of the release. */
+	tag?: string | null,
+	/**  The release notes. */
+	notes?: string | null,
+	/**  The game version that the release targets. */
+	gameVersionId?: string | null,
+};
+
 /**  A page of the release feed, and where the next one starts. */
 export type ReleasePage = {
 	releases: ReleaseNote[],
 	/**  `None` once the feed has no page after this one. */
 	nextPage: number | null,
+};
+
+/**  Where each release field of a prefill came from. */
+export type ReleaseSources = {
+	/**  The source of the tag. */
+	tag: FieldSource,
+	/**  The source of the notes. */
+	notes: FieldSource,
+	/**  The source of the game version. */
+	gameVersionId: FieldSource,
 };
 
 /**  How a pass's fragments reach the target, from the first pass's own fields. */
@@ -6276,6 +7535,20 @@ export type RenderState = {
 	depthTest: boolean,
 };
 
+/**  A sound that plays a replaced media, and the `in_memory_size` that the replacement writes. */
+export type ReplacedSound = {
+	/**  The object ID of the sound. */
+	id: number,
+	/**  Where the media of the sound is stored. */
+	stream: SoundStream,
+	/**  `true` if the sound is in the opened bank, which the replacement rewrites. */
+	opened: boolean,
+	/**  The `in_memory_size` of the sound now. */
+	size: number,
+	/**  The `in_memory_size` after the replacement. */
+	newSize: number,
+};
+
 /**
  *  How an undo or a redo moved the rows of a tree, so a reader's expanded rows follow them.
  * 
@@ -6294,6 +7567,18 @@ export type Reshape =
 { kind: "rekeyed"; entry: string; from: string; to: string } | 
 /**  The pointer at `path` is null, and every row under it is gone. */
 { kind: "nulled"; entry: string; path: string };
+
+/**  An event of a skin's voice-over bank set. */
+export type ResolvedEvent = {
+	/**  The object ID of the event. */
+	id: number,
+	/**  The composed name that hashes to the ID. */
+	name: string,
+	/**  The game path of the bank that contains the event. */
+	bank: string,
+	/**  The layer file or game chunk of that bank. */
+	asset: AssetRef | null,
+};
 
 /**  One `StaticMaterialPassDef` with its shader's inputs filled in. */
 export type ResolvedPass = {
@@ -6316,6 +7601,22 @@ export type ResolvedPass = {
 	state: PassState,
 	/**  What the pass shader declares, and none where the defs were not opened. */
 	schema: ShaderSchema | null,
+};
+
+/**  One event name and what it resolves to. */
+export type ResolvedSound = {
+	/**  The event name, as asked for. */
+	name: string,
+	/**  What the name resolves to. */
+	resolution: SoundResolution,
+};
+
+/**  The sounds of a view, and the slot of the game's audio index that they were resolved with. */
+export type ResolvedSounds = {
+	/**  One entry per name asked for, in the same order. */
+	sounds: ResolvedSound[],
+	/**  Off `ready`, a name that only the game's bank units register reads as missing. */
+	index: AudioIndexStatus,
 };
 
 /**
@@ -6363,6 +7664,14 @@ export type RowNode =
 /**  One patch record of a `PTCH`. */
 "record";
 
+/**  The row inside an object, in the two forms that a row carries. */
+export type RowPath = {
+	/**  The hash path, every field a hash (ADR-0027). */
+	path: string,
+	/**  The same path for a person, every hash that a table names spelled. */
+	label: string,
+};
+
 /**
  *  One rule's live findings, folded to what a mod user reads.
  * 
@@ -6407,6 +7716,8 @@ export type RuleBrief_Deserialize = {
 	mismatches?: TypeMismatch[],
 	/**  Why the rest stay unrepaired, present only when some do. */
 	unfixable?: string | null,
+	/**  The alternatives the findings offer beside their fix, in finding order. */
+	alternatives?: OfferedAlternative_Deserialize[],
 };
 
 /**
@@ -6445,6 +7756,8 @@ export type RuleBrief_Serialize = {
 	mismatches?: TypeMismatch[],
 	/**  Why the rest stay unrepaired, present only when some do. */
 	unfixable?: string | null,
+	/**  The alternatives the findings offer beside their fix, in finding order. */
+	alternatives?: OfferedAlternative_Serialize[],
 };
 
 /**  A rule that could not finish, and why. */
@@ -6593,6 +7906,80 @@ export type Run_Serialize = {
 	failed: RuleFailure_Serialize[],
 };
 
+/**
+ *  Why a call to RuneForge failed.
+ * 
+ *  Sent over IPC whole, as the `error` of the `RUNEFORGE` code, so the frontend switches on
+ *  `kind` and renders the data that a variant carries.
+ */
+export type RuneforgeError = 
+/**  The app has no stored token. */
+{ kind: "NOT_CONNECTED" } | 
+/**  The token is malformed, unknown, revoked or expired. */
+{ kind: "UNAUTHORIZED" } | 
+/**  The token lacks `scope`, or the account may not do this if `scope` is `None`. */
+{ kind: "FORBIDDEN"; scope: Scope | null } | 
+/**  The post or the upload does not exist for the account. */
+{ kind: "NOT_FOUND" } | 
+/**  The server refused the package for `findings`. */
+{ kind: "PACKAGE_REJECTED"; findings: Finding[] } | 
+/**  The post already has the tag. `suggested_tag` is the next free patch. */
+{ kind: "TAG_TAKEN"; suggestedTag: string } | 
+/**  The upload is past the state that the call needs. */
+{ kind: "UPLOAD_STATE" } | 
+/**  The post did not publish. `checklist` lists what it lacks. */
+{ kind: "PUBLISH_REFUSED"; checklist: PublishChecklist } | 
+/**
+ *  An earlier request with the same `Idempotency-Key` differs or still runs, or the post is
+ *  under moderation.
+ */
+{ kind: "CONFLICT" } | 
+/**  The package is over the 1 GiB limit. */
+{ kind: "TOO_LARGE" } | 
+/**
+ *  The server refused the request because the token sent over 120 requests in a minute.
+ *  `retry_after` is in seconds.
+ */
+{ kind: "RATE_LIMITED"; retryAfter: number | null } | 
+/**  The storage host refused the PUT of the package bytes with `status`. */
+{ kind: "STORAGE"; status: number } | 
+/**  The server answered with `status` and an error `code` that has no variant of its own. */
+{ kind: "HTTP"; status: number; code: string } | 
+/**  The answer is not in the shape that the route documents. */
+{ kind: "MALFORMED"; detail: string } | 
+/**  The server was not reached, or the connection broke. */
+{ kind: "OFFLINE"; detail: string } | 
+/**  The user cancelled the publish. */
+{ kind: "CANCELLED" } | 
+/**  The OS credential store failed. */
+{ kind: "CREDENTIAL"; detail: string };
+
+/**  How far the publish of one project to RuneForge has got. Throttled by its emitter. */
+export type RuneforgePublishProgress = {
+	/**  The project directory that the publish packs. */
+	projectPath: string,
+	stage: RuneforgePublishStage,
+	/**  The package bytes sent to storage so far. */
+	bytesSent: number,
+	/**  The size of the package, or 0 before the pack ends. */
+	totalBytes: number,
+};
+
+/**  Where a publish to RuneForge has got to. */
+export type RuneforgePublishStage = "validating" | "packing" | "uploading" | "inspecting" | "complete" | "error";
+
+/**  The RuneForge connection as the Settings section shows it. */
+export type RuneforgeStatus = {
+	/**  The connected account, or `None` while disconnected. */
+	account: ConnectedAccount | null,
+	/**  The server refused the stored token during this session. */
+	rejected: boolean,
+	/**  The base URL of the site. */
+	siteUrl: string,
+	/**  The site page where the user makes and revokes tokens. */
+	tokenPageUrl: string,
+};
+
 /**  A static switch the shader reads as a `$Globals` float rather than a define. */
 export type RuntimeSwitch = {
 	/**  The switch's name, without the `switch_` the member carries. */
@@ -6713,6 +8100,29 @@ export type SchemaTexture = {
 	default: string | null,
 	/**  `samplerName`, the shared sampler that overrides a material's address modes. */
 	sharedSampler: string | null,
+};
+
+/**  What a token may do, as the token page lets the creator tick it. */
+export type Scope = 
+/**  Reads the posts of the account, the publishing context and a release. */
+"mods:read" | 
+/**  Creates a mod post from uploads. */
+"mods:write" | 
+/**  Creates uploads and releases. */
+"releases:write" | 
+/**  Publishes a post. */
+"publish" | 
+/**  A scope that this build does not know. */
+"unknown";
+
+/**  One bank unit whose events a sound field suggests. */
+export type ScopedEvents = {
+	/**  The `name` of the unit, such as `Lux_Skin07_SFX`. */
+	unit: string,
+	/**  The game path of the bin that declares the unit. */
+	bin: string,
+	/**  The `events` list of the unit. */
+	events: string[],
 };
 
 /**
@@ -6864,6 +8274,27 @@ export type SessionStarted = {
 	version: string,
 };
 
+/**  One file of the bank set of an event bank. */
+export type SetFile = {
+	/**  The game path of the file, localized for a voice-over file that was read so. */
+	path: string,
+	/**  The layer file or game chunk that contains the file, or `None` if no store contains it. */
+	asset: AssetRef | null,
+	/**  Whether the file was read. */
+	state: SetFileState,
+	/**  `true` for the file that the document opened. */
+	opened: boolean,
+};
+
+/**  Whether a file of a bank set was read. */
+export type SetFileState = 
+/**  The file was read as a bank or mounted as a package. */
+{ kind: "found" } | 
+/**  No layer and no game archive contains the path. */
+{ kind: "missing" } | 
+/**  The file does not read, with the error of the read. */
+{ kind: "failed"; message: string };
+
 /**
  *  Application settings: UI/shell preferences plus the flattened core
  *  [`Config`]. The flatten keeps `settings.json` a single document, so the
@@ -6974,6 +8405,12 @@ export type Settings_Deserialize = {
 	 *  upgrading user who completed first run releases ago.
 	 */
 	hasSeenDiagnosticsNotice?: boolean,
+	/**
+	 *  The RuneForge account of the token in the credential store, or `None` while disconnected.
+	 * 
+	 *  Only the RuneForge commands write it. `save_settings` keeps the stored value.
+	 */
+	runeforge?: ConnectedAccount | null,
 } & Config_Deserialize;
 
 /**
@@ -7070,6 +8507,12 @@ export type Settings_Serialize = {
 	 *  upgrading user who completed first run releases ago.
 	 */
 	hasSeenDiagnosticsNotice: boolean,
+	/**
+	 *  The RuneForge account of the token in the credential store, or `None` while disconnected.
+	 * 
+	 *  Only the RuneForge commands write it. `save_settings` keeps the stored value.
+	 */
+	runeforge: ConnectedAccount | null,
 } & Config_Serialize;
 
 /**
@@ -7179,6 +8622,24 @@ export type Sidecar = {
 /**  Where a problem is. */
 export type Site = Site_Serialize | Site_Deserialize;
 
+/**  An object of a bin, and optionally a row of it, with what an open of its tab reads. */
+export type SiteRow = {
+	/**  The bin, the project layer first. `None` if no layer and no archive contains it. */
+	asset: AssetRef | null,
+	/**  The game path of the bin. */
+	bin: string,
+	/**  The object's path hash, as `0x` and eight hex digits. */
+	objectHash: string,
+	/**  The object's path, or its hash if no table names it. */
+	object: string,
+	/**  The class hash, as `0x` and eight hex digits. */
+	classHash: string,
+	/**  The class's name, or its hash if no table names it. */
+	class: string,
+	/**  The row inside the object. `None` for the object itself. */
+	property: RowPath | null,
+};
+
 /**  Where a problem is. */
 export type Site_Deserialize = {
 	/**  The layer, such as `base`. */
@@ -7199,6 +8660,22 @@ export type Site_Serialize = {
 	node: NodeAddress_Serialize | null,
 };
 
+/**  The changes of the `bin/skinhack` repair to the audio of one base skin. */
+export type SkinAudioRepair = {
+	/**  The `Name` of each removed `BankUnits` entry. */
+	removedUnits: string[],
+	/**  Each removed `TagEventList` entry. */
+	removedTags: string[],
+	/**  The `Name` of each bank unit of the game's base skin that the repair adds. */
+	addedUnits: string[],
+	/**  The event fields renamed to their base event. */
+	renamedEvents: number,
+	/**  The clip event fields kept, because no base event has the base name. */
+	silentClipEvents: number,
+	/**  The VFX event fields kept, because no base event has the base name. */
+	silentVfxEvents: number,
+};
+
 /**
  *  A skin, as a viewport draws it.
  * 
@@ -7215,6 +8692,15 @@ export type SkinModel = {
 	texture: NamedAsset | null,
 	/**  `emissiveTexture`, the emissive mask of a submesh with no material. */
 	emissiveTexture: NamedAsset | null,
+	/**
+	 *  `RoughnessMetallicAoTexture`, which draws a submesh with no material physically based.
+	 * 
+	 *  The red channel is roughness, the green channel is metalness and the blue channel is
+	 *  ambient occlusion.
+	 */
+	roughnessMetallicAoTexture: NamedAsset | null,
+	/**  `normalMapTexture`, the tangent-space normal map of a submesh with no material. */
+	normalMapTexture: NamedAsset | null,
 	/**  The `Material` a submesh draws with where no override names its own. */
 	material: MaterialPreview | null,
 	/**  The submeshes a `materialOverride` gives a texture or a material of their own. */
@@ -7244,6 +8730,21 @@ export type SkinModel = {
 	poseModifiers: PoseModifier[],
 	/**  `skinMeshProperties.SocketDefinitions`, in the order the skin lists them. */
 	sockets: Socket[],
+	/**  `skinMeshProperties.OutlineCategorySubmeshes`, in the order the skin lists them. */
+	outlines: SkinOutline[],
+};
+
+/**  One `OutlineCategorySubmeshes` entry: submeshes that the engine draws an outline around. */
+export type SkinOutline = {
+	/**  `category`, the `CharacterOutlineCategory`'s path hash, `0x` and eight hex digits. */
+	category: string,
+	/**  `Submeshes`, apart on spaces and commas. */
+	submeshes: string[],
+	/**
+	 *  `materialOverride`, else the category's `Material`. None if neither resolves, and the
+	 *  outline is not drawn.
+	 */
+	material: OutlineMaterial | null,
 };
 
 /**  Why a property edit does not apply, as `ltk_game_data` names it. */
@@ -7300,6 +8801,34 @@ path: string;
 name: string; 
 /**  The socket's class as the tables name it, and its hash where none does. */
 class: string };
+
+/**  What one event name resolves to. */
+export type SoundResolution = 
+/**  The play tree of the event. */
+{ status: "resolved"; tree: EventTree; 
+/**  The properties of the actions and nodes of the tree, which the voices play with. */
+properties: ObjectProperties[] } | 
+/**  No bank of the set contains an event of the name. */
+{ status: "noEvent" } | 
+/**  An object of the tree cannot be decoded. */
+{ status: "decodeError"; 
+/**  The ID of the object that does not decode. */
+object: number; 
+/**  The game path of the bank that contains the object. */
+bank: string; 
+/**  The error of the decode. */
+message: string };
+
+/**  Where the media of a sound is stored. */
+export type SoundStream = 
+/**  In the media index of a bank. */
+"dataBank" | 
+/**  Its start in a bank, the whole media in a package. */
+"prefetch" | 
+/**  In a package. */
+"streaming" | 
+/**  A stream type that `ltk_wwise` does not name. */
+"other";
 
 /**  The install's named spells for one character, without a search result cap. */
 export type SpellCatalog = {
@@ -7360,6 +8889,8 @@ export type SpellPreview = {
 	effectKey: string | null,
 	/**  The written fallback effect name, retained for inspection. */
 	effectName: string | null,
+	/**  The written `AudioBankPaths`, which the spell loads beside its owner's bank units. */
+	audioBankPaths: string[],
 	/**  Fields requiring correction or an explicit preview approximation. */
 	issues: SpellIssue[],
 };
@@ -7373,6 +8904,13 @@ export type StageProgram = {
 	/**  The translation came off the disk cache rather than being made now. */
 	cached: boolean,
 };
+
+/**  The result of writing the distributor stamp into the project. */
+export type StampResult = 
+/**  The project config names the post. */
+{ kind: "written" } | 
+/**  The write failed with `detail`. The release exists. */
+{ kind: "failed"; detail: string };
 
 export type StorageMedium = "ssd" | "hdd" | "unknown";
 
@@ -7443,6 +8981,27 @@ export type SubmeshOverride = {
 	texture: NamedAsset | null,
 	/**  The override's `Material`, which wins over every texture. */
 	material: MaterialPreview | null,
+	/**  The override's `RoughnessMetallicAoTexture`, in place of the skin's own. */
+	roughnessMetallicAoTexture: NamedAsset | null,
+	/**  The override's `normalMapTexture`, in place of the skin's own. */
+	normalMapTexture: NamedAsset | null,
+};
+
+/**  How a suggested post was found. */
+export type SuggestionMatch = 
+/**  The distributor stamp of the package names the post. */
+"distributor" | 
+/**  The post has the display name of the package. */
+"name";
+
+/**  Which owned post a package most likely updates, and the tag its release would get. */
+export type Suggestions = {
+	/**  The suggested post, or `None` if no owned post matches. */
+	modId: string | null,
+	/**  How the suggested post was found. */
+	matchedBy: SuggestionMatch | null,
+	/**  The patch bump of the latest semver release of the suggested post. */
+	nextTag: string | null,
 };
 
 /**  What a surface is made from: an image file, or a sprite an element already draws. */
@@ -7478,6 +9037,23 @@ export type SyncGroup = {
 	hash: string,
 	/**  `mType`. */
 	kind: number,
+};
+
+/**  The post that the publish dialog selects when it opens, and why. */
+export type Target = 
+/**  The project stamp names a post of the account. */
+{ kind: "stamped"; modId: string } | 
+/**  The server suggested a post of the account. */
+{ kind: "suggested"; modId: string; matchedBy: SuggestionMatch } | 
+/**  No post matches, so the publish creates a new one. */
+{ kind: "new" };
+
+/**  The target of a publish, and whether the project stamp names a post the account does not own. */
+export type TargetChoice = {
+	/**  The post that the dialog selects. */
+	target: Target,
+	/**  The post that the project stamp names if the account does not own it. */
+	foreignStamp: string | null,
 };
 
 /**  What carries a system a template made, per ADR-0057. */
@@ -8273,6 +9849,30 @@ export type UniformBlock = {
 /**  The axis that points up in a model file. */
 export type UpAxis = "y" | "z";
 
+/**  An upload as its owner sees it. */
+export type Upload = {
+	/**  The id of the upload. */
+	id: string,
+	/**  The file name that the upload was created with. */
+	filename: string,
+	/**  The state of the upload, such as `pending` or `inspected`. */
+	status: string,
+	/**  The package format that the server read, `modpkg` or `fantome`. */
+	format: string | null,
+};
+
+/**  `POST /api/v1/uploads/:id/complete`: what the server read and where the package may go. */
+export type UploadReview = {
+	/**  The inspected upload. */
+	upload: Upload,
+	/**  The findings of the inspection. */
+	findings: Finding[],
+	/**  The post that the package most likely updates. */
+	suggestions: Suggestions,
+	/**  The post and the release that the server proposes for the suggested target. */
+	prefill: Prefill,
+};
+
 /**  Validation result for a project. */
 export type ValidationResult = {
 	valid: boolean,
@@ -8479,6 +10079,132 @@ export type ViewVariant = {
 	document: BinDocumentId | null,
 };
 
+/**  One event bank of a skin's voice-over units. */
+export type VoiceBank = {
+	/**  The game path, under the client's locale where the unit is voice-over. */
+	path: string,
+	/**  The layer file or game chunk, or `None` if no store contains the bank. */
+	asset: AssetRef | null,
+};
+
+/**  One condition, or one struct under a condition, with every field it writes. */
+export type VoiceCondition = {
+	/**  The class hash. */
+	class: number,
+	/**  The class name, or `None` if no table names the class. */
+	className: string | null,
+	/**  The hash path of the value, such as `{5ca57000}.1a116faf[0].2aff6c4a[1]`. */
+	path: string,
+	/**  The fields the value writes, in file order. */
+	fields: VoiceConditionField[],
+};
+
+/**  One field of a [`VoiceCondition`]. */
+export type VoiceConditionField = {
+	/**  The field hash. */
+	field: number,
+	/**  The field name, or `None` if no table names the field. */
+	name: string | null,
+	value: VoiceConditionValue,
+};
+
+/**  The value of a [`VoiceConditionField`]. */
+export type VoiceConditionValue = { kind: "bool"; value: boolean } | 
+/**  Any integer kind. Every shipped integer fits an `f64` exactly. */
+{ kind: "integer"; value: number | null } | { kind: "float"; value: number | null } | { kind: "text"; value: string } | { kind: "hash"; hash: HashText } | 
+/**  A list, an unordered list or a set option. */
+{ kind: "list"; items: VoiceConditionValue[] } | 
+/**  A pointer or an embed. `None` for a null pointer. */
+{ kind: "object"; condition: VoiceCondition | null } | 
+/**  A kind that the view draws by its name alone, such as a vector. */
+{ kind: "other"; 
+/**  The kind of the value, as `ltk_meta` names it. */
+shape: string };
+
+/**  The situations of one `ContextualActionData` object, in map order. */
+export type VoiceLines = {
+	/**  `mCooldown`, the shared cooldown of every situation in seconds. */
+	cooldown: number | null,
+	/**  `mHealthPercentThreshold`, or `None` if the object does not write it. */
+	healthThreshold: number | null,
+	situations: VoiceSituation[],
+};
+
+/**  The voice lines of one object, the skins that link it, and the skin that the names resolve as. */
+export type VoiceLinesResponse = {
+	lines: VoiceLines,
+	/**  The skins whose `mContextualActionData` links the object, the project's first. */
+	skins: VoiceSkin[],
+	/**  The bin of the skin that the names resolve as, or `None` if no skin links the object. */
+	skin: string | null,
+	/**  The event banks of that skin's voice-over units, in set order. */
+	banks: VoiceBank[],
+	/**  Off `ready`, the skins of the game are missing from `skins`. */
+	index: AudioIndexStatus,
+};
+
+/**  One `ContextualRule`, with every field at its value or its default. */
+export type VoiceRule = {
+	/**  The hash path of the rule, such as `{5ca57000}.1a116faf[0]`. */
+	path: string,
+	/**  `mRuleName`, or `None` if the rule does not write one. */
+	name: string | null,
+	/**
+	 *  `mConditionRelationship`: `0` passes when every condition passes, any other value when one
+	 *  condition passes.
+	 */
+	relationship: number,
+	/**  `mPriority`, or `None` while the option is unset. */
+	priority: number | null,
+	/**  `StompLowerPriority`. */
+	stompLower: boolean,
+	/**  `CanStompSelf`. */
+	canStompSelf: boolean,
+	/**  `ActiveVoiceOver`. */
+	activeVoiceOver: boolean,
+	/**  `mOverrideCacCooldown`. */
+	overrideCooldown: boolean,
+	/**  The fields of `CooldownModifications`, or `None` while the pointer is null. */
+	cooldownModifications: CooldownModifications | null,
+	/**  `ChanceWeight`. */
+	chanceWeight: number | null,
+	/**  `mConditions`, in list order. */
+	conditions: VoiceCondition[],
+	/**  `mAudioAction`, or `None` while the pointer is null. */
+	audio: AudioAction | null,
+	/**  `mAnimationAction.mHashedAnimationName`, or `None` without an animation action. */
+	animation: HashText | null,
+	/**  `mTriggerEventAction.mHashedSituationTrigger`, or `None` without a trigger action. */
+	trigger: HashText | null,
+};
+
+/**  One entry of `mSituations`: the rules of one situation key. */
+export type VoiceSituation = {
+	/**  The key, the hash of the lowercased situation name. */
+	key: number,
+	/**  The situation name, or `None` if no table names the key. */
+	name: string | null,
+	/**  The hash path of the entry, such as `{5ca57000}`. */
+	path: string,
+	/**  `mChooseRandomValidRule`. */
+	chooseRandom: boolean,
+	/**  `mCoolDownTime` in seconds. */
+	cooldown: number | null,
+	rules: VoiceRule[],
+};
+
+/**  One skin that links the object. */
+export type VoiceSkin = {
+	/**  The game path of the skin bin. */
+	bin: string,
+	/**  The skin object. */
+	row: SiteRow,
+	/**  `skinAudioProperties.tagEventList`. */
+	tags: string[],
+	/**  `true` if a bin of the open project declares the skin. */
+	inProject: boolean,
+};
+
 /**
  *  A single entry in the WAD blocklist.
  * 
@@ -8578,7 +10304,9 @@ export type WorkshopError =
  */
 export type WorkshopFileKind = "animation" | 
 /**  A layer's game data declarations manifest, which [`LeagueFileKind`] has no kind for. */
-"game_data" | "jpeg" | "light_grid" | "lua_obj" | "map_geometry" | "png" | "tga" | "preload" | "property_bin" | "property_bin_override" | "riot_string_table" | "simple_skin" | "skeleton" | "static_mesh_ascii" | "static_mesh_binary" | "svg" | "texture" | "texture_dds" | "unknown" | "world_geometry" | "wwise_bank" | "wwise_package";
+"game_data" | "jpeg" | "light_grid" | "lua_obj" | "map_geometry" | "png" | "tga" | "preload" | "property_bin" | "property_bin_override" | "riot_string_table" | "simple_skin" | "skeleton" | "static_mesh_ascii" | "static_mesh_binary" | "svg" | "texture" | "texture_dds" | "unknown" | "world_geometry" | "wwise_bank" | 
+/**  A WEM media file, which [`LeagueFileKind`] has no kind for. */
+"wwise_media" | "wwise_package";
 
 export type WorkshopLayer = {
 	name: string,

@@ -183,18 +183,16 @@ mod held {
     /// A fantome declaring one game table holding `names`, and nothing else.
     fn declaring_fantome(archive: &Path, names: &[&str]) {
         let (algorithm, width) = Category::Game.default_shape().unwrap();
-        let info = ltk_fantome::FantomeInfo {
-            name: "declaring-mod".to_owned(),
-            author: "Author".to_owned(),
-            version: "1.0.0".to_owned(),
-            hashtables: vec![FantomeHashtable {
-                path: TABLE.to_owned(),
-                category: Category::Game,
-                algorithm,
-                bits: width.bits(),
-            }],
-            ..Default::default()
-        };
+        let mut info = ltk_fantome::FantomeInfo::default();
+        info.name = "declaring-mod".to_owned();
+        info.author = "Author".to_owned();
+        info.version = "1.0.0".to_owned();
+        info.hashtables = vec![FantomeHashtable {
+            path: TABLE.to_owned(),
+            category: Category::Game,
+            algorithm,
+            bits: width.bits(),
+        }];
         let mut table = Vec::new();
         ltk_hashtable::Hashtable::from_names(names.iter().copied())
             .unwrap()
@@ -302,5 +300,51 @@ mod held {
         );
 
         assert!(edit.is_err());
+    }
+
+    fn report_with(applied: u32, change: ltk_manager_problems::FileChange) -> FixReport {
+        ltk_manager_problems::FixReport {
+            applied,
+            skipped: 0,
+            names_kept: 0,
+            tables: Vec::new(),
+            remaining: Vec::new(),
+            files: vec![ltk_manager_problems::FileOutcome {
+                layer: "base".to_owned(),
+                path: CHUNK.to_owned(),
+                applied,
+                skipped: 0,
+                change,
+            }],
+            failed: Vec::new(),
+        }
+    }
+
+    /// A file that a repair wrote beside the file of its finding counts no finding, and the
+    /// edit still reads its bytes.
+    #[test]
+    fn held_written_file_without_applied_finding_is_read() {
+        let report = report_with(0, ltk_manager_problems::FileChange::Written);
+
+        let edit = RepairEdit::held(
+            &ltk_manager_problems::HeldWrites::default(),
+            camino::Utf8Path::new("mod.fantome"),
+            &report,
+        );
+
+        assert!(edit.is_err());
+    }
+
+    #[test]
+    fn held_unchanged_file_is_not_read() {
+        let report = report_with(1, ltk_manager_problems::FileChange::Unchanged);
+
+        let edit = RepairEdit::held(
+            &ltk_manager_problems::HeldWrites::default(),
+            camino::Utf8Path::new("mod.fantome"),
+            &report,
+        );
+
+        assert!(edit.is_ok(), "{:?}", edit.err());
     }
 }

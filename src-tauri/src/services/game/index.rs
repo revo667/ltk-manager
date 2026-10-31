@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::error::{AppError, AppResult, IpcResult};
-use crate::services::objects::index::ObjectIndexState;
+use crate::services::objects::index::clear_indexes;
 use crate::services::shared::off_thread;
 use crate::services::shared::overtaken;
 use crate::services::shared::read_asset;
@@ -197,10 +197,10 @@ pub(crate) fn find_query(pattern: &str, regex: bool) -> AppResult<Option<FindQue
     FindQuery::parse(pattern, syntax).map_err(|e| AppError::ValidationFailed(e.to_string()))
 }
 
-/// Drop the built index of `source`, so the next read walks the install again.
+/// Drop the built index of `source`, so the next read reads the install again.
 ///
 /// Unmounts the cached archives with it, and for the game drops the object
-/// index, which was fed by this one. Asking for a fresh index is the one signal
+/// index and the audio index, which were fed by this one. Asking for a fresh index is the one signal
 /// the app gets that the install changed under it, and a mount taken before a
 /// patch would keep answering from the chunk table it read then.
 #[tauri::command]
@@ -209,7 +209,10 @@ pub async fn refresh_game_index(source: WadSource, app_handle: AppHandle) -> Ipc
     app_handle.state::<GameIndexState>().clear(source);
     app_handle.state::<WadCache>().clear();
     if source == WadSource::Game {
-        app_handle.state::<ObjectIndexState>().clear();
+        clear_indexes(&app_handle);
+        app_handle
+            .state::<crate::services::audio::AudioIndexState>()
+            .clear();
     }
     IpcResult::ok(())
 }

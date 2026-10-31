@@ -16,10 +16,10 @@ export const commands = {
 	 */
 	readGameDir: (path: string, source: WadSource) => __TAURI_INVOKE<({ ok: true; value: GameDirListing }) & { error?: never } | ({ ok: false; error: AppErrorResponse }) & { value?: never }>("plugin:game|read_game_dir", { path, source }),
 	/**
-	 *  Drop the built index of `source`, so the next read walks the install again.
+	 *  Drop the built index of `source`, so the next read reads the install again.
 	 * 
 	 *  Unmounts the cached archives with it, and for the game drops the object
-	 *  index, which was fed by this one. Asking for a fresh index is the one signal
+	 *  index and the audio index, which were fed by this one. Asking for a fresh index is the one signal
 	 *  the app gets that the install changed under it, and a mount taken before a
 	 *  patch would keep answering from the chunk table it read then.
 	 */

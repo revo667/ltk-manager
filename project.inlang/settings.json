@@ -5,6 +5,7 @@
   "modules": ["./node_modules/@inlang/plugin-message-format/dist/index.js"],
   "plugin.inlang.messageFormat": {
     "pathPattern": [
+      "./messages/{locale}/audio.json",
       "./messages/{locale}/champions.json",
       "./messages/{locale}/deep-link.json",
       "./messages/{locale}/diagnostics.json",
@@ -14,6 +15,7 @@
       "./messages/{locale}/launcher.json",
       "./messages/{locale}/library.json",
       "./messages/{locale}/patcher.json",
+      "./messages/{locale}/runeforge.json",
       "./messages/{locale}/updater.json",
       "./messages/{locale}/workshop.json",
       "./messages/{locale}/shell.json",

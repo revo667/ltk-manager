@@ -1,5 +1,6 @@
 import { commandNames as appUpdate } from "@/lib/ipc/appUpdate";
 import { commandNames as atlas } from "@/lib/ipc/atlas";
+import { commandNames as audio } from "@/lib/ipc/audio";
 import { commandNames as bin } from "@/lib/ipc/bin";
 import { commandNames as desktop } from "@/lib/ipc/desktop";
 import { commandNames as diagnostics } from "@/lib/ipc/diagnostics";
@@ -13,6 +14,7 @@ import { commandNames as news } from "@/lib/ipc/news";
 import { commandNames as objects } from "@/lib/ipc/objects";
 import { commandNames as patcher } from "@/lib/ipc/patcher";
 import { commandNames as preview } from "@/lib/ipc/preview";
+import { commandNames as runeforge } from "@/lib/ipc/runeforge";
 import { commandNames as settings } from "@/lib/ipc/settings";
 import { commandNames as workshop } from "@/lib/ipc/workshop";
 
@@ -24,6 +26,7 @@ import { commandNames as workshop } from "@/lib/ipc/workshop";
 export const commandNames = {
   appUpdate,
   atlas,
+  audio,
   bin,
   desktop,
   diagnostics,
@@ -37,6 +40,7 @@ export const commandNames = {
   objects,
   patcher,
   preview,
+  runeforge,
   settings,
   workshop,
 } as const;

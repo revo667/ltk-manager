@@ -127,6 +127,7 @@ services! {
         check_mod_health,
         sweep_mod_health,
         repair_mod,
+        repair_mod_alternative,
         repair_mods,
         cancel_mod_health_run,
         get_health_check_readiness,
@@ -149,8 +150,31 @@ services! {
         character_spells,
         class_object_count,
         declared_objects,
+        module_objects,
         find_references,
         cancel_reference_walk,
+    }
+    audio("audio") {
+        read_audio_media,
+        export_audio_media,
+        read_audio_events,
+        read_audio_event,
+        read_bank_references,
+        resolve_sounds,
+        // An event bank document
+        audio_bank_open,
+        audio_bank_close,
+        audio_bank_edit,
+        audio_bank_import,
+        audio_bank_replace_preview,
+        audio_bank_replace,
+        audio_bank_step,
+        audio_bank_save,
+        audio_bank_nodes,
+        audio_scoped_events,
+        audio_search_events,
+        audio_voice_lines,
+        audio_voice_rule_template,
     }
     preview("preview") {
         // Asset preview
@@ -271,6 +295,22 @@ services! {
         take_pending_deep_link,
         take_pending_opened_files,
     }
+    runeforge("runeforge") {
+        // Account
+        runeforge_status,
+        runeforge_connect,
+        runeforge_disconnect,
+        runeforge_owned_mods,
+        runeforge_context,
+        // Publish
+        runeforge_prepare,
+        runeforge_cancel,
+        runeforge_prefill,
+        runeforge_discard,
+        runeforge_submit,
+        runeforge_publish,
+        runeforge_release,
+    }
     news("news") {
         list_releases,
         list_announcements,
@@ -302,6 +342,7 @@ services! {
         inspect_project_folder,
         open_project_folder,
         record_project_opened,
+        convert_project_manifests,
         get_opened_project_folders,
         forget_project_folder,
         relocate_project_folder,

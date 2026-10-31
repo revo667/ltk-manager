@@ -92,6 +92,21 @@ const INDEX = [
     key: "layout.forwardLookingMeta",
     title: "Lints for the coming patch",
   },
+  {
+    id: "workshop.previewSound",
+    key: "layout.previewSound",
+    title: m.settings_viewport_sound_title(),
+  },
+  {
+    id: "workshop.previewSoundVolume",
+    key: "layout.previewSoundVolume",
+    title: m.settings_viewport_sound_volume_title(),
+  },
+  {
+    id: "workshop.wwiseConsolePath",
+    key: "audio.wwiseConsolePath",
+    title: m.settings_wwise_console_title(),
+  },
 
   {
     id: "builtins.defaultWardSkins",
@@ -136,11 +151,6 @@ const INDEX = [
   },
   { id: "patching.betaPatcher", key: "betaPatcher", title: "Beta patcher" },
   { id: "patching.blockScriptsWad", key: "blockScriptsWad", title: "Block Scripts.wad.client" },
-  {
-    id: "patching.enforceSkinhackScan",
-    key: "enforceSkinhackScan",
-    title: "Enforce anti-skinhack scan",
-  },
   { id: "patching.fullWadScan", key: "fullWadScan", title: "Scan every WAD up front" },
   {
     id: "patching.disableCrashReporting",

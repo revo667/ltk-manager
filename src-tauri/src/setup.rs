@@ -125,13 +125,18 @@ pub fn run(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(checksum_mismatches);
     app.manage(wad_reports);
     app.manage(ltk_manager_assets::strings::StringKeyIndexState::default());
-    app.manage(ltk_manager_assets::game_index::GameIndexState::default());
+    app.manage(
+        crate::state::chunk_index_cache_path(&app_handle)
+            .map(ltk_manager_assets::game_index::GameIndexState::cached_at)
+            .unwrap_or_default(),
+    );
     app.manage(wad_resolver);
     app.manage(ltk_manager_assets::game_index::SearchGeneration::default());
     app.manage(ltk_manager_assets::game_index::FindGeneration::default());
     app.manage(ltk_manager_assets::game_index::PathSearchGeneration::default());
     app.manage(ltk_manager_assets::game_wads::WadCache::default());
     app.manage(crate::services::preview::MapGeometryDocuments::default());
+    app.manage(crate::services::audio::AudioBankDocuments::default());
     app.manage(ltk_manager_game::material::defs::ShaderDefsCache::default());
     app.manage(crate::services::objects::ObjectIndexState::default());
     app.manage(ltk_manager_bin::object_index::ObjectSearchGeneration::default());
@@ -141,15 +146,22 @@ pub fn run(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(ltk_manager_bin::bin_document::BinDocuments::default());
     let sandboxes = ltk_manager_bin::sandbox::SandboxState::default();
     app.manage(sandboxes.clone());
+    app.manage(crate::services::audio::AudioIndexState::default());
+    let sounds = ltk_manager_audio::SoundCache::default();
+    app.manage(sounds.clone());
     app.manage(ltk_manager_assets::hashtables::BinHashTablesState::default());
     app.manage(crate::services::game::ExtractState::default());
+    app.manage(crate::services::runeforge::RuneforgeState::default());
     app.manage(crate::services::objects::ReferenceWalkState::default());
     app.manage(mod_library);
     app.manage(workshop);
     app.manage(
         crate::workshop::LayerWatches::new(
             Arc::clone(&events),
-            Arc::new(move |project| sandboxes.invalidate(project)),
+            Arc::new(move |project| {
+                sandboxes.invalidate(project);
+                sounds.invalidate_project(project);
+            }),
         )
         .with_sources(
             atlas::SOURCES_DIR,
