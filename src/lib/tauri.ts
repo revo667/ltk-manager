@@ -15,6 +15,7 @@ import type {
   SandboxRef,
   ProjectMetadata,
   SearchPreference,
+  SkinnedShading,
   UiShader,
   WadSource,
   WorkshopFileKind,
@@ -405,8 +406,11 @@ export const api = {
       preview
         .readMaterialPrograms(source, [{ kind: "embedded", entry, path }], options)
         .then((result) => mapResult(result, ([program]) => program ?? null)),
-    readDefaultSkinnedProgram: (document: BinDocumentId, options: ProgramOptions) =>
-      preview.readEngineProgram({ kind: "defaultSkinned", document }, options),
+    readDefaultSkinnedProgram: (
+      document: BinDocumentId,
+      shading: SkinnedShading,
+      options: ProgramOptions,
+    ) => preview.readEngineProgram({ kind: "defaultSkinned", document, shading }, options),
     readParticleProgram: (
       document: BinDocumentId | null,
       shader: ParticleShader,
@@ -468,6 +472,7 @@ export const api = {
   // Diagnostics. The generated `commands` object is flat, so the module boundary lives here.
   diagnostics: {
     run: diagnostics.runDiagnostics,
+    leagueAdminFixCommand: diagnostics.leagueAdminFixCommand,
     openElevatedTerminal: diagnostics.openElevatedTerminal,
     listIncidents: diagnostics.listIncidents,
     dismissIncident: diagnostics.dismissIncident,

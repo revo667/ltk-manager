@@ -21,7 +21,7 @@ pub const HOST_EXE_NAME: &str = "ltk_patcher_host.exe";
 #[cfg(not(target_os = "windows"))]
 pub const HOST_EXE_NAME: &str = "ltk_patcher_host";
 
-/// Bundled hook DLL the host injects into the game. This is the file the
+/// Delivered hook DLL the host injects into the game. This is the file the
 /// diagnostics suite inspects (presence / signature / lock) - it replaced the
 /// legacy in-process `cslol-dll.dll`.
 pub const HOOK_DLL_NAME: &str = "ltk_patcher_dll.dll";

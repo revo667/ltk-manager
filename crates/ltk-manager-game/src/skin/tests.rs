@@ -1280,6 +1280,65 @@ fn unnamed(name: &str, declared: bool) -> KeyRef {
     }
 }
 
+#[test]
+fn a_graph_names_keys_no_table_names_from_its_own_text() {
+    let atomic = |file: &str, events: PropertyValueEnum| {
+        pointer(
+            "AtomicClipData",
+            vec![
+                (
+                    ANIMATION_RESOURCE,
+                    embedded(
+                        "AnimationResourceData",
+                        vec![(ANIMATION_FILE, values::String::from(file).into())],
+                    )
+                    .into(),
+                ),
+                (EVENT_DATA_MAP, events),
+            ],
+        )
+    };
+    let swing = pointer(
+        "SoundEventData",
+        vec![(EVENT_NAME, values::String::from("Swing").into())],
+    );
+    let wrong = pointer(
+        "SoundEventData",
+        vec![(EVENT_NAME, values::String::from("NotTheKey").into())],
+    );
+    let object = BinObject::builder(h(GRAPH), h("AnimationGraphData"))
+        .property(
+            CLIP_DATA_MAP,
+            key_map(vec![
+                (
+                    "Crit_Melee",
+                    atomic(
+                        "assets/chogath_crit_melee.anm",
+                        key_map(vec![("Swing", swing), ("Other", wrong)]),
+                    ),
+                ),
+                ("Whirl", atomic("assets/spin.anm", key_map(vec![]))),
+            ]),
+        )
+        .build();
+    let document = document_of(vec![object]);
+
+    let graph = resolve_graph(&document, h(GRAPH), &Tables, &Placed).unwrap();
+
+    let crit = clip(&graph, "Crit_Melee");
+    assert_eq!(
+        crit.name, "crit_melee",
+        "the file name's tail hashes to the key"
+    );
+    assert_eq!(crit.events[0].name, "Swing");
+    assert_eq!(
+        crit.events[1].name,
+        hex(h("Other")),
+        "an mName of another hash is no name"
+    );
+    assert_eq!(clip(&graph, "Whirl").name, hex(h("Whirl")));
+}
+
 /// Every entry of the map is a row, in map order, whatever its kind.
 #[test]
 fn a_graph_lists_every_clip_in_map_order() {
@@ -1374,7 +1433,7 @@ fn every_kind_names_its_children_in_field_order() {
         [key("Attack1", true), key("Idle1", true)]
     );
     assert_eq!(children("Both"), [key("Idle1", true)]);
-    assert_eq!(children("Taunt"), [key("Run", true), key("Idle1", true)]);
+    assert_eq!(children("Taunt"), [key("Idle1", true), key("Run", true)]);
     assert_eq!(children("Stance"), [key("Idle1", true), key("Run", true)]);
     assert_eq!(children("Form"), [key("Idle1", true), key("Attack1", true)]);
 
@@ -1565,8 +1624,8 @@ fn every_child_field_hash_is_its_name() {
         ("mFalseConditionClipName", None),
         ("mConditionFloatPairDataList", Some("mClipName")),
         ("mClipNameList", None),
-        ("SelectorPairDataList", Some("ClipName")),
         ("DefaultClipName", None),
+        ("SelectorPairDataList", Some("ClipName")),
         ("ChildClipName", None),
         ("Transitions", Some("TargetClipName")),
         ("SwitchIntPairDataList", Some("ClipName")),

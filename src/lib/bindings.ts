@@ -464,6 +464,8 @@ export type AuthorProfile = {
 	id: string,
 	name: string,
 	role: string | null,
+	/**  The id of the RuneForge user that this profile follows, or `None` if it is not linked. */
+	runeforgeUserId: string | null,
 };
 
 /**  One bin that declares a bank unit. */
@@ -1274,15 +1276,6 @@ export type Config_Deserialize = {
 	/**  Additional WAD files to exclude from overlay building. */
 	wadBlocklist?: WadBlocklistEntry[],
 	/**
-	 *  Run the injection host elevated (UAC). An elevated game can only be
-	 *  injected by an equally elevated host, so this is required when League
-	 *  runs as administrator. Off by default: when off, non-elevated users
-	 *  avoid a UAC prompt on every patcher start. Auto-elevation still kicks in
-	 *  when League is detected configured to run as admin, regardless of this
-	 *  flag (see `services::patcher::start_patcher_inner`).
-	 */
-	elevateInjector?: boolean,
-	/**
 	 *  Whether to automatically categorize mods from their content (champions,
 	 *  maps and content tags derived from the WAD/chunk footprint, surfaced as
 	 *  "auto" suggestions and library filters). When off, only the categories
@@ -1389,15 +1382,6 @@ export type Config_Serialize = {
 	blockScriptsWad: boolean,
 	/**  Additional WAD files to exclude from overlay building. */
 	wadBlocklist: WadBlocklistEntry[],
-	/**
-	 *  Run the injection host elevated (UAC). An elevated game can only be
-	 *  injected by an equally elevated host, so this is required when League
-	 *  runs as administrator. Off by default: when off, non-elevated users
-	 *  avoid a UAC prompt on every patcher start. Auto-elevation still kicks in
-	 *  when League is detected configured to run as admin, regardless of this
-	 *  flag (see `services::patcher::start_patcher_inner`).
-	 */
-	elevateInjector: boolean,
 	/**
 	 *  Whether to automatically categorize mods from their content (champions,
 	 *  maps and content tags derived from the WAD/chunk footprint, surfaced as
@@ -2075,7 +2059,9 @@ export type DefineSource =
 /**  Picked in a shader def's preview, which writes nothing to the def. */
 "preview" | 
 /**  Set by the engine for the emitter that draws an engine particle shader. */
-"emitter";
+"emitter" | 
+/**  Set by the engine for the maps that a skin names. */
+"skin";
 
 /**  One dependency a `PROP` names, as its path and its brex spelling. */
 export type Dependency = {
@@ -2280,9 +2266,10 @@ export type Ending = {
 export type EnginePass = 
 /**
  *  The pass a skinned submesh draws with where its skin names no material, with
- *  `LIT_UBER` translated, over the shader cache `document` resolves against.
+ *  the `LIT_UBER` permutation of `shading` translated, over the shader cache `document`
+ *  resolves against.
  */
-{ kind: "defaultSkinned"; document: BinDocumentId } | 
+{ kind: "defaultSkinned"; document: BinDocumentId; shading: SkinnedShading } | 
 /**
  *  An engine particle shader's pass for the defines an emitter sets, over the shader
  *  cache `document` resolves against, and the install's alone where it is none.
@@ -3895,8 +3882,8 @@ export type IndexResponse<T> =
 export type InjectionStage = 
 /**
  *  The host process never came up - it could not be spawned, configured, or
- *  told to start. Antivirus, a missing binary or a declined UAC prompt are
- *  the usual causes, so diagnostics are the useful response.
+ *  told to start. Antivirus or a missing binary are the usual causes, so
+ *  diagnostics are the useful response.
  */
 "HOST" | 
 /**  The host ran, but the game was never patched. */
@@ -5090,6 +5077,10 @@ export type MapSun = {
 	fogStartEnd: [(number | null), (number | null)],
 	/**  `fogEmissiveRemap`. */
 	fogEmissiveRemap: number | null,
+	/**  `HdrEnvDiffuseScale`, which scales the image-based light of a physically based shader. */
+	hdrEnvDiffuseScale: number | null,
+	/**  `PbrSunAdditionalScale`, which scales the sun of a physically based shader. */
+	pbrSunAdditionalScale: number | null,
 };
 
 /**  One map an object draws, and the skin that names it. */
@@ -6655,6 +6646,12 @@ export type PatcherError =
 { kind: "ALREADY_RUNNING" } | 
 /**  A stop was requested while nothing was running. */
 { kind: "NOT_RUNNING" } | { kind: "UNSUPPORTED_PLATFORM" } | 
+/**  League is set to run as administrator, and a session runs unelevated. */
+{ kind: "LEAGUE_ELEVATED" } | 
+/**  LTK Manager runs as administrator, and a session runs unelevated. */
+{ kind: "MANAGER_ELEVATED" } | 
+/**  No patcher DLL could be selected for the session. `message` says why. */
+{ kind: "DLL_UNAVAILABLE"; message: string } | 
 /**
  *  One injection session failed. `stage` separates a host that never came up
  *  from a game that was never patched, since they call for different advice.
@@ -8746,6 +8743,15 @@ export type SkinOutline = {
 	 */
 	material: OutlineMaterial | null,
 };
+
+/**  The `LIT_UBER` permutation that the maps of a skin select. */
+export type SkinnedShading = 
+/**  A colour texture and an emissive mask. */
+"base" | 
+/**  `FEATURE_ROUGHNESS_METALLIC`, which samples no emissive mask. */
+"roughnessMetallic" | 
+/**  `FEATURE_ROUGHNESS_METALLIC` and `FEATURE_TANGENT`, which read the mesh's tangents. */
+"roughnessMetallicNormal";
 
 /**  Why a property edit does not apply, as `ltk_game_data` names it. */
 export type SkipReason = "missingObject" | "missingProperty" | "nullPointer" | "cannotDescend" | "notIndexable" | "indexOutOfRange" | "invalidKey" | "keyNotFound" | "typeMismatch" | "invalidPath" | "untypable" | "unknownClass" | "pinMismatch" | "signOnScalar" | "containerAbsent" | "removalUnmatched" | "kindMismatch" | "outOfRange" | "precisionLoss" | "arityMismatch" | "referenceMissingEntry" | "referenceUnresolved" | "unknown";

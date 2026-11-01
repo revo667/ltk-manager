@@ -7,22 +7,29 @@ use crate::mods::{ChecksumMismatchInfo, ChecksumMismatchState, ModLibraryState};
 use crate::patcher::host::{HOOK_DLL_NAME, HOST_EXE_NAME};
 use crate::patcher::injector::INJECTOR_EXE_NAME;
 use crate::patcher::thread::TauriPatcherEvents;
+#[cfg(target_os = "windows")]
+use crate::patcher::PatcherDeliveryState;
 use crate::patcher::{
-    PatcherDeliveryState, PatcherError, PatcherEvents, PatcherHostState, PatcherPhase,
-    PatcherSession, PatcherState, PatcherThread, SessionParams, StoredPatcherConfig,
+    PatcherError, PatcherEvents, PatcherHostState, PatcherPhase, PatcherSession, PatcherState,
+    PatcherThread, PreparedHost, SessionParams, StoredPatcherConfig,
 };
 use crate::state::{IncidentStoreState, SettingsState};
 use ltk_manager_base::utils::client_settings::LeagueClientSettings;
 use ltk_manager_base::utils::game::GameDir;
 use ltk_manager_runtime::diagnostics::binary_id::PatcherBinaries;
-use ltk_manager_runtime::patcher::delivery::Selection;
+#[cfg(target_os = "windows")]
+use ltk_manager_runtime::patcher::delivery::Channel;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::services::shared::off_thread;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
+
+/// Hex length of a binary identity: the first 8 bytes of its SHA-256.
+#[cfg(target_os = "windows")]
+const BINARY_HASH_LEN: usize = 16;
 
 /// Configuration for starting the patcher.
 #[derive(Debug, Clone, Deserialize, specta::Type)]
@@ -229,58 +236,26 @@ pub(crate) fn start_patcher_inner(
         }
     }
 
-    let should_elevate = ltk_manager_runtime::patcher::should_elevate(&config_snapshot);
+    ltk_manager_runtime::patcher::check_unelevated()?;
 
     #[cfg(target_os = "windows")]
-    let (injector_exe, patcher_binaries) = {
-        let dll_path = super::diagnostics::resolve_patcher_dll(app_handle)
-            .or_else(|| injector_exe.parent().map(|dir| dir.join(HOOK_DLL_NAME)))
-            .unwrap_or_else(|| PathBuf::from(HOOK_DLL_NAME));
-
-        let delivery = app_handle.state::<PatcherDeliveryState>();
+    let prepare_host: ltk_manager_core::patching::PrepareHost = {
+        let delivery = app_handle.state::<PatcherDeliveryState>().inner().clone();
         delivery.sync_in_background(&config_snapshot);
 
-        let selection = match delivery.delivery() {
-            Some(client) => client
-                .select(
-                    crate::patcher::delivery::channel(&config_snapshot),
-                    &injector_exe,
-                    &dll_path,
-                    should_elevate,
-                )
-                .map_err(|error| AppError::Other(error.to_string()))?,
-            None => Selection::Bundled,
-        };
-
-        // A delivered DLL is not the bundle, so an incident identifies it by hash alone.
-        let (injector_exe, dll_path, expected_dll, expected_host) = match selection {
-            Selection::Delivered {
-                dir,
-                version,
-                digest,
-            } => {
-                tracing::info!(%version, %digest, "Using the delivered patcher DLL");
-                (dir.join(HOST_EXE_NAME), dir.join(HOOK_DLL_NAME), "", "")
-            }
-            Selection::Bundled => (
-                injector_exe,
-                dll_path,
-                option_env!("LTK_BUNDLED_DLL_HASH").unwrap_or_default(),
-                option_env!("LTK_BUNDLED_HOST_HASH").unwrap_or_default(),
-            ),
-        };
-
-        let binaries =
-            PatcherBinaries::identify(&dll_path, &injector_exe, expected_dll, expected_host);
-        (injector_exe, binaries)
+        let channel = crate::patcher::delivery::channel(&config_snapshot);
+        Box::new(move || prepare_host(&delivery, channel, &injector_exe))
     };
     // The injected hook DLL is a Windows-only binary; on macOS the host patches
     // the game in-process, so there is no DLL to identify, deliver or compare.
     #[cfg(not(target_os = "windows"))]
-    let patcher_binaries = {
-        let no_dll = PathBuf::from("<none>");
-        PatcherBinaries::identify(&no_dll, &injector_exe, "", "")
-    };
+    let prepare_host: ltk_manager_core::patching::PrepareHost = Box::new(move || {
+        let binaries = PatcherBinaries::identify(Path::new("<none>"), &injector_exe, "", "");
+        Ok(PreparedHost {
+            exe: injector_exe,
+            binaries,
+        })
+    });
 
     let events: Arc<dyn PatcherEvents> =
         Arc::new(TauriPatcherEvents::new(app_handle.clone(), is_workshop));
@@ -299,18 +274,48 @@ pub(crate) fn start_patcher_inner(
         host_state.handle(),
         stored_config,
         SessionParams {
-            injector_exe,
+            prepare_host,
             config: config_snapshot,
             library: library.0.clone(),
             workshop_projects,
             host_flags,
-            should_elevate,
-            patcher_binaries,
             incident_store,
             force_rebuild: config.force_rebuild.unwrap_or(false),
             telemetry: telemetry.handle(),
         },
     )
+}
+
+/// Selects the delivered build of a session and identifies its binaries.
+///
+/// Fails with [`PatcherError::DllUnavailable`] if no build is usable.
+#[cfg(target_os = "windows")]
+fn prepare_host(
+    delivery: &PatcherDeliveryState,
+    channel: Channel,
+    bundled_host: &Path,
+) -> AppResult<PreparedHost> {
+    let staged =
+        delivery
+            .prepare(channel, bundled_host)
+            .map_err(|error| PatcherError::DllUnavailable {
+                message: error.to_string(),
+            })?;
+    tracing::info!(
+        version = %staged.version,
+        digest = %staged.digest,
+        "Using the delivered patcher DLL"
+    );
+
+    let exe = staged.dir.join(HOST_EXE_NAME);
+    let binaries = PatcherBinaries::identify(
+        &staged.dir.join(HOOK_DLL_NAME),
+        &exe,
+        &staged.digest[..BINARY_HASH_LEN],
+        option_env!("LTK_BUNDLED_HOST_HASH").unwrap_or_default(),
+    );
+
+    Ok(PreparedHost { exe, binaries })
 }
 
 /// Stop the running patcher.
