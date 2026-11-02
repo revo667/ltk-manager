@@ -19,6 +19,31 @@ pub fn hide_console(command: &mut Command) -> &mut Command {
     command
 }
 
+/// Spawn flags for the patcher host.
+///
+/// Adds `CREATE_BREAKAWAY_FROM_JOB` on top of the console-hiding bits so the host
+/// leaves the launcher's job object. Some launchers (notably Tauri-wrapped apps)
+/// are run inside a job that forbids child processes from installing user-mode
+/// hooks on windows owned by other jobs; the host's `SetWindowsHookEx` then fails
+/// with `0x00000000` and no inject happens. Breaking away gives the host its own
+/// process group with no inherited job restrictions.
+///
+/// If the launcher's job denies breakaway (`JOB_OBJECT_LIMIT_BREAKAWAY_OK` unset
+/// AND no `SILENT_BREAKAWAY_OK`), `CreateProcess` fails with ERROR_ACCESS_DENIED;
+/// callers that need the fallback should retry with [`hide_console`].
+pub fn host_creation_flags(command: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        command.creation_flags(CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB);
+    }
+
+    command
+}
+
 /// Whether this machine accepts paths past the legacy 260-character limit.
 ///
 /// Always true off Windows, where the limit does not exist.

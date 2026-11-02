@@ -7,7 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::protocol::{HostConfig, command};
-use ltk_manager_base::platform::hide_console;
+use ltk_manager_base::platform::{hide_console, host_creation_flags};
 
 #[derive(Debug, thiserror::Error)]
 pub enum HostError {
@@ -33,31 +33,20 @@ pub struct HostProcess {
 
 impl HostProcess {
     /// Spawn the host process.
+    ///
+    /// Tries `CREATE_BREAKAWAY_FROM_JOB` first (needed inside launcher jobs that
+    /// otherwise block the host's `SetWindowsHookEx`). If the launcher's job
+    /// forbids breakaway, `CreateProcess` fails with `ERROR_ACCESS_DENIED` and we
+    /// retry without the flag so the host still comes up on normal shells.
     pub fn spawn(exe_path: &Path) -> Result<Self, HostError> {
-        let mut command = Command::new(exe_path);
-
-        command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        if let Some(dir) = exe_path.parent() {
-            command.current_dir(dir);
+        match spawn_with_flags(exe_path, SpawnFlags::Breakaway) {
+            Ok(this) => Ok(this),
+            Err(HostError::Spawn { source, .. }) if is_breakaway_denied(&source) => {
+                tracing::info!("Breakaway denied by parent job; retrying host spawn without it");
+                spawn_with_flags(exe_path, SpawnFlags::Standard)
+            }
+            Err(e) => Err(e),
         }
-
-        hide_console(&mut command);
-
-        tracing::info!("Spawning host: {}", exe_path.display());
-
-        let child = command.spawn().map_err(|source| HostError::Spawn {
-            path: exe_path.display().to_string(),
-            source,
-        })?;
-
-        Ok(Self {
-            child,
-            exe_path: exe_path.to_path_buf(),
-        })
     }
 
     /// Send a raw command line to the host's stdin.
@@ -150,6 +139,80 @@ impl HostProcess {
     pub fn kill(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+/// Which spawn-flag set [`HostProcess::spawn`] is trying.
+#[derive(Debug, Clone, Copy)]
+enum SpawnFlags {
+    /// `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB` — preferred.
+    Breakaway,
+    /// `CREATE_NO_WINDOW` only — fallback when the parent job denies breakaway.
+    Standard,
+}
+
+fn spawn_with_flags(exe_path: &Path, flags: SpawnFlags) -> Result<HostProcess, HostError> {
+    let mut command = Command::new(exe_path);
+
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(dir) = exe_path.parent() {
+        command.current_dir(dir);
+    }
+
+    match flags {
+        SpawnFlags::Breakaway => {
+            host_creation_flags(&mut command);
+        }
+        SpawnFlags::Standard => {
+            hide_console(&mut command);
+        }
+    }
+
+    tracing::info!(
+        "Spawning host: {} (flags: {flags:?}, launcher pid: {})",
+        exe_path.display(),
+        std::process::id(),
+    );
+
+    let child = command.spawn().map_err(|source| {
+        tracing::warn!(
+            "Host spawn failed (flags: {flags:?}, os error: {:?}): {source}",
+            source.raw_os_error()
+        );
+        HostError::Spawn {
+            path: exe_path.display().to_string(),
+            source,
+        }
+    })?;
+
+    tracing::info!(
+        "Host spawned ok: pid={}, flags={flags:?}, exe={}",
+        child.id(),
+        exe_path.display(),
+    );
+
+    Ok(HostProcess {
+        child,
+        exe_path: exe_path.to_path_buf(),
+    })
+}
+
+/// `true` if the io error from `CreateProcess` indicates that the parent job
+/// forbids breakaway (`ERROR_ACCESS_DENIED`, raw OS error 5). Only in that case
+/// should the caller retry without `CREATE_BREAKAWAY_FROM_JOB`.
+fn is_breakaway_denied(err: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    {
+        err.raw_os_error() == Some(5)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = err;
+        false
     }
 }
 
